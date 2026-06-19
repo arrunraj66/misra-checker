@@ -1,0 +1,24 @@
+# Build directories
+build/
+cmake-build-*/
+
+# VSCode
+.vscode/
+
+# Object files
+*.o
+*.obj
+
+# Libraries
+*.a
+*.so
+
+# Executables
+*.out
+*.exe
+
+# Logs
+*.log
+
+# Temporary files
+*.swp
