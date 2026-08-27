@@ -1,0 +1,46 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  repository-validation:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Reject licensed or sensitive files
+        shell: bash
+        run: |
+          set -euo pipefail
+          prohibited=$(git ls-files | grep -Ei '(^|/)(\.env($|\.)|credentials|secrets)|\.(pdf|pem|key|p12|pfx|jks|keystore)$' || true)
+          if [[ -n $prohibited ]]; then
+            echo "Prohibited files are tracked:"
+            echo "$prohibited"
+            exit 1
+          fi
+
+      - name: Validate shell automation
+        run: bash -n scripts/verified-build-commit.sh
+
+      - name: Check whitespace errors
+        run: git diff --check HEAD^
+        if: github.event_name == 'pull_request'
+
+      - name: Configure CMake project when present
+        if: hashFiles('CMakeLists.txt') != ''
+        run: cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release
+
+      - name: Build when present
+        if: hashFiles('CMakeLists.txt') != ''
+        run: cmake --build build --parallel
+
+      - name: Test when present
+        if: hashFiles('CMakeLists.txt') != ''
+        run: ctest --test-dir build --output-on-failure
