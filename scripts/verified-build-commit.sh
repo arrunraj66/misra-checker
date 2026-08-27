@@ -54,6 +54,7 @@ allowed_paths=(
   cmake
   docs
   include
+  rules
   scripts
   src
   tests
