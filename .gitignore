@@ -1,24 +1,46 @@
-# Build directories
-build/
-cmake-build-*/
+# Build outputs
+/build/
+/build-*/
+/out/
+/dist/
+/coverage/
+CMakeFiles/
+CMakeCache.txt
+compile_commands.json
+Testing/
 
-# VSCode
+# Editors and operating systems
+.idea/
 .vscode/
-
-# Object files
-*.o
-*.obj
-
-# Libraries
-*.a
-*.so
-
-# Executables
-*.out
-*.exe
-
-# Logs
-*.log
-
-# Temporary files
 *.swp
+*.swo
+*~
+.DS_Store
+Thumbs.db
+
+# Logs and temporary files
+*.log
+*.tmp
+*.temp
+*.bak
+.cache/
+.pytest_cache/
+
+# Credentials and local configuration
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.p12
+*.pfx
+*.jks
+*.keystore
+credentials*
+secrets*
+
+# Licensed and customer-controlled material
+*.pdf
+/licensed/
+/customer-code/
+/proprietary-corpora/
