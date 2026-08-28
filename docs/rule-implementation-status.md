@@ -2,7 +2,7 @@
 
 This catalog records the engineering structures present in the checker. It deliberately does not reproduce the copyrighted normative rule wording. The licensed MISRA specification is the controlled source for rule predicates, amplification, exceptions, and examples.
 
-Current milestone: all 143 rule classes are **scaffolds**. A scaffold provides identity, metadata, an analysis plan, a factory, and a non-compliant-safe `NotImplemented` result. It is not a working compliance check.
+Current milestone: 142 rule classes are **scaffolds**. Rule 15.1 has an implemented Clang-backed syntactic detector, but independent validation remains pending. A scaffold provides identity, metadata, an analysis plan, a factory, and a non-compliant-safe `NotImplemented` result. It is not a working compliance check.
 
 | Rule | Category | Decidability | Scope | C90 | C99 | Topic | Status |
 |---|---|---|---|---:|---:|---|---|
@@ -85,7 +85,7 @@ Current milestone: all 143 rule classes are **scaffolds**. A scaffold provides i
 | 14.2 | Required | Undecidable | System | Yes | Yes | Control statement expressions | Scaffold |
 | 14.3 | Required | Undecidable | System | Yes | Yes | Control statement expressions | Scaffold |
 | 14.4 | Required | Decidable | Single Translation Unit | Yes | Yes | Control statement expressions | Scaffold |
-| 15.1 | Advisory | Decidable | Single Translation Unit | Yes | Yes | Control flow | Scaffold |
+| 15.1 | Advisory | Decidable | Single Translation Unit | Yes | Yes | Control flow | Implemented; independent validation pending |
 | 15.2 | Required | Decidable | Single Translation Unit | Yes | Yes | Control flow | Scaffold |
 | 15.3 | Required | Decidable | Single Translation Unit | Yes | Yes | Control flow | Scaffold |
 | 15.4 | Advisory | Decidable | Single Translation Unit | Yes | Yes | Control flow | Scaffold |

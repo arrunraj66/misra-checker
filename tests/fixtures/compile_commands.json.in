@@ -1,0 +1,22 @@
+[
+  {
+    "directory": "@MISRA_FIXTURE_DIR@",
+    "file": "@MISRA_FIXTURE_DIR@/compliant.c",
+    "arguments": ["@CLANG_EXECUTABLE@", "-std=c99", "-c", "@MISRA_FIXTURE_DIR@/compliant.c"]
+  },
+  {
+    "directory": "@MISRA_FIXTURE_DIR@",
+    "file": "@MISRA_FIXTURE_DIR@/violating.c",
+    "arguments": ["@CLANG_EXECUTABLE@", "-std=c99", "-c", "@MISRA_FIXTURE_DIR@/violating.c"]
+  },
+  {
+    "directory": "@MISRA_FIXTURE_DIR@",
+    "file": "@MISRA_FIXTURE_DIR@/macro_expansion.c",
+    "arguments": ["@CLANG_EXECUTABLE@", "-std=c99", "-c", "@MISRA_FIXTURE_DIR@/macro_expansion.c"]
+  },
+  {
+    "directory": "@MISRA_FIXTURE_DIR@",
+    "file": "@MISRA_FIXTURE_DIR@/lexical_boundary.c",
+    "arguments": ["@CLANG_EXECUTABLE@", "-std=c99", "-c", "@MISRA_FIXTURE_DIR@/lexical_boundary.c"]
+  }
+]

@@ -28,6 +28,8 @@ int main() {
   std::size_t undecidable = 0U;
   std::size_t single_unit = 0U;
   std::size_t system = 0U;
+  std::size_t scaffold = 0U;
+  std::size_t implemented = 0U;
 
   for (const auto& rule : registry.rules()) {
     const auto& descriptor = rule->descriptor();
@@ -36,8 +38,11 @@ int main() {
     require(!descriptor.intent_summary.empty(), "intent summary must be documented");
     require(!descriptor.analysis_expansion.empty(),
             "analysis expansion must be documented");
-    require(descriptor.status == misra::ImplementationStatus::Scaffold,
-            "new rule structures must not claim implementation");
+    if (descriptor.status == misra::ImplementationStatus::Scaffold) {
+      ++scaffold;
+    } else if (descriptor.status == misra::ImplementationStatus::Implemented) {
+      ++implemented;
+    }
 
     switch (descriptor.category) {
       case misra::RuleCategory::Mandatory:
@@ -71,8 +76,13 @@ int main() {
   require(undecidable == 27U, "expected 27 undecidable rules");
   require(single_unit == 104U, "expected 104 single-unit rules");
   require(system == 39U, "expected 39 system rules");
+  require(scaffold == 142U, "expected 142 scaffold rules");
+  require(implemented == 1U, "expected one implemented rule");
   require(registry.find("1.1") != nullptr, "Rule 1.1 must be registered");
   require(registry.find("22.6") != nullptr, "Rule 22.6 must be registered");
+  require(registry.find("15.1")->descriptor().status ==
+              misra::ImplementationStatus::Implemented,
+          "Rule 15.1 must be implemented");
   require(registry.find("99.99") == nullptr, "unknown rule must not resolve");
 
   return EXIT_SUCCESS;

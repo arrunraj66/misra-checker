@@ -33,17 +33,52 @@ src/rule_registry.cpp                  constructs the complete rule pack
 tests/rule_registry_test.cpp           validates count, uniqueness and totals
 ```
 
-Important: the current rule classes are scaffolds and return
-`EvaluationStatus::NotImplemented`. They do not yet inspect C source and must
-not be represented as implemented, qualified, certified, or compliance-ready.
-Each detector will advance independently through specification, implementation,
-positive/negative tests, traceability, review, and validation.
+Rule 15.1 now has the first Clang-backed detector. The remaining 142 classes are
+scaffolds returning `EvaluationStatus::NotImplemented`. Rule 15.1 is implemented
+but has not completed independent validation; the product must not yet be
+represented as qualified, certified, or compliance-ready. Each detector will
+advance independently through specification, implementation, positive/negative
+tests, traceability, review, and validation.
 
 List the registered structures with:
 
 ```bash
 ./build/misra-checker --list-rules
 ```
+
+## Analyze a C project
+
+The prototype currently requires LLVM and Clang 14 development packages. It
+reads the exact compiler invocations from `compile_commands.json`, preserving
+the target flags, include paths, defines, language version, and other build
+context used to parse each translation unit.
+
+For a CMake-based target project, generate the database with:
+
+```bash
+cmake -S /path/to/c-project -B /path/to/c-project/build \
+  -DCMAKE_EXPORT_COMPILE_COMMANDS=ON
+```
+
+Analyze every file in that database:
+
+```bash
+./build/misra-checker analyze \
+  --compile-commands /path/to/c-project/build
+```
+
+Or analyze one selected translation unit:
+
+```bash
+./build/misra-checker analyze \
+  --compile-commands /path/to/c-project/build/compile_commands.json \
+  --file /path/to/c-project/source.c
+```
+
+Exit code `0` means no findings from implemented rules, `1` means findings were
+reported, `2` means the frontend could not complete analysis, and `64` means
+the command line was invalid. A zero exit code covers only implemented rules;
+it is not a project-level MISRA compliance result.
 
 ## Verified build commits
 

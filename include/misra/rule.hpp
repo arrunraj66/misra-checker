@@ -1,7 +1,10 @@
 #pragma once
 
 #include <memory>
+#include <string>
 #include <string_view>
+#include <utility>
+#include <vector>
 
 namespace misra {
 
@@ -44,8 +47,23 @@ struct RuleDescriptor final {
   ImplementationStatus status;
 };
 
+struct SourceLocation final {
+  std::string file;
+  unsigned int line;
+  unsigned int column;
+};
+
+struct GotoStatementFact final {
+  SourceLocation location;
+  bool originates_from_macro;
+};
+
+struct ControlFlowFacts final {
+  std::vector<GotoStatementFact> goto_statements;
+};
+
 struct AnalysisContext final {
-  // Populated by the parser and analysis platform in later phases.
+  ControlFlowFacts control_flow;
 };
 
 enum class EvaluationStatus {
@@ -54,8 +72,28 @@ enum class EvaluationStatus {
   Inconclusive,
 };
 
+enum class FindingCertainty {
+  Definite,
+  Possible,
+};
+
+struct Finding final {
+  std::string_view message_key;
+  SourceLocation location;
+  FindingCertainty certainty;
+};
+
 struct RuleEvaluation final {
+  RuleEvaluation(const EvaluationStatus evaluation_status)
+      : status(evaluation_status) {}
+
+  RuleEvaluation(const EvaluationStatus evaluation_status,
+                 std::vector<Finding> evaluation_findings)
+      : status(evaluation_status),
+        findings(std::move(evaluation_findings)) {}
+
   EvaluationStatus status;
+  std::vector<Finding> findings;
 };
 
 class Rule {
