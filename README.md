@@ -8,10 +8,42 @@ See [ROADMAP.md](ROADMAP.md) for the 78-week implementation and assurance progra
 
 ## Repository policy
 
-- This repository must remain private until licensing and publication claims are approved.
+- This public repository contains only original implementation code, engineering
+  metadata, and paraphrased analysis plans. Licensed normative MISRA content
+  must remain outside the repository.
 - Do not commit licensed MISRA PDFs, copied guideline text, customer source code, credentials, compiler licences, or proprietary test corpora.
 - A successful scan is not by itself a MISRA compliance claim.
 - Automatic remediation is restricted to independently approved transformation classes.
+
+## MISRA C:2012 rule structures
+
+The repository now has one C++ translation unit and one concrete `Rule` class
+for each of the 143 MISRA C:2012 rules. Every file begins with its rule ID,
+engineering intent, analysis expansion, normative-source notice, and current
+implementation status. See the complete metadata catalog in
+[docs/rule-implementation-status.md](docs/rule-implementation-status.md).
+
+```text
+include/misra/rule.hpp                 common rule contract and metadata
+include/misra/c2012/rule_factories.hpp factory declaration for every rule
+rules/c2012/rule_01_01.cpp             separate Rule 1.1 structure
+...
+rules/c2012/rule_22_06.cpp             separate Rule 22.6 structure
+src/rule_registry.cpp                  constructs the complete rule pack
+tests/rule_registry_test.cpp           validates count, uniqueness and totals
+```
+
+Important: the current rule classes are scaffolds and return
+`EvaluationStatus::NotImplemented`. They do not yet inspect C source and must
+not be represented as implemented, qualified, certified, or compliance-ready.
+Each detector will advance independently through specification, implementation,
+positive/negative tests, traceability, review, and validation.
+
+List the registered structures with:
+
+```bash
+./build/misra-checker --list-rules
+```
 
 ## Verified build commits
 
