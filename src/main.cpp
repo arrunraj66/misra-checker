@@ -9,7 +9,19 @@
 
 namespace {
 
-constexpr std::string_view kVersion = "0.2.0";
+constexpr std::string_view kVersion = "0.3.0";
+
+constexpr std::string_view category_name(const misra::RuleCategory category) {
+  switch (category) {
+    case misra::RuleCategory::Mandatory:
+      return "mandatory";
+    case misra::RuleCategory::Required:
+      return "required";
+    case misra::RuleCategory::Advisory:
+      return "advisory";
+  }
+  return "unknown";
+}
 
 void print_usage() {
   std::cerr
@@ -82,7 +94,9 @@ int main(int argc, char* argv[]) {
       for (const misra::Finding& finding : evaluation.findings) {
         ++finding_count;
         std::cout << finding.location.file << ':' << finding.location.line << ':'
-                  << finding.location.column << ": advisory: MISRA C:2012 Rule "
+                  << finding.location.column << ": "
+                  << category_name(rule->descriptor().category)
+                  << ": MISRA C:2012 Rule "
                   << rule->descriptor().id << " [" << finding.message_key
                   << "]\n";
       }

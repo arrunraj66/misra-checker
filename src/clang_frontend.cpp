@@ -25,21 +25,33 @@ class FactVisitor final : public clang::RecursiveASTVisitor<FactVisitor> {
       : source_manager_(source_manager), context_(context) {}
 
   bool VisitGotoStmt(clang::GotoStmt* statement) {
+    const clang::SourceLocation goto_spelling = statement->getGotoLoc();
+    const clang::SourceLocation label_spelling =
+        statement->getLabel()->getLocation();
     const clang::SourceLocation location =
-        source_manager_.getExpansionLoc(statement->getGotoLoc());
+        source_manager_.getExpansionLoc(goto_spelling);
+    const clang::SourceLocation target_location =
+        source_manager_.getExpansionLoc(label_spelling);
     if (location.isInvalid() ||
+        target_location.isInvalid() ||
         !source_manager_.isWrittenInMainFile(location)) {
       return true;
     }
 
     const clang::PresumedLoc presumed = source_manager_.getPresumedLoc(location);
-    if (presumed.isInvalid()) {
+    const clang::PresumedLoc target_presumed =
+        source_manager_.getPresumedLoc(target_location);
+    if (presumed.isInvalid() || target_presumed.isInvalid()) {
       return true;
     }
 
     context_.control_flow.goto_statements.push_back(
         {{presumed.getFilename(), presumed.getLine(), presumed.getColumn()},
-         statement->getGotoLoc().isMacroID()});
+         {target_presumed.getFilename(), target_presumed.getLine(),
+          target_presumed.getColumn()},
+         source_manager_.isBeforeInTranslationUnit(goto_spelling,
+                                                   label_spelling),
+         goto_spelling.isMacroID(), label_spelling.isMacroID()});
     return true;
   }
 

@@ -2,7 +2,7 @@ cmake_minimum_required(VERSION 3.20)
 
 project(
   misra_checker
-  VERSION 0.1.0
+  VERSION 0.3.0
   DESCRIPTION "MISRA C checker and controlled converter"
   LANGUAGES C CXX
 )
@@ -64,9 +64,18 @@ if(BUILD_TESTING)
   misra_enable_warnings(rule-15-1-test)
   add_test(NAME rule_15_1 COMMAND rule-15-1-test)
 
+  add_executable(rule-15-2-test tests/rule_15_2_test.cpp)
+  target_link_libraries(rule-15-2-test PRIVATE misra-core)
+  misra_enable_warnings(rule-15-2-test)
+  add_test(NAME rule_15_2 COMMAND rule-15-2-test)
+
   set(
-    MISRA_FIXTURE_DIR
+    MISRA_RULE_15_1_FIXTURE_DIR
     "${CMAKE_CURRENT_SOURCE_DIR}/tests/fixtures/rule_15_1"
+  )
+  set(
+    MISRA_RULE_15_2_FIXTURE_DIR
+    "${CMAKE_CURRENT_SOURCE_DIR}/tests/fixtures/rule_15_2"
   )
   configure_file(
     tests/fixtures/compile_commands.json.in
@@ -82,10 +91,30 @@ if(BUILD_TESTING)
     COMMAND
       clang-frontend-test
       "${CMAKE_CURRENT_BINARY_DIR}/tests/compile_commands.json"
-      "${MISRA_FIXTURE_DIR}/compliant.c"
-      "${MISRA_FIXTURE_DIR}/violating.c"
-      "${MISRA_FIXTURE_DIR}/macro_expansion.c"
-      "${MISRA_FIXTURE_DIR}/lexical_boundary.c"
+      "${MISRA_RULE_15_1_FIXTURE_DIR}/compliant.c"
+      "${MISRA_RULE_15_1_FIXTURE_DIR}/violating.c"
+      "${MISRA_RULE_15_1_FIXTURE_DIR}/macro_expansion.c"
+      "${MISRA_RULE_15_1_FIXTURE_DIR}/lexical_boundary.c"
+  )
+
+  add_executable(
+    rule-15-2-integration-test
+    tests/rule_15_2_integration_test.cpp
+  )
+  target_link_libraries(
+    rule-15-2-integration-test
+    PRIVATE misra-core misra-clang
+  )
+  misra_enable_warnings(rule-15-2-integration-test)
+  add_test(
+    NAME rule_15_2_integration
+    COMMAND
+      rule-15-2-integration-test
+      "${CMAKE_CURRENT_BINARY_DIR}/tests/compile_commands.json"
+      "${MISRA_RULE_15_2_FIXTURE_DIR}/forward.c"
+      "${MISRA_RULE_15_2_FIXTURE_DIR}/backward.c"
+      "${MISRA_RULE_15_2_FIXTURE_DIR}/macro_forward.c"
+      "${MISRA_RULE_15_2_FIXTURE_DIR}/macro_backward.c"
   )
 
   add_test(
@@ -93,7 +122,7 @@ if(BUILD_TESTING)
     COMMAND
       misra-checker analyze
       --compile-commands "${CMAKE_CURRENT_BINARY_DIR}/tests/compile_commands.json"
-      --file "${MISRA_FIXTURE_DIR}/compliant.c"
+      --file "${MISRA_RULE_15_1_FIXTURE_DIR}/compliant.c"
   )
   set_tests_properties(
     cli_analyze_compliant
@@ -106,7 +135,19 @@ if(BUILD_TESTING)
       "${CMAKE_COMMAND}"
       "-DCHECKER=$<TARGET_FILE:misra-checker>"
       "-DDATABASE=${CMAKE_CURRENT_BINARY_DIR}/tests/compile_commands.json"
-      "-DSOURCE=${MISRA_FIXTURE_DIR}/violating.c"
+      "-DSOURCE=${MISRA_RULE_15_1_FIXTURE_DIR}/violating.c"
+      "-DEXPECTED_DIAGNOSTIC=misra-c2012-15.1-goto"
+      -P "${CMAKE_CURRENT_SOURCE_DIR}/tests/expect_violation.cmake"
+  )
+
+  add_test(
+    NAME cli_analyze_rule_15_2_violation
+    COMMAND
+      "${CMAKE_COMMAND}"
+      "-DCHECKER=$<TARGET_FILE:misra-checker>"
+      "-DDATABASE=${CMAKE_CURRENT_BINARY_DIR}/tests/compile_commands.json"
+      "-DSOURCE=${MISRA_RULE_15_2_FIXTURE_DIR}/backward.c"
+      "-DEXPECTED_DIAGNOSTIC=misra-c2012-15.2-backward-goto"
       -P "${CMAKE_CURRENT_SOURCE_DIR}/tests/expect_violation.cmake"
   )
 endif()

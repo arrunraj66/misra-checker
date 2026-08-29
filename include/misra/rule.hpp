@@ -55,7 +55,10 @@ struct SourceLocation final {
 
 struct GotoStatementFact final {
   SourceLocation location;
+  SourceLocation target_location;
+  bool target_declared_later;
   bool originates_from_macro;
+  bool target_originates_from_macro;
 };
 
 struct ControlFlowFacts final {

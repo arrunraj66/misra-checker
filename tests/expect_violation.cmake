@@ -17,6 +17,9 @@ if(NOT checker_result EQUAL 1)
   )
 endif()
 
-if(NOT checker_output MATCHES "misra-c2012-15.1-goto")
-  message(FATAL_ERROR "Expected Rule 15.1 diagnostic.\n${checker_output}")
+if(NOT checker_output MATCHES "${EXPECTED_DIAGNOSTIC}")
+  message(
+    FATAL_ERROR
+    "Expected diagnostic ${EXPECTED_DIAGNOSTIC}.\n${checker_output}"
+  )
 endif()

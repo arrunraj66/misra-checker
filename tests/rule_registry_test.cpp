@@ -76,13 +76,16 @@ int main() {
   require(undecidable == 27U, "expected 27 undecidable rules");
   require(single_unit == 104U, "expected 104 single-unit rules");
   require(system == 39U, "expected 39 system rules");
-  require(scaffold == 142U, "expected 142 scaffold rules");
-  require(implemented == 1U, "expected one implemented rule");
+  require(scaffold == 141U, "expected 141 scaffold rules");
+  require(implemented == 2U, "expected two implemented rules");
   require(registry.find("1.1") != nullptr, "Rule 1.1 must be registered");
   require(registry.find("22.6") != nullptr, "Rule 22.6 must be registered");
   require(registry.find("15.1")->descriptor().status ==
               misra::ImplementationStatus::Implemented,
           "Rule 15.1 must be implemented");
+  require(registry.find("15.2")->descriptor().status ==
+              misra::ImplementationStatus::Implemented,
+          "Rule 15.2 must be implemented");
   require(registry.find("99.99") == nullptr, "unknown rule must not resolve");
 
   return EXIT_SUCCESS;
