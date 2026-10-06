@@ -1,0 +1,2 @@
+#define register
+int v;

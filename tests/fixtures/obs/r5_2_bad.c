@@ -1,0 +1,2 @@
+static int abcdefghijklmnopqrstuvwxyz12345a;
+static int abcdefghijklmnopqrstuvwxyz12345b;

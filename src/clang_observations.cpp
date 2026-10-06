@@ -1,4 +1,5 @@
 #include "misra/clang_observations.hpp"
+#include "misra/observation_internal.hpp"
 
 #include <cctype>
 #include <map>
@@ -22,41 +23,6 @@
 
 namespace misra {
 namespace {
-
-// Appends observations written in the main file; everything else is ignored.
-class Recorder final {
- public:
-  Recorder(clang::SourceManager& source_manager, AnalysisContext& context)
-      : source_manager_(source_manager), context_(context) {}
-
-  void add(std::string kind, const clang::SourceLocation spelling,
-           std::string detail = {}) const {
-    if (spelling.isInvalid()) {
-      return;
-    }
-    const clang::SourceLocation location =
-        source_manager_.getExpansionLoc(spelling);
-    if (!source_manager_.isWrittenInMainFile(location)) {
-      return;
-    }
-    const clang::PresumedLoc presumed = source_manager_.getPresumedLoc(location);
-    if (presumed.isInvalid()) {
-      return;
-    }
-    context_.observations.push_back(
-        {std::move(kind),
-         {presumed.getFilename(), presumed.getLine(), presumed.getColumn()},
-         std::move(detail)});
-  }
-
-  [[nodiscard]] clang::SourceManager& source_manager() const {
-    return source_manager_;
-  }
-
- private:
-  clang::SourceManager& source_manager_;
-  AnalysisContext& context_;
-};
 
 class ReturnCounter final : public clang::RecursiveASTVisitor<ReturnCounter> {
  public:
@@ -535,8 +501,11 @@ class ObservationVisitor final
         source->isPointerType() && target->isPointerType()) {
       const clang::QualType from = source->getPointeeType();
       const clang::QualType to = target->getPointeeType();
+      const bool null_constant = cast->getSubExpr()->isNullPointerConstant(
+          ast_, clang::Expr::NPC_ValueDependentIsNull) !=
+          clang::Expr::NPCK_NotNull;
       if ((kind == clang::CK_BitCast) && from->isVoidType() &&
-          !to->isVoidType() && !to->isFunctionType()) {
+          !to->isVoidType() && !to->isFunctionType() && !null_constant) {
         recorder_.add("void-pointer-to-object", location);
       }
       if (explicit_cast) {
@@ -693,15 +662,23 @@ std::unique_ptr<clang::CommentHandler> install_preprocessor_observers(
                                                    context);
   compiler.getPreprocessor().addPPCallbacks(
       std::make_unique<MacroObserver>(handler->recorder()));
+  compiler.getPreprocessor().addPPCallbacks(make_extra_macro_observer(
+      handler->recorder(), compiler.getLangOpts()));
   compiler.getPreprocessor().addCommentHandler(handler.get());
   return handler;
 }
 
 void collect_ast_observations(clang::ASTContext& ast, AnalysisContext& context) {
+  // Invalid ASTs (recovery expressions, null types) are not safe to analyze;
+  // the frontend reports the translation unit as failed anyway.
+  if (ast.getDiagnostics().hasErrorOccurred()) {
+    return;
+  }
   const Recorder recorder(ast.getSourceManager(), context);
   ObservationVisitor visitor(ast, recorder);
   visitor.TraverseDecl(ast.getTranslationUnitDecl());
   visitor.Finish();
+  collect_extra_observations(ast, recorder, context);
 
   // Rule 4.2: raw scan of the main file for trigraph sequences.
   clang::SourceManager& sm = ast.getSourceManager();

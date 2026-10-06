@@ -6,12 +6,16 @@
  * Analysis expansion: Build control-flow and reference graphs, then combine reachability, side-effect, and whole-program usage evidence.
  * Normative notice: Wording, amplification, exceptions, and examples remain in
  * the licensed MISRA specification and require independent approval.
- * Implementation status: Scaffold only; no compliance decision is made.
+ * Detection contract: Report a macro defined in the main file that is never expanded or tested.
+ * Evidence: AST/preprocessor observations recorded by the Clang adapter.
+ * Implementation status: Implemented; independent validation is pending.
  */
 
 #include "misra/c2012/rule_factories.hpp"
 
 #include <memory>
+
+#include "misra/observation_rule.hpp"
 
 namespace misra::c2012 {
 namespace {
@@ -28,15 +32,15 @@ class Rule_02_05 final : public Rule {
         "Unused and unreachable code",
         "Independent checker contract for Rule 2.5 in the Unused and unreachable code family. The exact normative predicate remains linked to the controlled licensed rule specification.",
         "Build control-flow and reference graphs, then combine reachability, side-effect, and whole-program usage evidence.",
-        ImplementationStatus::Scaffold,
+        ImplementationStatus::Implemented,
     };
     return descriptor;
   }
 
   [[nodiscard]] RuleEvaluation evaluate(
       const AnalysisContext& context) const override {
-    (void)context;
-    return {EvaluationStatus::NotImplemented};
+    return findings_from_observations(context, {"unused-macro"},
+                                      "misra-c2012-2.5-unused-macro");
   }
 };
 

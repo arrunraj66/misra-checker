@@ -6,12 +6,16 @@
  * Analysis expansion: Match headers, reserved identifiers, declarations, and calls against the configured controlled-library policy.
  * Normative notice: Wording, amplification, exceptions, and examples remain in
  * the licensed MISRA specification and require independent approval.
- * Implementation status: Scaffold only; no compliance decision is made.
+ * Detection contract: Report an include of the tgmath header.
+ * Evidence: AST/preprocessor observations recorded by the Clang adapter.
+ * Implementation status: Implemented; independent validation is pending.
  */
 
 #include "misra/c2012/rule_factories.hpp"
 
 #include <memory>
+
+#include "misra/observation_rule.hpp"
 
 namespace misra::c2012 {
 namespace {
@@ -28,15 +32,15 @@ class Rule_21_11 final : public Rule {
         "Standard library usage",
         "Independent checker contract for Rule 21.11 in the Standard library usage family. The exact normative predicate remains linked to the controlled licensed rule specification.",
         "Match headers, reserved identifiers, declarations, and calls against the configured controlled-library policy.",
-        ImplementationStatus::Scaffold,
+        ImplementationStatus::Implemented,
     };
     return descriptor;
   }
 
   [[nodiscard]] RuleEvaluation evaluate(
       const AnalysisContext& context) const override {
-    (void)context;
-    return {EvaluationStatus::NotImplemented};
+    return findings_from_observations(context, {"tgmath-include"},
+                                      "misra-c2012-21.11-tgmath-include");
   }
 };
 
