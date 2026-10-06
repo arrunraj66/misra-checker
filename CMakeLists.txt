@@ -11,7 +11,7 @@ set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 
-find_package(LLVM 14 CONFIG REQUIRED)
+find_package(LLVM 18.1 CONFIG REQUIRED)
 find_package(Clang CONFIG REQUIRED HINTS "${LLVM_DIR}/../clang")
 find_program(CLANG_EXECUTABLE NAMES clang-14 clang REQUIRED)
 
@@ -36,7 +36,7 @@ target_include_directories(misra-core PUBLIC include)
 target_link_libraries(misra-core PUBLIC misra-c2012-rules)
 misra_enable_warnings(misra-core)
 
-add_library(misra-clang STATIC src/clang_frontend.cpp)
+add_library(misra-clang STATIC src/clang_frontend.cpp src/clang_observations.cpp)
 target_include_directories(misra-clang PUBLIC include)
 target_include_directories(
   misra-clang
@@ -150,13 +150,12 @@ if(BUILD_TESTING)
   add_test(
     NAME cli_analyze_compliant
     COMMAND
-      misra-checker analyze
-      --compile-commands "${CMAKE_CURRENT_BINARY_DIR}/tests/compile_commands.json"
-      --file "${MISRA_RULE_15_1_FIXTURE_DIR}/compliant.c"
-  )
-  set_tests_properties(
-    cli_analyze_compliant
-    PROPERTIES PASS_REGULAR_EXPRESSION "0 finding\\(s\\)"
+      "${CMAKE_COMMAND}"
+      "-DCHECKER=$<TARGET_FILE:misra-checker>"
+      "-DDATABASE=${CMAKE_CURRENT_BINARY_DIR}/tests/compile_commands.json"
+      "-DSOURCE=${MISRA_RULE_15_1_FIXTURE_DIR}/compliant.c"
+      "-DUNEXPECTED_DIAGNOSTIC=misra-c2012-15\\.1-"
+      -P "${CMAKE_CURRENT_SOURCE_DIR}/tests/expect_no_diagnostic.cmake"
   )
 
   add_test(
@@ -267,5 +266,55 @@ if(BUILD_TESTING)
         "-DCLANG_EXECUTABLE=${CLANG_EXECUTABLE}"
         -P "${CMAKE_CURRENT_SOURCE_DIR}/tests/convert_test.cmake"
     )
+  endforeach()
+
+  # Observation-based rules: every tests/fixtures/obs/rX_Y_{bad,ok}.c file is
+  # compiled via a generated database; *_bad must report the rule, *_ok must not.
+  file(GLOB MISRA_OBS_FIXTURES CONFIGURE_DEPENDS
+       "${CMAKE_CURRENT_SOURCE_DIR}/tests/fixtures/obs/*.c")
+  set(MISRA_OBS_DB "${CMAKE_CURRENT_BINARY_DIR}/tests/obs_compile_commands.json")
+  set(MISRA_OBS_JSON "[\n")
+  set(MISRA_OBS_SEP "")
+  foreach(fixture ${MISRA_OBS_FIXTURES})
+    get_filename_component(fixture_dir "${fixture}" DIRECTORY)
+    string(
+      APPEND MISRA_OBS_JSON
+      "${MISRA_OBS_SEP}  {\"directory\": \"${fixture_dir}\", \"file\": \"${fixture}\", "
+      "\"arguments\": [\"${CLANG_EXECUTABLE}\", \"-std=c99\", \"-c\", \"${fixture}\"]}"
+    )
+    set(MISRA_OBS_SEP ",\n")
+  endforeach()
+  string(APPEND MISRA_OBS_JSON "\n]\n")
+  file(WRITE "${MISRA_OBS_DB}" "${MISRA_OBS_JSON}")
+  foreach(fixture ${MISRA_OBS_FIXTURES})
+    get_filename_component(stem "${fixture}" NAME_WE)
+    string(REGEX MATCH "^r([0-9]+)_([0-9]+)_(bad|ok)$" matched "${stem}")
+    if(NOT matched)
+      continue()
+    endif()
+    set(rule_pattern "misra-c2012-${CMAKE_MATCH_1}\\.${CMAKE_MATCH_2}-")
+    if(CMAKE_MATCH_3 STREQUAL "bad")
+      add_test(
+        NAME obs_${stem}
+        COMMAND
+          "${CMAKE_COMMAND}"
+          "-DCHECKER=$<TARGET_FILE:misra-checker>"
+          "-DDATABASE=${MISRA_OBS_DB}"
+          "-DSOURCE=${fixture}"
+          "-DEXPECTED_DIAGNOSTIC=${rule_pattern}"
+          -P "${CMAKE_CURRENT_SOURCE_DIR}/tests/expect_violation.cmake"
+      )
+    else()
+      add_test(
+        NAME obs_${stem}
+        COMMAND
+          "${CMAKE_COMMAND}"
+          "-DCHECKER=$<TARGET_FILE:misra-checker>"
+          "-DDATABASE=${MISRA_OBS_DB}"
+          "-DSOURCE=${fixture}"
+          "-DUNEXPECTED_DIAGNOSTIC=${rule_pattern}"
+          -P "${CMAKE_CURRENT_SOURCE_DIR}/tests/expect_no_diagnostic.cmake"
+      )
+    endif()
   endforeach()
 endif()

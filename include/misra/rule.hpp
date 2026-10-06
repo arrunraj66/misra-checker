@@ -74,8 +74,17 @@ struct ControlFlowFacts final {
   std::vector<LoopFact> loops;
 };
 
+// A candidate construct recorded by the Clang adapter. `kind` names the
+// construct class; `detail` carries a name where relevant (e.g. a callee).
+struct Observation final {
+  std::string kind;
+  SourceLocation location;
+  std::string detail;
+};
+
 struct AnalysisContext final {
   ControlFlowFacts control_flow;
+  std::vector<Observation> observations;
 };
 
 enum class EvaluationStatus {

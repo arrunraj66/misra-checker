@@ -6,12 +6,16 @@
  * Analysis expansion: Build the control-flow graph and inspect jumps, loop exits, compound statements, and function exit structure.
  * Normative notice: Wording, amplification, exceptions, and examples remain in
  * the licensed MISRA specification and require independent approval.
- * Implementation status: Scaffold only; no compliance decision is made.
+ * Detection contract: Report an if, else, loop or switch body that is not a compound statement (else-if chains are allowed).
+ * Evidence: AST/preprocessor observations recorded by the Clang adapter.
+ * Implementation status: Implemented; independent validation is pending.
  */
 
 #include "misra/c2012/rule_factories.hpp"
 
 #include <memory>
+
+#include "misra/observation_rule.hpp"
 
 namespace misra::c2012 {
 namespace {
@@ -28,15 +32,15 @@ class Rule_15_06 final : public Rule {
         "Control flow",
         "Independent checker contract for Rule 15.6 in the Control flow family. The exact normative predicate remains linked to the controlled licensed rule specification.",
         "Build the control-flow graph and inspect jumps, loop exits, compound statements, and function exit structure.",
-        ImplementationStatus::Scaffold,
+        ImplementationStatus::Implemented,
     };
     return descriptor;
   }
 
   [[nodiscard]] RuleEvaluation evaluate(
       const AnalysisContext& context) const override {
-    (void)context;
-    return {EvaluationStatus::NotImplemented};
+    return findings_from_observations(context, {"body-not-compound"},
+                                      "misra-c2012-15.6-body-not-compound");
   }
 };
 

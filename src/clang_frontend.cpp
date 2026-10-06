@@ -1,5 +1,7 @@
 #include "misra/clang_frontend.hpp"
 
+#include "misra/clang_observations.hpp"
+
 #include <map>
 #include <memory>
 #include <set>
@@ -14,6 +16,7 @@
 #include "clang/Basic/SourceManager.h"
 #include "clang/Frontend/CompilerInstance.h"
 #include "clang/Frontend/FrontendAction.h"
+#include "clang/Lex/Preprocessor.h"
 #include "clang/Tooling/CompilationDatabase.h"
 #include "clang/Tooling/JSONCompilationDatabase.h"
 #include "clang/Tooling/Tooling.h"
@@ -202,16 +205,21 @@ class FactVisitor final : public clang::RecursiveASTVisitor<FactVisitor> {
 
 class FactConsumer final : public clang::ASTConsumer {
  public:
-  FactConsumer(clang::SourceManager& source_manager, AnalysisContext& context)
-      : visitor_(source_manager, context) {}
+  FactConsumer(clang::CompilerInstance& compiler, AnalysisContext& context)
+      : visitor_(compiler.getSourceManager(), context),
+        context_(context),
+        comment_handler_(install_preprocessor_observers(compiler, context)) {}
 
   void HandleTranslationUnit(clang::ASTContext& context) override {
     visitor_.TraverseDecl(context.getTranslationUnitDecl());
     visitor_.Finish();
+    collect_ast_observations(context, context_);
   }
 
  private:
   FactVisitor visitor_;
+  AnalysisContext& context_;
+  std::unique_ptr<clang::CommentHandler> comment_handler_;
 };
 
 class FactAction final : public clang::ASTFrontendAction {
@@ -220,7 +228,7 @@ class FactAction final : public clang::ASTFrontendAction {
 
   std::unique_ptr<clang::ASTConsumer> CreateASTConsumer(
       clang::CompilerInstance& compiler, llvm::StringRef) override {
-    return std::make_unique<FactConsumer>(compiler.getSourceManager(), context_);
+    return std::make_unique<FactConsumer>(compiler, context_);
   }
 
  private:
