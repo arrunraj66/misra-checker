@@ -1,6 +1,8 @@
 #include "misra/clang_frontend.hpp"
 
+#include <map>
 #include <memory>
+#include <set>
 #include <string>
 #include <utility>
 #include <vector>
@@ -23,6 +25,39 @@ class FactVisitor final : public clang::RecursiveASTVisitor<FactVisitor> {
  public:
   FactVisitor(clang::SourceManager& source_manager, AnalysisContext& context)
       : source_manager_(source_manager), context_(context) {}
+
+  bool TraverseCompoundStmt(clang::CompoundStmt* block,
+                            DataRecursionQueue* queue = nullptr) {
+    for (clang::Stmt* child : block->body()) {
+      // Labels may be nested directly (a: b: stmt) or under case labels.
+      clang::Stmt* current = child;
+      while (current != nullptr) {
+        if (auto* label = llvm::dyn_cast<clang::LabelStmt>(current)) {
+          label_block_[label->getDecl()] = block;
+          current = label->getSubStmt();
+        } else if (auto* case_stmt = llvm::dyn_cast<clang::SwitchCase>(current)) {
+          current = case_stmt->getSubStmt();
+        } else {
+          current = nullptr;
+        }
+      }
+    }
+    open_blocks_.push_back(block);
+    const bool result = RecursiveASTVisitor::TraverseCompoundStmt(block, queue);
+    open_blocks_.pop_back();
+    return result;
+  }
+
+  // Resolves block containment once every label has been seen.
+  void Finish() {
+    for (const PendingGoto& pending : pending_) {
+      const auto found = label_block_.find(pending.label);
+      context_.control_flow.goto_statements[pending.index]
+          .target_in_enclosing_block =
+          (found != label_block_.end()) &&
+          (pending.enclosing.count(found->second) != 0U);
+    }
+  }
 
   bool VisitGotoStmt(clang::GotoStmt* statement) {
     const clang::SourceLocation goto_spelling = statement->getGotoLoc();
@@ -51,13 +86,25 @@ class FactVisitor final : public clang::RecursiveASTVisitor<FactVisitor> {
           target_presumed.getColumn()},
          source_manager_.isBeforeInTranslationUnit(goto_spelling,
                                                    label_spelling),
-         goto_spelling.isMacroID(), label_spelling.isMacroID()});
+         goto_spelling.isMacroID(), label_spelling.isMacroID(), false});
+    pending_.push_back({context_.control_flow.goto_statements.size() - 1U,
+                        statement->getLabel(),
+                        {open_blocks_.begin(), open_blocks_.end()}});
     return true;
   }
 
  private:
+  struct PendingGoto final {
+    std::size_t index;
+    const clang::LabelDecl* label;
+    std::set<const clang::CompoundStmt*> enclosing;
+  };
+
   clang::SourceManager& source_manager_;
   AnalysisContext& context_;
+  std::vector<const clang::CompoundStmt*> open_blocks_;
+  std::map<const clang::LabelDecl*, const clang::CompoundStmt*> label_block_;
+  std::vector<PendingGoto> pending_;
 };
 
 class FactConsumer final : public clang::ASTConsumer {
@@ -67,6 +114,7 @@ class FactConsumer final : public clang::ASTConsumer {
 
   void HandleTranslationUnit(clang::ASTContext& context) override {
     visitor_.TraverseDecl(context.getTranslationUnitDecl());
+    visitor_.Finish();
   }
 
  private:

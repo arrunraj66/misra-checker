@@ -59,6 +59,8 @@ struct GotoStatementFact final {
   bool target_declared_later;
   bool originates_from_macro;
   bool target_originates_from_macro;
+  // True when the label is declared in the goto's block or an enclosing one.
+  bool target_in_enclosing_block;
 };
 
 struct ControlFlowFacts final {
