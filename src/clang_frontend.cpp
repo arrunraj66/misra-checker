@@ -26,8 +26,10 @@ class FactVisitor final : public clang::RecursiveASTVisitor<FactVisitor> {
   FactVisitor(clang::SourceManager& source_manager, AnalysisContext& context)
       : source_manager_(source_manager), context_(context) {}
 
+  // The data-recursion queue is deliberately ignored: with a queue the base
+  // class defers children, so the open-block stack would already be popped.
   bool TraverseCompoundStmt(clang::CompoundStmt* block,
-                            DataRecursionQueue* queue = nullptr) {
+                            DataRecursionQueue* = nullptr) {
     for (clang::Stmt* child : block->body()) {
       // Labels may be nested directly (a: b: stmt) or under case labels.
       clang::Stmt* current = child;
@@ -43,7 +45,7 @@ class FactVisitor final : public clang::RecursiveASTVisitor<FactVisitor> {
       }
     }
     open_blocks_.push_back(block);
-    const bool result = RecursiveASTVisitor::TraverseCompoundStmt(block, queue);
+    const bool result = RecursiveASTVisitor::TraverseCompoundStmt(block, nullptr);
     open_blocks_.pop_back();
     return result;
   }
