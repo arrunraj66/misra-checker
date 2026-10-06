@@ -50,10 +50,62 @@ class FactVisitor final : public clang::RecursiveASTVisitor<FactVisitor> {
     return result;
   }
 
+  bool TraverseForStmt(clang::ForStmt* loop, DataRecursionQueue* = nullptr) {
+    begin_breakable(loop->getForLoc(), true);
+    const bool result = RecursiveASTVisitor::TraverseForStmt(loop, nullptr);
+    end_breakable();
+    return result;
+  }
+
+  bool TraverseWhileStmt(clang::WhileStmt* loop, DataRecursionQueue* = nullptr) {
+    begin_breakable(loop->getWhileLoc(), true);
+    const bool result = RecursiveASTVisitor::TraverseWhileStmt(loop, nullptr);
+    end_breakable();
+    return result;
+  }
+
+  bool TraverseDoStmt(clang::DoStmt* loop, DataRecursionQueue* = nullptr) {
+    begin_breakable(loop->getDoLoc(), true);
+    const bool result = RecursiveASTVisitor::TraverseDoStmt(loop, nullptr);
+    end_breakable();
+    return result;
+  }
+
+  bool TraverseSwitchStmt(clang::SwitchStmt* statement,
+                          DataRecursionQueue* = nullptr) {
+    begin_breakable(statement->getSwitchLoc(), false);
+    const bool result = RecursiveASTVisitor::TraverseSwitchStmt(statement, nullptr);
+    end_breakable();
+    return result;
+  }
+
+  bool VisitBreakStmt(clang::BreakStmt*) {
+    if (!breakables_.empty() && breakables_.back().is_loop &&
+        breakables_.back().loop_index >= 0) {
+      ++context_.control_flow
+            .loops[static_cast<std::size_t>(breakables_.back().loop_index)]
+            .terminating_jumps;
+    }
+    return true;
+  }
+
+  bool VisitLabelStmt(clang::LabelStmt* label) {
+    label_loops_[label->getDecl()] = open_loops();
+    return true;
+  }
+
   // Resolves block containment once every label has been seen.
   void Finish() {
     for (const PendingGoto& pending : pending_) {
       const auto found = label_block_.find(pending.label);
+      const auto label_loops = label_loops_.find(pending.label);
+      for (const int loop : pending.loops) {
+        if ((label_loops == label_loops_.end()) ||
+            (label_loops->second.count(loop) == 0U)) {
+          ++context_.control_flow.loops[static_cast<std::size_t>(loop)]
+                .terminating_jumps;
+        }
+      }
       context_.control_flow.goto_statements[pending.index]
           .target_in_enclosing_block =
           (found != label_block_.end()) &&
@@ -91,7 +143,8 @@ class FactVisitor final : public clang::RecursiveASTVisitor<FactVisitor> {
          goto_spelling.isMacroID(), label_spelling.isMacroID(), false});
     pending_.push_back({context_.control_flow.goto_statements.size() - 1U,
                         statement->getLabel(),
-                        {open_blocks_.begin(), open_blocks_.end()}});
+                        {open_blocks_.begin(), open_blocks_.end()},
+                        open_loops()});
     return true;
   }
 
@@ -100,13 +153,51 @@ class FactVisitor final : public clang::RecursiveASTVisitor<FactVisitor> {
     std::size_t index;
     const clang::LabelDecl* label;
     std::set<const clang::CompoundStmt*> enclosing;
+    std::set<int> loops;
   };
+
+  struct Breakable final {
+    bool is_loop;
+    int loop_index;  // -1 when the loop is not written in the main file
+  };
+
+  void begin_breakable(const clang::SourceLocation spelling, const bool is_loop) {
+    int index = -1;
+    if (is_loop) {
+      const clang::SourceLocation location =
+          source_manager_.getExpansionLoc(spelling);
+      const clang::PresumedLoc presumed =
+          location.isValid() ? source_manager_.getPresumedLoc(location)
+                             : clang::PresumedLoc();
+      if (presumed.isValid() && source_manager_.isWrittenInMainFile(location)) {
+        context_.control_flow.loops.push_back(
+            {{presumed.getFilename(), presumed.getLine(), presumed.getColumn()},
+             0U});
+        index = static_cast<int>(context_.control_flow.loops.size()) - 1;
+      }
+    }
+    breakables_.push_back({is_loop, index});
+  }
+
+  void end_breakable() { breakables_.pop_back(); }
+
+  std::set<int> open_loops() const {
+    std::set<int> loops;
+    for (const Breakable& breakable : breakables_) {
+      if (breakable.is_loop && (breakable.loop_index >= 0)) {
+        loops.insert(breakable.loop_index);
+      }
+    }
+    return loops;
+  }
 
   clang::SourceManager& source_manager_;
   AnalysisContext& context_;
   std::vector<const clang::CompoundStmt*> open_blocks_;
   std::map<const clang::LabelDecl*, const clang::CompoundStmt*> label_block_;
   std::vector<PendingGoto> pending_;
+  std::vector<Breakable> breakables_;
+  std::map<const clang::LabelDecl*, std::set<int>> label_loops_;
 };
 
 class FactConsumer final : public clang::ASTConsumer {

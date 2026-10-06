@@ -63,8 +63,15 @@ struct GotoStatementFact final {
   bool target_in_enclosing_block;
 };
 
+struct LoopFact final {
+  SourceLocation location;
+  // break statements bound to this loop plus gotos that leave it.
+  unsigned int terminating_jumps;
+};
+
 struct ControlFlowFacts final {
   std::vector<GotoStatementFact> goto_statements;
+  std::vector<LoopFact> loops;
 };
 
 struct AnalysisContext final {

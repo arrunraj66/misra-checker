@@ -86,6 +86,11 @@ if(BUILD_TESTING)
   misra_enable_warnings(rule-15-3-test)
   add_test(NAME rule_15_3 COMMAND rule-15-3-test)
 
+  add_executable(rule-15-4-test tests/rule_15_4_test.cpp)
+  target_link_libraries(rule-15-4-test PRIVATE misra-core)
+  misra_enable_warnings(rule-15-4-test)
+  add_test(NAME rule_15_4 COMMAND rule-15-4-test)
+
   set(
     MISRA_RULE_15_1_FIXTURE_DIR
     "${CMAKE_CURRENT_SOURCE_DIR}/tests/fixtures/rule_15_1"
@@ -97,6 +102,10 @@ if(BUILD_TESTING)
   set(
     MISRA_RULE_15_3_FIXTURE_DIR
     "${CMAKE_CURRENT_SOURCE_DIR}/tests/fixtures/rule_15_3"
+  )
+  set(
+    MISRA_RULE_15_4_FIXTURE_DIR
+    "${CMAKE_CURRENT_SOURCE_DIR}/tests/fixtures/rule_15_4"
   )
   configure_file(
     tests/fixtures/compile_commands.json.in
@@ -191,6 +200,29 @@ if(BUILD_TESTING)
         "-DDATABASE=${CMAKE_CURRENT_BINARY_DIR}/tests/compile_commands.json"
         "-DSOURCE=${MISRA_RULE_15_3_FIXTURE_DIR}/${fixture}.c"
         "-DEXPECTED_DIAGNOSTIC=misra-c2012-15.3-label-not-in-enclosing-block"
+        -P "${CMAKE_CURRENT_SOURCE_DIR}/tests/expect_violation.cmake"
+    )
+  endforeach()
+
+  add_test(
+    NAME cli_analyze_rule_15_4_compliant
+    COMMAND
+      "${CMAKE_COMMAND}"
+      "-DCHECKER=$<TARGET_FILE:misra-checker>"
+      "-DDATABASE=${CMAKE_CURRENT_BINARY_DIR}/tests/compile_commands.json"
+      "-DSOURCE=${MISRA_RULE_15_4_FIXTURE_DIR}/compliant.c"
+      "-DUNEXPECTED_DIAGNOSTIC=misra-c2012-15.4"
+      -P "${CMAKE_CURRENT_SOURCE_DIR}/tests/expect_no_diagnostic.cmake"
+  )
+  foreach(fixture two_breaks break_and_goto)
+    add_test(
+      NAME cli_analyze_rule_15_4_${fixture}
+      COMMAND
+        "${CMAKE_COMMAND}"
+        "-DCHECKER=$<TARGET_FILE:misra-checker>"
+        "-DDATABASE=${CMAKE_CURRENT_BINARY_DIR}/tests/compile_commands.json"
+        "-DSOURCE=${MISRA_RULE_15_4_FIXTURE_DIR}/${fixture}.c"
+        "-DEXPECTED_DIAGNOSTIC=misra-c2012-15.4-multiple-loop-exits"
         -P "${CMAKE_CURRENT_SOURCE_DIR}/tests/expect_violation.cmake"
     )
   endforeach()

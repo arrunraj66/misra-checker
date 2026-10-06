@@ -75,7 +75,7 @@ std::map<std::string, int> count_by_key(const std::vector<std::string>& entries)
 const FixClass* select_fix_class(const std::vector<std::string>& entries) {
   for (const FixClass& fix : fix_classes()) {
     for (const std::string& entry : entries) {
-      if (key_of(entry).rfind(fix.message_key_prefix, 0) == 0) {
+      if (fix.matches(key_of(entry))) {
         return &fix;
       }
     }
@@ -164,7 +164,8 @@ ConvertReport finish(const ConvertOptions& options, ConvertReport report,
 
 const std::vector<FixClass>& fix_classes() {
   static const std::vector<FixClass> classes{
-      {"goto-elimination", "misra-c2012-15.",
+      {"goto-elimination",
+       {"misra-c2012-15.1-", "misra-c2012-15.2-", "misra-c2012-15.3-"},
        "Replace goto-based control flow with structured constructs "
        "(if/else, loops, early return, or a single exit variable) with "
        "identical behavior.",
@@ -273,7 +274,7 @@ ConvertReport convert_file(const ConvertOptions& options) {
   }
   for (const auto& [key, count] : counts_before) {
     (void)count;
-    if ((key.rfind(fix->message_key_prefix, 0) == 0) && (counts_after.count(key) != 0U)) {
+    if (fix->matches(key) && (counts_after.count(key) != 0U)) {
       report.outcome = ConvertOutcome::Rejected;
       report.detail = "gate failed: targeted finding remains: " + key;
       return finish(options, report, original, proposed, fix);

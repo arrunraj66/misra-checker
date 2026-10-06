@@ -10,9 +10,18 @@ namespace misra {
 // (suggestion-only) until independent validation sets auto_apply_approved.
 struct FixClass final {
   const char* id;
-  const char* message_key_prefix;
+  std::vector<std::string> message_key_prefixes;
   const char* strategy;  // paraphrased guidance sent to the AI provider
   bool auto_apply_approved;
+
+  [[nodiscard]] bool matches(const std::string& message_key) const {
+    for (const std::string& prefix : message_key_prefixes) {
+      if (message_key.rfind(prefix, 0) == 0) {
+        return true;
+      }
+    }
+    return false;
+  }
 };
 
 [[nodiscard]] const std::vector<FixClass>& fix_classes();
