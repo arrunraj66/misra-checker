@@ -2,7 +2,7 @@ cmake_minimum_required(VERSION 3.20)
 
 project(
   misra_checker
-  VERSION 0.3.0
+  VERSION 0.4.0
   DESCRIPTION "MISRA C checker and controlled converter"
   LANGUAGES C CXX
 )
@@ -45,8 +45,20 @@ target_include_directories(
 target_link_libraries(misra-clang PUBLIC clang-cpp LLVM)
 misra_enable_warnings(misra-clang)
 
+set(
+  MISRA_LICENSE_HMAC_KEY "development-key-do-not-ship"
+  CACHE STRING "HMAC key used to verify license files (set per release)"
+)
+add_library(misra-converter STATIC src/license.cpp src/converter.cpp)
+target_include_directories(misra-converter PUBLIC include)
+target_compile_definitions(
+  misra-converter PRIVATE MISRA_LICENSE_HMAC_KEY="${MISRA_LICENSE_HMAC_KEY}"
+)
+target_link_libraries(misra-converter PUBLIC misra-core misra-clang)
+misra_enable_warnings(misra-converter)
+
 add_executable(misra-checker src/main.cpp)
-target_link_libraries(misra-checker PRIVATE misra-core misra-clang)
+target_link_libraries(misra-checker PRIVATE misra-core misra-clang misra-converter)
 misra_enable_warnings(misra-checker)
 
 include(CTest)
@@ -150,4 +162,46 @@ if(BUILD_TESTING)
       "-DEXPECTED_DIAGNOSTIC=misra-c2012-15.2-backward-goto"
       -P "${CMAKE_CURRENT_SOURCE_DIR}/tests/expect_violation.cmake"
   )
+
+  add_executable(license-test tests/license_test.cpp)
+  target_link_libraries(license-test PRIVATE misra-converter)
+  misra_enable_warnings(license-test)
+  add_test(NAME license COMMAND license-test)
+
+  add_executable(converter-test tests/converter_test.cpp)
+  target_link_libraries(converter-test PRIVATE misra-converter)
+  misra_enable_warnings(converter-test)
+  add_test(NAME converter COMMAND converter-test)
+
+  # Test license signed with the build's HMAC key.
+  find_package(Python3 COMPONENTS Interpreter REQUIRED)
+  set(MISRA_TEST_LICENSE "${CMAKE_CURRENT_BINARY_DIR}/tests/test.lic")
+  file(
+    WRITE "${CMAKE_CURRENT_BINARY_DIR}/tests/test.key"
+    "${MISRA_LICENSE_HMAC_KEY}"
+  )
+  execute_process(
+    COMMAND
+      "${Python3_EXECUTABLE}" -I
+      "${CMAKE_CURRENT_SOURCE_DIR}/scripts/issue_license.py"
+      --customer ctest --expires 2999-12-31 --features convert
+      --key-file "${CMAKE_CURRENT_BINARY_DIR}/tests/test.key"
+    OUTPUT_FILE "${MISRA_TEST_LICENSE}"
+    COMMAND_ERROR_IS_FATAL ANY
+  )
+
+  foreach(mode good bad broken apply nolicense)
+    add_test(
+      NAME convert_${mode}
+      COMMAND
+        "${CMAKE_COMMAND}"
+        "-DCHECKER=$<TARGET_FILE:misra-checker>"
+        "-DFIXTURES=${CMAKE_CURRENT_SOURCE_DIR}/tests/fixtures/convert"
+        "-DWORK=${CMAKE_CURRENT_BINARY_DIR}/convert_work_${mode}"
+        "-DMODE=${mode}"
+        "-DLICENSE=${MISRA_TEST_LICENSE}"
+        "-DCLANG_EXECUTABLE=${CLANG_EXECUTABLE}"
+        -P "${CMAKE_CURRENT_SOURCE_DIR}/tests/convert_test.cmake"
+    )
+  endforeach()
 endif()

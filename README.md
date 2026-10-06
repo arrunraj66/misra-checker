@@ -105,3 +105,10 @@ The wrapper:
 6. creates a local Git commit only when staged changes exist.
 
 It intentionally does not push automatically. Pushing should remain an explicit action, and protected branches should require CI.
+
+## Controlled AI converter
+
+`misra-checker convert` uses a pluggable AI provider to propose fixes, gated by
+re-compilation, re-analysis, and optional test commands, behind a signed
+licence. See [docs/converter.md](docs/converter.md). The software is
+proprietary; see [LICENSE](LICENSE).

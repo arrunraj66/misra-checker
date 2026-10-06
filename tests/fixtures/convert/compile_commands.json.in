@@ -1,0 +1,7 @@
+[
+  {
+    "directory": "@MISRA_CONVERT_WORK_DIR@",
+    "file": "@MISRA_CONVERT_WORK_DIR@/work.c",
+    "arguments": ["@CLANG_EXECUTABLE@", "-std=c99", "-c", "@MISRA_CONVERT_WORK_DIR@/work.c"]
+  }
+]

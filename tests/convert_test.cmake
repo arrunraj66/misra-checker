@@ -1,0 +1,70 @@
+# Usage: cmake -DCHECKER= -DFIXTURES= -DWORK= -DMODE=<good|bad|broken|apply|nolicense>
+#              -DLICENSE= -P convert_test.cmake
+file(REMOVE_RECURSE "${WORK}")
+file(MAKE_DIRECTORY "${WORK}")
+file(COPY_FILE "${FIXTURES}/violating.c" "${WORK}/work.c")
+set(MISRA_CONVERT_WORK_DIR "${WORK}")
+configure_file("${FIXTURES}/compile_commands.json.in" "${WORK}/compile_commands.json" @ONLY)
+
+set(reply "${FIXTURES}/good_fix.c")
+if(MODE STREQUAL "bad")
+  set(reply "${FIXTURES}/bad_fix.c")
+elseif(MODE STREQUAL "broken")
+  set(reply "${FIXTURES}/broken_fix.c")
+endif()
+set(license "${LICENSE}")
+if(MODE STREQUAL "nolicense")
+  set(license "${WORK}/missing.lic")
+endif()
+
+set(extra "")
+if(MODE STREQUAL "apply")
+  set(extra "--apply")
+endif()
+
+execute_process(
+  COMMAND "${CHECKER}" convert
+    --compile-commands "${WORK}/compile_commands.json"
+    --file "${WORK}/work.c"
+    --provider-cmd "cat ${reply}"
+    --output-dir "${WORK}/out"
+    --license "${license}"
+    ${extra}
+  RESULT_VARIABLE result OUTPUT_VARIABLE out ERROR_VARIABLE err)
+message(STATUS "exit=${result}\n${out}${err}")
+
+file(READ "${WORK}/work.c" after)
+file(READ "${FIXTURES}/violating.c" original)
+if(NOT after STREQUAL original)
+  message(FATAL_ERROR "source must be unchanged in mode ${MODE}")
+endif()
+
+if(MODE STREQUAL "good")
+  if(NOT result EQUAL 0 OR NOT out MATCHES "^proposed")
+    message(FATAL_ERROR "expected proposal")
+  endif()
+  file(READ "${WORK}/out/work.c.patch" patch)
+  if(NOT patch MATCHES "-[ ]+goto selected;")
+    message(FATAL_ERROR "patch should remove goto:\n${patch}")
+  endif()
+  file(READ "${WORK}/out/audit.jsonl" audit)
+  if(NOT audit MATCHES "\"outcome\":\"proposed\"")
+    message(FATAL_ERROR "audit record missing")
+  endif()
+elseif(MODE STREQUAL "bad")
+  if(result EQUAL 0 OR NOT out MATCHES "targeted finding remains")
+    message(FATAL_ERROR "expected rejection for remaining goto")
+  endif()
+elseif(MODE STREQUAL "broken")
+  if(result EQUAL 0 OR NOT out MATCHES "does not compile")
+    message(FATAL_ERROR "expected compile gate rejection")
+  endif()
+elseif(MODE STREQUAL "apply")
+  if(result EQUAL 0 OR NOT out MATCHES "not approved")
+    message(FATAL_ERROR "apply must be refused for unapproved fix class")
+  endif()
+elseif(MODE STREQUAL "nolicense")
+  if(NOT result EQUAL 77)
+    message(FATAL_ERROR "expected exit 77 without license")
+  endif()
+endif()

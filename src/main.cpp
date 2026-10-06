@@ -4,12 +4,16 @@
 #include <string_view>
 #include <vector>
 
+#include <cstdlib>
+
 #include "misra/clang_frontend.hpp"
+#include "misra/converter.hpp"
+#include "misra/license.hpp"
 #include "misra/rule_registry.hpp"
 
 namespace {
 
-constexpr std::string_view kVersion = "0.3.0";
+constexpr std::string_view kVersion = "0.4.0";
 
 constexpr std::string_view category_name(const misra::RuleCategory category) {
   switch (category) {
@@ -29,7 +33,10 @@ void print_usage() {
       << "  misra-checker --version\n"
       << "  misra-checker --list-rules\n"
       << "  misra-checker analyze --compile-commands <file-or-directory> "
-         "[--file <source>]...\n";
+         "[--file <source>]...\n"
+      << "  misra-checker convert --compile-commands <file> --file <source>\n"
+         "      --provider-cmd <shell-command> [--verify-cmd <shell-command>]\n"
+         "      [--output-dir <dir>] [--license <file>] [--apply]\n";
 }
 
 }  // namespace
@@ -106,6 +113,67 @@ int main(int argc, char* argv[]) {
               << " translation unit(s); " << completed_rules
               << " implemented rule(s); " << finding_count << " finding(s).\n";
     return finding_count == 0U ? 0 : 1;
+  }
+
+  if ((argc >= 2) && (std::string_view{argv[1]} == "convert")) {
+    misra::ConvertOptions options;
+    options.output_dir = "misra-convert-out";
+    std::string license_path;
+    if (const char* env = std::getenv("MISRA_LICENSE_FILE")) {
+      license_path = env;
+    }
+    for (int index = 2; index < argc; ++index) {
+      const std::string_view argument{argv[index]};
+      const bool has_value = (index + 1) < argc;
+      if ((argument == "--compile-commands") && has_value) {
+        options.compilation_database = argv[++index];
+      } else if ((argument == "--file") && has_value) {
+        options.source_file = argv[++index];
+      } else if ((argument == "--provider-cmd") && has_value) {
+        options.provider_command = argv[++index];
+      } else if ((argument == "--verify-cmd") && has_value) {
+        options.verify_command = argv[++index];
+      } else if ((argument == "--output-dir") && has_value) {
+        options.output_dir = argv[++index];
+      } else if ((argument == "--license") && has_value) {
+        license_path = argv[++index];
+      } else if (argument == "--apply") {
+        options.apply = true;
+      } else {
+        print_usage();
+        return 64;
+      }
+    }
+    if (options.compilation_database.empty() || options.source_file.empty() ||
+        options.provider_command.empty()) {
+      print_usage();
+      return 64;
+    }
+    if (std::filesystem::is_directory(options.compilation_database)) {
+      options.compilation_database += "/compile_commands.json";
+    }
+
+    const misra::LicenseResult license =
+        misra::load_license_file(license_path, misra::today_iso_date());
+    if (!license.valid || !misra::has_feature(license.info, "convert")) {
+      std::cerr << "misra-checker: converter requires a valid license with the "
+                   "'convert' feature ("
+                << (license.valid ? "feature not granted" : license.error_message)
+                << ")\n";
+      return 77;
+    }
+
+    const misra::ConvertReport report = misra::convert_file(options);
+    std::cout << misra::outcome_name(report.outcome) << ": " << report.detail
+              << '\n';
+    if (!report.patch_path.empty()) {
+      std::cout << "patch: " << report.patch_path.string() << '\n';
+    }
+    return (report.outcome == misra::ConvertOutcome::Proposed ||
+            report.outcome == misra::ConvertOutcome::Applied ||
+            report.outcome == misra::ConvertOutcome::NothingToConvert)
+               ? 0
+               : 1;
   }
 
   const misra::RuleRegistry registry;
