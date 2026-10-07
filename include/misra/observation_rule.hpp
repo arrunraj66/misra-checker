@@ -13,7 +13,8 @@ namespace misra {
     const AnalysisContext& context,
     std::initializer_list<std::string_view> kinds,
     const std::string_view message_key,
-    std::initializer_list<std::string_view> details = {}) {
+    std::initializer_list<std::string_view> details = {},
+    std::initializer_list<std::string_view> possible_kinds = {}) {
   RuleEvaluation evaluation{EvaluationStatus::Complete, {}};
   for (const Observation& observation : context.observations) {
     bool kind_matches = false;
@@ -28,8 +29,13 @@ namespace misra {
       detail_matches = detail_matches || (observation.detail == detail);
     }
     if (detail_matches) {
+      bool possible = false;
+      for (const std::string_view kind : possible_kinds) {
+        possible = possible || (observation.kind == kind);
+      }
       evaluation.findings.push_back(
-          {message_key, observation.location, FindingCertainty::Definite});
+          {message_key, observation.location,
+           possible ? FindingCertainty::Possible : FindingCertainty::Definite});
     }
   }
   return evaluation;

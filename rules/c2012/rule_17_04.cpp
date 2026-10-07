@@ -6,7 +6,7 @@
  * Analysis expansion: Resolve calls and prototypes, construct a call graph, inspect recursion, parameters, arrays, and return-value use.
  * Normative notice: Wording, amplification, exceptions, and examples remain in
  * the licensed MISRA specification and require independent approval.
- * Detection contract: Report a return without a value in a non-void function, or a non-void function body that is not structurally guaranteed to end in a return.
+ * Detection contract: Report a return without a value in a non-void function, or a non-void function with a reachable control-flow path that leaves the body without returning a value.
  * Evidence: AST/preprocessor observations recorded by the Clang adapter.
  * Implementation status: Implemented; independent validation is pending.
  */

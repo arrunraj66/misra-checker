@@ -2,7 +2,7 @@
 
 This catalog records the engineering structures present in the checker. It deliberately does not reproduce the copyrighted normative rule wording. The licensed MISRA specification is the controlled source for rule predicates, amplification, exceptions, and examples.
 
-Current milestone: 33 rule classes are **scaffolds**. 110 rules have implemented Clang-backed syntactic detectors, but independent validation remains pending. A scaffold provides identity, metadata, an analysis plan, a factory, and a non-compliant-safe `NotImplemented` result. It is not a working compliance check.
+Current milestone: 31 rule classes are **scaffolds**. 112 rules have implemented Clang-backed syntactic detectors, but independent validation remains pending. A scaffold provides identity, metadata, an analysis plan, a factory, and a non-compliant-safe `NotImplemented` result. It is not a working compliance check.
 
 | Rule | Category | Decidability | Scope | C90 | C99 | Topic | Status |
 |---|---|---|---|---:|---:|---|---|
@@ -49,7 +49,7 @@ Current milestone: 33 rule classes are **scaffolds**. 110 rules have implemented
 | 8.12 | Required | Decidable | Single Translation Unit | Yes | Yes | Declarations and definitions | Implemented; independent validation pending |
 | 8.13 | Advisory | Undecidable | System | Yes | Yes | Declarations and definitions | Scaffold |
 | 8.14 | Required | Decidable | Single Translation Unit | No | Yes | Declarations and definitions | Implemented; independent validation pending |
-| 9.1 | Mandatory | Undecidable | System | Yes | Yes | Initialization | Scaffold |
+| 9.1 | Mandatory | Undecidable | System | Yes | Yes | Initialization | Implemented; independent validation pending |
 | 9.2 | Required | Decidable | Single Translation Unit | Yes | Yes | Initialization | Scaffold |
 | 9.3 | Required | Decidable | Single Translation Unit | Yes | Yes | Initialization | Implemented; independent validation pending |
 | 9.4 | Required | Decidable | Single Translation Unit | No | Yes | Initialization | Implemented; independent validation pending |
@@ -82,7 +82,7 @@ Current milestone: 33 rule classes are **scaffolds**. 110 rules have implemented
 | 13.5 | Required | Undecidable | System | Yes | Yes | Side effects and evaluation order | Implemented; independent validation pending |
 | 13.6 | Mandatory | Decidable | Single Translation Unit | Yes | Yes | Side effects and evaluation order | Implemented; independent validation pending |
 | 14.1 | Required | Undecidable | System | Yes | Yes | Control statement expressions | Implemented; independent validation pending |
-| 14.2 | Required | Undecidable | System | Yes | Yes | Control statement expressions | Scaffold |
+| 14.2 | Required | Undecidable | System | Yes | Yes | Control statement expressions | Implemented; independent validation pending |
 | 14.3 | Required | Undecidable | System | Yes | Yes | Control statement expressions | Implemented; independent validation pending |
 | 14.4 | Required | Decidable | Single Translation Unit | Yes | Yes | Control statement expressions | Implemented; independent validation pending |
 | 15.1 | Advisory | Decidable | Single Translation Unit | Yes | Yes | Control flow | Implemented; independent validation pending |

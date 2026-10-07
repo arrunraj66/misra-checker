@@ -56,6 +56,9 @@ class Recorder final {
 [[nodiscard]] std::unique_ptr<clang::PPCallbacks> make_extra_macro_observer(
     const Recorder& recorder, const clang::LangOptions& language);
 
+// Control-flow-graph based observations (Rules 2.1, 2.2, 9.1, 17.4).
+void collect_cfg_observations(clang::ASTContext& ast, const Recorder& recorder);
+
 // Extra AST, text and cross-reference observations.
 void collect_extra_observations(clang::ASTContext& ast, const Recorder& recorder,
                                 AnalysisContext& context);

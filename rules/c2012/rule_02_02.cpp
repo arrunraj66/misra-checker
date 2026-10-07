@@ -6,7 +6,7 @@
  * Analysis expansion: Build control-flow and reference graphs, then combine reachability, side-effect, and whole-program usage evidence.
  * Normative notice: Wording, amplification, exceptions, and examples remain in
  * the licensed MISRA specification and require independent approval.
- * Detection contract: Report an expression statement with no side effects (a cast to void is accepted).
+ * Detection contract: Report an expression statement with no side effects (a cast to void is accepted) and an assignment to a local object whose value is never read (liveness analysis).
  * Evidence: AST/preprocessor observations recorded by the Clang adapter.
  * Implementation status: Implemented; independent validation is pending.
  */
@@ -39,8 +39,8 @@ class Rule_02_02 final : public Rule {
 
   [[nodiscard]] RuleEvaluation evaluate(
       const AnalysisContext& context) const override {
-    return findings_from_observations(context, {"no-effect-statement"},
-                                      "misra-c2012-2.2-no-effect-statement");
+    return findings_from_observations(context, {"no-effect-statement", "dead-store"},
+                                      "misra-c2012-2.2-dead-code");
   }
 };
 

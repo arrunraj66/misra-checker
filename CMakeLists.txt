@@ -39,7 +39,7 @@ misra_enable_warnings(misra-core)
 add_library(
   misra-clang STATIC
   src/clang_frontend.cpp src/clang_observations.cpp
-  src/clang_observations_extra.cpp
+  src/clang_observations_extra.cpp src/clang_observations_cfg.cpp
 )
 target_include_directories(misra-clang PUBLIC include)
 target_include_directories(
@@ -292,12 +292,12 @@ if(BUILD_TESTING)
   file(WRITE "${MISRA_OBS_DB}" "${MISRA_OBS_JSON}")
   foreach(fixture ${MISRA_OBS_FIXTURES})
     get_filename_component(stem "${fixture}" NAME_WE)
-    string(REGEX MATCH "^r([0-9]+)_([0-9]+)_(bad|ok)$" matched "${stem}")
+    string(REGEX MATCH "^r([0-9]+)_([0-9]+)(_[a-z0-9]+)?_(bad|ok)$" matched "${stem}")
     if(NOT matched)
       continue()
     endif()
     set(rule_pattern "misra-c2012-${CMAKE_MATCH_1}\\.${CMAKE_MATCH_2}-")
-    if(CMAKE_MATCH_3 STREQUAL "bad")
+    if(CMAKE_MATCH_4 STREQUAL "bad")
       add_test(
         NAME obs_${stem}
         COMMAND

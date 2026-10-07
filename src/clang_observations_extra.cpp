@@ -152,12 +152,6 @@ class ExtraVisitor final : public clang::RecursiveASTVisitor<ExtraVisitor> {
         }
       }
     }
-    if (function->isThisDeclarationADefinition() &&
-        !function->getReturnType()->isVoidType() && !function->isMain() &&
-        !function->isNoReturn() && (function->getBody() != nullptr) &&
-        !ends_with_return(function->getBody())) {
-      recorder_.add("missing-return-value", location);
-    }
     return true;
   }
 
@@ -318,20 +312,7 @@ class ExtraVisitor final : public clang::RecursiveASTVisitor<ExtraVisitor> {
   // --- statements -----------------------------------------------------------
 
   bool VisitCompoundStmt(clang::CompoundStmt* block) {
-    const clang::Stmt* previous = nullptr;
-    bool reported = false;
     for (const clang::Stmt* child : block->body()) {
-      if (!reported && (previous != nullptr) &&
-          (llvm::isa<clang::ReturnStmt>(previous) ||
-           llvm::isa<clang::BreakStmt>(previous) ||
-           llvm::isa<clang::ContinueStmt>(previous) ||
-           llvm::isa<clang::GotoStmt>(previous)) &&
-          !llvm::isa<clang::LabelStmt>(child) &&
-          !llvm::isa<clang::SwitchCase>(child) &&
-          !llvm::isa<clang::NullStmt>(child)) {
-        recorder_.add("unreachable-code", child->getBeginLoc());
-        reported = true;
-      }
       if (const auto* expression = llvm::dyn_cast<clang::Expr>(child)) {
         const auto* cast = llvm::dyn_cast<clang::CStyleCastExpr>(expression);
         const bool void_cast = (cast != nullptr) && cast->getType()->isVoidType();
@@ -339,7 +320,6 @@ class ExtraVisitor final : public clang::RecursiveASTVisitor<ExtraVisitor> {
           recorder_.add("no-effect-statement", expression->getBeginLoc());
         }
       }
-      previous = child;
     }
     return true;
   }
@@ -360,6 +340,7 @@ class ExtraVisitor final : public clang::RecursiveASTVisitor<ExtraVisitor> {
   }
 
   bool VisitForStmt(clang::ForStmt* loop) {
+    check_well_formed(loop);
     if (loop->getCond() != nullptr) {
       check_condition(loop->getCond(), loop->getForLoc(), false);
     }
@@ -979,75 +960,94 @@ class ExtraVisitor final : public clang::RecursiveASTVisitor<ExtraVisitor> {
     }
   }
 
-  [[nodiscard]] bool ends_with_return(const clang::Stmt* statement) const {
-    if (statement == nullptr) {
-      return false;
-    }
-    if (llvm::isa<clang::ReturnStmt>(statement) || llvm::isa<clang::GotoStmt>(statement)) {
+  // Objects modified or address-taken by an expression subtree.
+  struct ModifiedFinder final : clang::RecursiveASTVisitor<ModifiedFinder> {
+    bool VisitUnaryOperator(clang::UnaryOperator* op) {
+      if (op->isIncrementDecrementOp() || (op->getOpcode() == clang::UO_AddrOf)) {
+        note(op->getSubExpr());
+      }
       return true;
     }
-    if (const auto* block = llvm::dyn_cast<clang::CompoundStmt>(statement)) {
-      return !block->body_empty() && ends_with_return(block->body_back());
-    }
-    if (const auto* branch = llvm::dyn_cast<clang::IfStmt>(statement)) {
-      return (branch->getElse() != nullptr) && ends_with_return(branch->getThen()) &&
-             ends_with_return(branch->getElse());
-    }
-    if (const auto* label = llvm::dyn_cast<clang::LabelStmt>(statement)) {
-      return ends_with_return(label->getSubStmt());
-    }
-    if (const auto* loop = llvm::dyn_cast<clang::WhileStmt>(statement)) {
-      bool value = false;
-      return loop->getCond()->EvaluateAsBooleanCondition(value, ast_) && value;
-    }
-    if (const auto* loop = llvm::dyn_cast<clang::DoStmt>(statement)) {
-      bool value = false;
-      return loop->getCond()->EvaluateAsBooleanCondition(value, ast_) && value;
-    }
-    if (const auto* loop = llvm::dyn_cast<clang::ForStmt>(statement)) {
-      bool value = false;
-      return (loop->getCond() == nullptr) ||
-             (loop->getCond()->EvaluateAsBooleanCondition(value, ast_) && value);
-    }
-    if (const auto* call = llvm::dyn_cast<clang::CallExpr>(statement)) {
-      const clang::FunctionDecl* callee = call->getDirectCallee();
-      return (callee != nullptr) && callee->isNoReturn();
-    }
-    if (const auto* selection = llvm::dyn_cast<clang::SwitchStmt>(statement)) {
-      const auto* body = llvm::dyn_cast_or_null<clang::CompoundStmt>(selection->getBody());
-      if (body == nullptr) {
-        return false;
+    bool VisitBinaryOperator(clang::BinaryOperator* op) {
+      if (op->isAssignmentOp()) {
+        note(op->getLHS());
       }
-      bool has_default = false;
-      const clang::Stmt* last = nullptr;
-      bool all_end = true;
-      const auto close = [&]() {
-        all_end = all_end && ((last == nullptr) || ends_with_return(last));
-      };
-      bool started = false;
-      for (const clang::Stmt* child : body->body()) {
-        if (const auto* label = llvm::dyn_cast<clang::SwitchCase>(child)) {
-          if (started) {
-            close();
-          }
-          started = true;
-          has_default = has_default || llvm::isa<clang::DefaultStmt>(label);
-          const clang::Stmt* current = label;
-          while (const auto* inner = llvm::dyn_cast_or_null<clang::SwitchCase>(current)) {
-            has_default = has_default || llvm::isa<clang::DefaultStmt>(inner);
-            current = inner->getSubStmt();
-          }
-          last = current;
-        } else {
-          last = child;
+      return true;
+    }
+    bool VisitCallExpr(clang::CallExpr*) {
+      has_call = true;
+      return true;
+    }
+    void note(const clang::Expr* expression) {
+      if (const auto* reference =
+              llvm::dyn_cast<clang::DeclRefExpr>(expression->IgnoreParenImpCasts())) {
+        if (const auto* variable = llvm::dyn_cast<clang::VarDecl>(reference->getDecl())) {
+          modified.insert(variable->getCanonicalDecl());
         }
       }
-      if (started) {
-        close();
-      }
-      return has_default && all_end;
     }
-    return false;
+    std::set<const clang::VarDecl*> modified;
+    bool has_call = false;
+  };
+
+  struct ReferenceFinder final : clang::RecursiveASTVisitor<ReferenceFinder> {
+    bool VisitDeclRefExpr(clang::DeclRefExpr* reference) {
+      if (const auto* variable = llvm::dyn_cast<clang::VarDecl>(reference->getDecl())) {
+        referenced.insert(variable->getCanonicalDecl());
+      }
+      return true;
+    }
+    std::set<const clang::VarDecl*> referenced;
+  };
+
+  // Rule 14.2 (subset): one loop counter, modified only by the third clause,
+  // tested by the second clause, and left alone by the body.
+  void check_well_formed(clang::ForStmt* loop) {
+    if ((loop->getInit() == nullptr) && (loop->getCond() == nullptr) &&
+        (loop->getInc() == nullptr)) {
+      return;
+    }
+    bool well_formed = (loop->getInc() != nullptr) && (loop->getCond() != nullptr);
+    const clang::VarDecl* counter = nullptr;
+    if (well_formed) {
+      ModifiedFinder step;
+      step.TraverseStmt(loop->getInc());
+      well_formed = (step.modified.size() == 1U) && !step.has_call;
+      if (well_formed) {
+        counter = *step.modified.begin();
+      }
+    }
+    if (well_formed) {
+      ReferenceFinder tested;
+      tested.TraverseStmt(loop->getCond());
+      ModifiedFinder cond_effects;
+      cond_effects.TraverseStmt(loop->getCond());
+      well_formed = (tested.referenced.count(counter) != 0U) &&
+                    cond_effects.modified.empty() && !cond_effects.has_call;
+    }
+    if (well_formed && (loop->getInit() != nullptr)) {
+      if (const auto* declaration = llvm::dyn_cast<clang::DeclStmt>(loop->getInit())) {
+        for (const clang::Decl* decl : declaration->decls()) {
+          const auto* variable = llvm::dyn_cast<clang::VarDecl>(decl);
+          well_formed = well_formed && (variable != nullptr) &&
+                        (variable->getCanonicalDecl() == counter);
+        }
+      } else {
+        ModifiedFinder init;
+        init.TraverseStmt(loop->getInit());
+        for (const clang::VarDecl* variable : init.modified) {
+          well_formed = well_formed && (variable == counter);
+        }
+      }
+    }
+    if (well_formed && (loop->getBody() != nullptr)) {
+      ModifiedFinder body;
+      body.TraverseStmt(loop->getBody());
+      well_formed = body.modified.count(counter) == 0U;
+    }
+    if (!well_formed) {
+      recorder_.add("for-loop-not-well-formed", loop->getForLoc());
+    }
   }
 
   [[nodiscard]] static bool ends_with_break(const clang::Stmt* statement) {
@@ -1494,6 +1494,7 @@ void collect_extra_observations(clang::ASTContext& ast, const Recorder& recorder
   visitor.TraverseDecl(ast.getTranslationUnitDecl());
   visitor.Finish();
   scan_main_file_text(ast, recorder);
+  collect_cfg_observations(ast, recorder);
 
   // Rules 5.4 / 5.5 from the recorded macro names, then drop the helper rows.
   std::map<std::string, std::set<std::string>> prefixes;

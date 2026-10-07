@@ -6,7 +6,7 @@
  * Analysis expansion: Build control-flow and reference graphs, then combine reachability, side-effect, and whole-program usage evidence.
  * Normative notice: Wording, amplification, exceptions, and examples remain in
  * the licensed MISRA specification and require independent approval.
- * Detection contract: Report a statement that directly follows return, break, continue or goto in the same block (labels excluded).
+ * Detection contract: Report the first code statement of each region that the control-flow graph shows cannot be reached.
  * Evidence: AST/preprocessor observations recorded by the Clang adapter.
  * Implementation status: Implemented; independent validation is pending.
  */
