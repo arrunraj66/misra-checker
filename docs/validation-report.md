@@ -154,9 +154,10 @@ automatically defects; see the interpretation below.
 
 ## Interpreting the disagreements
 
-Rules where both tools agree closely (>= 0.9 both ways, hundreds of findings):
-15.1, 15.2, 15.4 (0.86 recall), 15.6, 17.8, 18.4, 21.3, 8.4 (ours exact),
-8.11, 11.2, 11.3, 11.5.
+Rules where both tools agree closely (at least 0.85 in the table in both
+directions, or identical sets): 15.1, 15.2, 15.4, 15.6, 17.8, 21.3, 8.11, 14.2.
+Rules where we reproduce every cppcheck finding but also report more (agree/
+cppcheck of 1.00, agree/ours of 0.7-0.9): 11.2, 11.3, 11.5, 18.4, 8.4.
 
 Where we find more because we are stricter or cppcheck lacks the check:
 1.2, 2.1, 2.5, 8.3, 8.6, 8.7, 8.13, 9.1, 10.5, 16.1, 21.2 (cppcheck has no or
