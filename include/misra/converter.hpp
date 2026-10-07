@@ -35,6 +35,8 @@ struct ConvertOptions final {
   std::string provider_command;
   // Optional shell command run after the built-in gates; non-zero exit fails.
   std::string verify_command;
+  // Restrict the run to one fix class id; empty selects the first match.
+  std::string fix_class;
   bool apply = false;
 };
 

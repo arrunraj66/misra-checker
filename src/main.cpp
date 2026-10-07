@@ -36,7 +36,7 @@ void print_usage() {
          "[--file <source>]...\n"
       << "  misra-checker convert --compile-commands <file> --file <source>\n"
          "      --provider-cmd <shell-command> [--verify-cmd <shell-command>]\n"
-         "      [--output-dir <dir>] [--license <file>] [--apply]\n";
+         "      [--output-dir <dir>] [--license <file>] [--fix-class <id>] [--apply]\n";
 }
 
 }  // namespace
@@ -147,6 +147,8 @@ int main(int argc, char* argv[]) {
         options.output_dir = argv[++index];
       } else if ((argument == "--license") && has_value) {
         license_path = argv[++index];
+      } else if ((argument == "--fix-class") && has_value) {
+        options.fix_class = argv[++index];
       } else if (argument == "--apply") {
         options.apply = true;
       } else {

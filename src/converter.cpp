@@ -54,7 +54,8 @@ Analysis analyze(const std::string& database, const std::string& source) {
     }
     for (const Finding& finding : evaluation.findings) {
       analysis.keys.push_back(std::string{finding.message_key} + "@" +
-                              std::to_string(finding.location.line));
+                              std::to_string(finding.location.line) + ":" +
+                              std::to_string(finding.location.column));
     }
   }
   return analysis;
@@ -72,8 +73,12 @@ std::map<std::string, int> count_by_key(const std::vector<std::string>& entries)
   return counts;
 }
 
-const FixClass* select_fix_class(const std::vector<std::string>& entries) {
+const FixClass* select_fix_class(const std::vector<std::string>& entries,
+                                 const std::string& requested) {
   for (const FixClass& fix : fix_classes()) {
+    if (!requested.empty() && (requested != fix.id)) {
+      continue;
+    }
     for (const std::string& entry : entries) {
       if (fix.matches(key_of(entry))) {
         return &fix;
@@ -163,12 +168,61 @@ ConvertReport finish(const ConvertOptions& options, ConvertReport report,
 }  // namespace
 
 const std::vector<FixClass>& fix_classes() {
+  // Order matters: without --fix-class the first class that matches a finding
+  // is used. Deterministic-friendly classes come first.
   static const std::vector<FixClass> classes{
+      {"literal-hygiene",
+       {"misra-c2012-7.1-", "misra-c2012-7.2-", "misra-c2012-7.3-"},
+       "Rewrite only the flagged integer literals: replace octal constants by "
+       "the same decimal value, add a U suffix to unsigned constants, and use "
+       "an uppercase L suffix. Do not change values, types or other code.",
+       false},
       {"goto-elimination",
        {"misra-c2012-15.1-", "misra-c2012-15.2-", "misra-c2012-15.3-"},
        "Replace goto-based control flow with structured constructs "
        "(if/else, loops, early return, or a single exit variable) with "
        "identical behavior.",
+       false},
+      {"structured-control-flow",
+       {"misra-c2012-15.5-", "misra-c2012-15.6-", "misra-c2012-15.7-",
+        "misra-c2012-16.3-", "misra-c2012-16.4-", "misra-c2012-16.5-",
+        "misra-c2012-16.6-", "misra-c2012-14.2-"},
+       "Add braces around single-statement bodies, end else-if chains with a "
+       "final else, give every switch a default clause and a break per "
+       "clause, and restructure functions to a single return at the end, "
+       "without changing behavior.",
+       false},
+      {"boolean-and-side-effects",
+       {"misra-c2012-14.4-", "misra-c2012-13.4-", "misra-c2012-13.5-",
+        "misra-c2012-13.6-", "misra-c2012-12.3-"},
+       "Make controlling expressions explicit comparisons (for example "
+       "x != 0), move assignments out of conditions into separate "
+       "statements, hoist side effects out of the right operand of && and "
+       "||, and remove comma operators, preserving evaluation order and "
+       "behavior.",
+       false},
+      {"call-and-parameter-hygiene",
+       {"misra-c2012-17.7-", "misra-c2012-17.8-", "misra-c2012-2.7-"},
+       "Cast discarded call results to void only when ignoring them is "
+       "intended, copy modified parameters into a local variable, and mark "
+       "intentionally unused parameters; keep signatures and behavior "
+       "unchanged.",
+       false},
+      {"declaration-hygiene",
+       {"misra-c2012-8.2-", "misra-c2012-8.8-", "misra-c2012-8.10-",
+        "misra-c2012-8.11-", "misra-c2012-8.14-"},
+       "Give functions full prototypes with named parameters, repeat static "
+       "on every declaration of an internal-linkage entity, make inline "
+       "functions static, give extern arrays an explicit size and remove "
+       "restrict qualifiers, without changing behavior.",
+       false},
+      {"pointer-cast-hygiene",
+       {"misra-c2012-11.8-", "misra-c2012-11.5-", "misra-c2012-11.9-",
+        "misra-c2012-7.4-"},
+       "Preserve const qualification in casts, use const char * for string "
+       "literals, spell null pointer constants as NULL, and avoid void "
+       "pointer to object pointer conversions where a typed pointer is "
+       "available, without changing behavior.",
        false},
   };
   return classes;
@@ -216,7 +270,7 @@ ConvertReport convert_file(const ConvertOptions& options) {
   }
   ConvertReport report{ConvertOutcome::NothingToConvert, "no findings in a supported fix class",
                        before.keys, {}, {}, {}};
-  const FixClass* fix = select_fix_class(before.keys);
+  const FixClass* fix = select_fix_class(before.keys, options.fix_class);
   if (fix == nullptr) {
     return finish(options, report, original, original, nullptr);
   }

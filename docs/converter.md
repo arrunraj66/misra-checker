@@ -20,7 +20,15 @@ proposal only if deterministic gates pass. The AI output is untrusted input.
 - Suggestion mode is the default. `--apply` is refused unless the fix class has
   `auto_apply_approved` set, which requires independent validation (roadmap
   W44/W70). No class is approved today.
-- Supported fix classes: `goto-elimination` (Rules 15.1/15.2 findings).
+- Fix classes (none auto-apply approved); without `--fix-class <id>` the first
+  class that matches a finding is used, in this order:
+  `literal-hygiene` (7.1, 7.2, 7.3), `goto-elimination` (15.1-15.3),
+  `structured-control-flow` (14.2, 15.5-15.7, 16.3-16.6),
+  `boolean-and-side-effects` (12.3, 13.4-13.6, 14.4),
+  `call-and-parameter-hygiene` (2.7, 17.7, 17.8),
+  `declaration-hygiene` (8.2, 8.8, 8.10, 8.11, 8.14),
+  `pointer-cast-hygiene` (7.4, 11.5, 11.8, 11.9).
+  The prompt lists each finding as `key@line:column`.
 - Gates prove "compiles, findings reduced"; they do NOT prove behavioral
   equivalence. Run `--verify-cmd` with your real tests and review every patch.
 
@@ -29,6 +37,10 @@ proposal only if deterministic gates pass. The AI output is untrusted input.
 - Cloud: `scripts/ai_providers/claude_provider.py` (needs `ANTHROPIC_API_KEY`;
   sends source code to the API - get customer approval first).
 - On-prem: `scripts/ai_providers/local_provider.sh` with `MISRA_LOCAL_MODEL_CMD`.
+- Offline, no model: `scripts/ai_providers/deterministic_provider.py` rewrites
+  the integer literals flagged by Rules 7.1, 7.2 and 7.3 (octal to decimal,
+  add `U`, uppercase `L`) using the reported line and column. It is also the
+  reference for the provider protocol (prompt on stdin, whole file on stdout).
 
 ```bash
 misra-checker convert --compile-commands build/ --file src/foo.c \

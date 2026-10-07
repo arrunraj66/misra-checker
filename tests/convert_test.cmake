@@ -2,7 +2,11 @@
 #              -DLICENSE= -P convert_test.cmake
 file(REMOVE_RECURSE "${WORK}")
 file(MAKE_DIRECTORY "${WORK}")
-file(COPY_FILE "${FIXTURES}/violating.c" "${WORK}/work.c")
+set(original_fixture "violating.c")
+if(MODE STREQUAL "literal")
+  set(original_fixture "literal.c")
+endif()
+file(COPY_FILE "${FIXTURES}/${original_fixture}" "${WORK}/work.c")
 set(MISRA_CONVERT_WORK_DIR "${WORK}")
 configure_file("${FIXTURES}/compile_commands.json.in" "${WORK}/compile_commands.json" @ONLY)
 
@@ -11,6 +15,10 @@ if(MODE STREQUAL "bad")
   set(reply "${FIXTURES}/bad_fix.c")
 elseif(MODE STREQUAL "broken")
   set(reply "${FIXTURES}/broken_fix.c")
+endif()
+set(provider "cat ${reply}")
+if(MODE STREQUAL "literal")
+  set(provider "python3 -I ${PROVIDER_SCRIPT}")
 endif()
 set(license "${LICENSE}")
 if(MODE STREQUAL "nolicense")
@@ -26,7 +34,7 @@ execute_process(
   COMMAND "${CHECKER}" convert
     --compile-commands "${WORK}/compile_commands.json"
     --file "${WORK}/work.c"
-    --provider-cmd "cat ${reply}"
+    --provider-cmd "${provider}"
     --output-dir "${WORK}/out"
     --license "${license}"
     ${extra}
@@ -34,7 +42,7 @@ execute_process(
 message(STATUS "exit=${result}\n${out}${err}")
 
 file(READ "${WORK}/work.c" after)
-file(READ "${FIXTURES}/violating.c" original)
+file(READ "${FIXTURES}/${original_fixture}" original)
 if(NOT after STREQUAL original)
   message(FATAL_ERROR "source must be unchanged in mode ${MODE}")
 endif()
@@ -51,6 +59,17 @@ if(MODE STREQUAL "good")
   if(NOT audit MATCHES "\"outcome\":\"proposed\"")
     message(FATAL_ERROR "audit record missing")
   endif()
+elseif(MODE STREQUAL "literal")
+  if(NOT result EQUAL 0 OR NOT out MATCHES "^proposed")
+    message(FATAL_ERROR "expected literal proposal")
+  endif()
+  file(READ "${WORK}/out/work.c.proposed" proposed)
+  foreach(expected "long x = 10L;" "unsigned int y = 0xFFFFFFFFU;" "int z = 15;")
+    string(FIND "${proposed}" "${expected}" found)
+    if(found EQUAL -1)
+      message(FATAL_ERROR "missing '${expected}' in:\n${proposed}")
+    endif()
+  endforeach()
 elseif(MODE STREQUAL "bad")
   if(result EQUAL 0 OR NOT out MATCHES "targeted finding remains")
     message(FATAL_ERROR "expected rejection for remaining goto")

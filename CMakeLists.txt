@@ -257,7 +257,7 @@ if(BUILD_TESTING)
     COMMAND_ERROR_IS_FATAL ANY
   )
 
-  foreach(mode good bad broken apply nolicense)
+  foreach(mode good bad broken apply nolicense literal)
     add_test(
       NAME convert_${mode}
       COMMAND
@@ -268,6 +268,7 @@ if(BUILD_TESTING)
         "-DMODE=${mode}"
         "-DLICENSE=${MISRA_TEST_LICENSE}"
         "-DCLANG_EXECUTABLE=${CLANG_EXECUTABLE}"
+        "-DPROVIDER_SCRIPT=${CMAKE_CURRENT_SOURCE_DIR}/scripts/ai_providers/deterministic_provider.py"
         -P "${CMAKE_CURRENT_SOURCE_DIR}/tests/convert_test.cmake"
     )
   endforeach()
