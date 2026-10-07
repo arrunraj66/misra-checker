@@ -9,6 +9,8 @@
 #include <vector>
 
 #include "clang/AST/ASTContext.h"
+#include "clang/Basic/Diagnostic.h"
+#include "clang/Basic/DiagnosticLex.h"
 #include "clang/AST/Decl.h"
 #include "clang/AST/Expr.h"
 #include "clang/AST/RecursiveASTVisitor.h"
@@ -614,12 +616,86 @@ class MacroObserver final : public clang::PPCallbacks {
   const Recorder& recorder_;
 };
 
+// Forwards every diagnostic to the original client and records those that
+// map to rules: compile errors (1.1), directives embedded in macro arguments
+// (20.6) and unbalanced conditional directives (20.14).
+class DiagnosticObserver final : public clang::DiagnosticConsumer {
+ public:
+  DiagnosticObserver(clang::DiagnosticConsumer* original, const Recorder& recorder)
+      : original_(original), recorder_(recorder) {}
+
+  void BeginSourceFile(const clang::LangOptions& language,
+                       const clang::Preprocessor* preprocessor) override {
+    if (original_ != nullptr) {
+      original_->BeginSourceFile(language, preprocessor);
+    }
+  }
+
+  void EndSourceFile() override {
+    if (original_ != nullptr) {
+      original_->EndSourceFile();
+    }
+  }
+
+  void finish() override {
+    if (original_ != nullptr) {
+      original_->finish();
+    }
+  }
+
+  bool IncludeInDiagnosticCounts() const override {
+    return (original_ == nullptr) || original_->IncludeInDiagnosticCounts();
+  }
+
+  void HandleDiagnostic(clang::DiagnosticsEngine::Level level,
+                        const clang::Diagnostic& info) override {
+    if (info.hasSourceManager() && info.getLocation().isValid()) {
+      const unsigned int id = info.getID();
+      if (id == clang::diag::ext_embedded_directive) {
+        recorder_.add("embedded-directive", info.getLocation());
+      } else if ((id == clang::diag::err_pp_endif_without_if) ||
+                 (id == clang::diag::pp_err_else_without_if) ||
+                 (id == clang::diag::pp_err_elif_without_if) ||
+                 (id == clang::diag::err_pp_unterminated_conditional)) {
+        recorder_.add("conditional-directive-unbalanced", info.getLocation());
+      } else if (level >= clang::DiagnosticsEngine::Error) {
+        llvm::SmallString<256> message;
+        info.FormatDiagnostic(message);
+        recorder_.add("language-violation", info.getLocation(), message.str().str());
+      }
+    }
+    if (original_ != nullptr) {
+      original_->HandleDiagnostic(level, info);
+    }
+  }
+
+ private:
+  clang::DiagnosticConsumer* original_;
+  const Recorder& recorder_;
+};
+
 class CommentObserver final : public clang::CommentHandler {
  public:
   CommentObserver(clang::SourceManager& source_manager, AnalysisContext& context)
       : recorder_(source_manager, context) {}
 
   [[nodiscard]] const Recorder& recorder() const { return recorder_; }
+
+  ~CommentObserver() override {
+    // Hand the engine back to its original client before our consumer dies.
+    if ((engine_ != nullptr) && (diagnostics_ != nullptr)) {
+      clang::DiagnosticConsumer* owned = owned_original_.release();
+      engine_->setClient(original_client_, owned != nullptr);
+    }
+  }
+
+  void observe_diagnostics(clang::DiagnosticsEngine& engine) {
+    engine_ = &engine;
+    original_client_ = engine.getClient();
+    owned_original_ = engine.takeClient();  // setClient below would destroy it
+    diagnostics_ = std::make_unique<DiagnosticObserver>(original_client_, recorder_);
+    engine.setClient(diagnostics_.get(), false);
+  }
 
   bool HandleComment(clang::Preprocessor& preprocessor,
                      clang::SourceRange range) override {
@@ -652,6 +728,10 @@ class CommentObserver final : public clang::CommentHandler {
 
  private:
   Recorder recorder_;
+  std::unique_ptr<DiagnosticObserver> diagnostics_;
+  clang::DiagnosticsEngine* engine_ = nullptr;
+  clang::DiagnosticConsumer* original_client_ = nullptr;
+  std::unique_ptr<clang::DiagnosticConsumer> owned_original_;
 };
 
 }  // namespace
@@ -663,8 +743,13 @@ std::unique_ptr<clang::CommentHandler> install_preprocessor_observers(
   compiler.getPreprocessor().addPPCallbacks(
       std::make_unique<MacroObserver>(handler->recorder()));
   compiler.getPreprocessor().addPPCallbacks(make_extra_macro_observer(
-      handler->recorder(), compiler.getLangOpts()));
+      handler->recorder(), compiler.getPreprocessor()));
   compiler.getPreprocessor().addCommentHandler(handler.get());
+  // Embedded directives are an extension warning that is off by default.
+  compiler.getDiagnostics().setSeverity(clang::diag::ext_embedded_directive,
+                                        clang::diag::Severity::Warning,
+                                        clang::SourceLocation());
+  handler->observe_diagnostics(compiler.getDiagnostics());
   return handler;
 }
 

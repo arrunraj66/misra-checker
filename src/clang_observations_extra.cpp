@@ -130,6 +130,7 @@ class ExtraVisitor final : public clang::RecursiveASTVisitor<ExtraVisitor> {
       return true;
     }
     const clang::SourceLocation location = function->getLocation();
+    check_implicit_type(function);
     if (function->getDeclContext()->isTranslationUnit() && !function->isMain()) {
       record_symbol(function,
                     function->isThisDeclarationADefinition() ? SymbolRole::Definition
@@ -168,6 +169,7 @@ class ExtraVisitor final : public clang::RecursiveASTVisitor<ExtraVisitor> {
       return true;
     }
     const clang::SourceLocation location = variable->getLocation();
+    check_implicit_type(variable);
     if (variable->isFileVarDecl()) {
       record_symbol(variable,
                     variable->isThisDeclarationADefinition() == clang::VarDecl::DeclarationOnly
@@ -526,6 +528,44 @@ class ExtraVisitor final : public clang::RecursiveASTVisitor<ExtraVisitor> {
         break;
     }
 
+    // Rule 10.7: composite operand combined with a wider operand.
+    switch (code) {
+      case clang::BO_Add: case clang::BO_Sub: case clang::BO_Mul:
+      case clang::BO_Div: case clang::BO_Rem: case clang::BO_LT:
+      case clang::BO_GT: case clang::BO_LE: case clang::BO_GE:
+      case clang::BO_EQ: case clang::BO_NE: {
+        const bool left_composite = is_composite(op->getLHS()) && !left_constant;
+        const bool right_composite = is_composite(op->getRHS()) && !right_constant;
+        if (left_composite != right_composite) {
+          const clang::Expr* composite_side = left_composite ? op->getLHS() : op->getRHS();
+          const clang::Expr* other_side = left_composite ? op->getRHS() : op->getLHS();
+          const Essential composite = composite_essential(composite_side);
+          const Essential other = essential(other_side);
+          if (integer_category(composite) && integer_category(other) &&
+              !other_side->isIntegerConstantExpr(ast_) && (other.width > composite.width)) {
+            recorder_.add("composite-operand-narrower", location);
+          }
+        }
+        break;
+      }
+      default:
+        break;
+    }
+
+    // Rule 10.2: character operands of addition and subtraction.
+    if (code == clang::BO_Add) {
+      if (((left.category == Category::Character) && (right.category == Category::Character)) ||
+          ((left.category == Category::Character) && (right.category == Category::Floating)) ||
+          ((left.category == Category::Floating) && (right.category == Category::Character))) {
+        recorder_.add("character-arithmetic", location);
+      }
+    } else if (code == clang::BO_Sub) {
+      if (((left.category != Category::Character) && (right.category == Category::Character)) ||
+          ((left.category == Category::Character) && (right.category == Category::Floating))) {
+        recorder_.add("character-arithmetic", location);
+      }
+    }
+
     // Rule 12.2: constant shift counts outside the left operand's width.
     if ((code == clang::BO_Shl) || (code == clang::BO_Shr) ||
         (code == clang::BO_ShlAssign) || (code == clang::BO_ShrAssign)) {
@@ -630,6 +670,17 @@ class ExtraVisitor final : public clang::RecursiveASTVisitor<ExtraVisitor> {
     if (explicit_cast) {
       const Essential from = essential(cast->getSubExpr());
       const Essential to = essential_of_type(target);
+      if (is_composite(cast->getSubExpr()) && !cast->getSubExpr()->isIntegerConstantExpr(ast_)) {
+        const Essential composite = composite_essential(cast->getSubExpr());
+        if (integer_category(composite) && (integer_category(to) || (to.category == Category::Floating)) &&
+            ((to.width > composite.width) || (to.category != composite.category))) {
+          recorder_.add("composite-cast-widened", location);
+        }
+      }
+      if ((source->isPointerType() && target->isFloatingType()) ||
+          (source->isFloatingType() && target->isPointerType())) {
+        recorder_.add("pointer-float-cast", location);
+      }
       if ((from.category != Category::Other) && (to.category != Category::Other)) {
         const bool bad =
             ((to.category == Category::Boolean) && (from.category != Category::Boolean)) ||
@@ -774,6 +825,19 @@ class ExtraVisitor final : public clang::RecursiveASTVisitor<ExtraVisitor> {
     context_.symbols.push_back(std::move(fact));
   }
 
+  // Rule 8.1: a declaration whose type is not written (implicit int).
+  void check_implicit_type(const clang::DeclaratorDecl* declaration) {
+    if (declaration->isImplicit() || (declaration->getTypeSourceInfo() == nullptr)) {
+      return;
+    }
+    const clang::SourceLocation type_start = declaration->getTypeSpecStartLoc();
+    if (type_start.isInvalid() || (sm_.getExpansionLoc(type_start) == sm_.getExpansionLoc(declaration->getLocation()) &&
+                                   !llvm::isa<clang::FunctionDecl>(declaration) &&
+                                   !llvm::isa<clang::VarDecl>(declaration))) {
+      recorder_.add("implicit-type", declaration->getLocation());
+    }
+  }
+
   void note_named(const clang::NamedDecl* declaration, const clang::SourceLocation location) {
     if (declaration->getName().empty()) {
       return;
@@ -847,6 +911,65 @@ class ExtraVisitor final : public clang::RecursiveASTVisitor<ExtraVisitor> {
     return essential_of_type(stripped->getType());
   }
 
+  // Essential type of a composite expression (arithmetic, bitwise, shift or
+  // unary operation), computed without integer promotion.
+  [[nodiscard]] static bool is_composite(const clang::Expr* expression) {
+    const clang::Expr* stripped = expression->IgnoreParenImpCasts();
+    if (const auto* binary = llvm::dyn_cast<clang::BinaryOperator>(stripped)) {
+      switch (binary->getOpcode()) {
+        case clang::BO_Add: case clang::BO_Sub: case clang::BO_Mul:
+        case clang::BO_Div: case clang::BO_Rem: case clang::BO_And:
+        case clang::BO_Or: case clang::BO_Xor: case clang::BO_Shl:
+        case clang::BO_Shr:
+          return true;
+        default:
+          return false;
+      }
+    }
+    if (const auto* unary = llvm::dyn_cast<clang::UnaryOperator>(stripped)) {
+      return (unary->getOpcode() == clang::UO_Minus) ||
+             (unary->getOpcode() == clang::UO_Plus) ||
+             (unary->getOpcode() == clang::UO_Not);
+    }
+    return false;
+  }
+
+  [[nodiscard]] Essential composite_essential(const clang::Expr* expression) const {
+    const clang::Expr* stripped = expression->IgnoreParenImpCasts();
+    if (const auto* binary = llvm::dyn_cast<clang::BinaryOperator>(stripped)) {
+      if (is_composite(stripped)) {
+        const Essential left = composite_essential(binary->getLHS());
+        if ((binary->getOpcode() == clang::BO_Shl) || (binary->getOpcode() == clang::BO_Shr)) {
+          return left;
+        }
+        const Essential right = composite_essential(binary->getRHS());
+        const bool left_constant = binary->getLHS()->isIntegerConstantExpr(ast_);
+        const bool right_constant = binary->getRHS()->isIntegerConstantExpr(ast_);
+        if (left_constant && !right_constant) {
+          return right;
+        }
+        if (right_constant && !left_constant) {
+          return left;
+        }
+        if (left.category == right.category) {
+          return {left.category, left.width > right.width ? left.width : right.width,
+                  left.enum_type};
+        }
+        return {Category::Other, 0U, nullptr};
+      }
+    }
+    if (const auto* unary = llvm::dyn_cast<clang::UnaryOperator>(stripped)) {
+      if (is_composite(stripped)) {
+        return composite_essential(unary->getSubExpr());
+      }
+    }
+    return essential(stripped);
+  }
+
+  [[nodiscard]] bool integer_category(const Essential& type) const {
+    return (type.category == Category::Signed) || (type.category == Category::Unsigned);
+  }
+
   [[nodiscard]] static bool inappropriate_arithmetic(const Essential& type) {
     return (type.category == Category::Boolean) || (type.category == Category::Enumeration);
   }
@@ -863,6 +986,12 @@ class ExtraVisitor final : public clang::RecursiveASTVisitor<ExtraVisitor> {
       return;
     }
     const Essential to = essential_of_type(target);
+    if (is_composite(source) && integer_category(to)) {
+      const Essential composite = composite_essential(source);
+      if (integer_category(composite) && (to.width > composite.width)) {
+        recorder_.add("composite-assigned-wider", location);
+      }
+    }
     const Essential from = essential(source);
     if ((to.category == Category::Other) || (from.category == Category::Other)) {
       return;
@@ -1313,6 +1442,12 @@ void scan_main_file_text(clang::ASTContext& ast, const Recorder& recorder) {
     }
     const std::size_t raw_hash = line.raw.find('#');
     std::size_t operand = line.raw.find("include", raw_hash);
+    {
+      const std::size_t after = line.raw.find_first_not_of(" \t", operand + 7U);
+      if ((after != std::string::npos) && (line.raw[after] != '<') && (line.raw[after] != '"')) {
+        recorder.add("include-macro-operand", location_of(line.offset));
+      }
+    }
     operand = line.raw.find_first_of("<\"", operand);
     if (operand == std::string::npos) {
       continue;
@@ -1344,8 +1479,20 @@ void scan_main_file_text(clang::ASTContext& ast, const Recorder& recorder) {
 
 class ExtraMacroObserver final : public clang::PPCallbacks {
  public:
-  ExtraMacroObserver(const Recorder& recorder, const clang::LangOptions& language)
-      : recorder_(recorder), language_(language) {}
+  ExtraMacroObserver(const Recorder& recorder, clang::Preprocessor& preprocessor)
+      : recorder_(recorder),
+        preprocessor_(preprocessor),
+        language_(preprocessor.getLangOpts()) {}
+
+  void If(clang::SourceLocation location, clang::SourceRange condition,
+          ConditionValueKind) override {
+    check_condition(location, condition);
+  }
+
+  void Elif(clang::SourceLocation location, clang::SourceRange condition,
+            ConditionValueKind, clang::SourceLocation) override {
+    check_condition(location, condition);
+  }
 
   void MacroDefined(const clang::Token& name_token,
                     const clang::MacroDirective* directive) override {
@@ -1470,7 +1617,166 @@ class ExtraMacroObserver final : public clang::PPCallbacks {
     }
   }
 
+  // Rules 20.8 and 20.9 on the text of an #if / #elif condition.
+  void check_condition(clang::SourceLocation location, clang::SourceRange range) {
+    const clang::SourceManager& sm = recorder_.source_manager();
+    bool invalid = false;
+    const std::string text = clang::Lexer::getSourceText(
+                                 clang::CharSourceRange::getTokenRange(range), sm,
+                                 language_, &invalid)
+                                 .str();
+    if (invalid) {
+      return;
+    }
+    // Identifiers that are neither defined nor operands of `defined`.
+    bool has_identifier = false;
+    for (std::size_t i = 0U; i < text.size();) {
+      if ((std::isalpha(static_cast<unsigned char>(text[i])) != 0) || (text[i] == '_')) {
+        std::size_t end = i;
+        while ((end < text.size()) &&
+               ((std::isalnum(static_cast<unsigned char>(text[end])) != 0) || (text[end] == '_'))) {
+          ++end;
+        }
+        const std::string name = text.substr(i, end - i);
+        has_identifier = true;
+        if (name == "defined") {
+          std::size_t next = text.find_first_not_of(" \t(", end);
+          while ((next != std::string::npos) &&
+                 ((std::isalnum(static_cast<unsigned char>(text[next])) != 0) || (text[next] == '_'))) {
+            ++next;
+          }
+          i = (next == std::string::npos) ? text.size() : next;
+          continue;
+        }
+        if ((name.rfind("__has_", 0U) != 0U) && !preprocessor_.isMacroDefined(name)) {
+          recorder_.add("undefined-identifier-in-if", location, name);
+        }
+        i = end;
+      } else {
+        ++i;
+      }
+    }
+    if (!has_identifier) {
+      ConditionParser parser{text, 0U, true};
+      const long long value = parser.parse_expression(0);
+      if (parser.ok && parser.at_end() && (value != 0) && (value != 1)) {
+        recorder_.add("if-condition-not-boolean", location, text);
+      }
+    }
+  }
+
+  // Minimal evaluator for identifier-free #if conditions (C precedence).
+  struct ConditionParser final {
+    const std::string& text;
+    std::size_t position;
+    bool ok;
+
+    void skip() {
+      while ((position < text.size()) && (std::isspace(static_cast<unsigned char>(text[position])) != 0)) {
+        ++position;
+      }
+    }
+    bool at_end() {
+      skip();
+      return position == text.size();
+    }
+    bool take(const char* token) {
+      skip();
+      const std::size_t length = std::char_traits<char>::length(token);
+      if (text.compare(position, length, token) == 0) {
+        position += length;
+        return true;
+      }
+      return false;
+    }
+    bool peek(const char* token) {
+      skip();
+      return text.compare(position, std::char_traits<char>::length(token), token) == 0;
+    }
+    long long parse_primary() {
+      skip();
+      if (take("(")) {
+        const long long value = parse_expression(0);
+        if (!take(")")) {
+          ok = false;
+        }
+        return value;
+      }
+      if (take("!")) {
+        return parse_primary() == 0 ? 1 : 0;
+      }
+      if (take("~")) {
+        return ~parse_primary();
+      }
+      if (take("-")) {
+        return -parse_primary();
+      }
+      if (take("+")) {
+        return parse_primary();
+      }
+      if ((position < text.size()) && (std::isdigit(static_cast<unsigned char>(text[position])) != 0)) {
+        std::size_t end = position;
+        const long long value = std::stoll(text.substr(position), &end, 0);
+        position += end;
+        while ((position < text.size()) && (std::string{"uUlL"}.find(text[position]) != std::string::npos)) {
+          ++position;
+        }
+        return value;
+      }
+      ok = false;
+      return 0;
+    }
+    // Precedence climbing over the binary operators of C.
+    long long parse_expression(int minimum) {
+      long long left = parse_primary();
+      while (ok) {
+        skip();
+        struct Operator { const char* token; int level; };
+        static const Operator kOperators[] = {
+            {"||", 1}, {"&&", 2}, {"|", 3}, {"^", 4}, {"&", 5}, {"==", 6}, {"!=", 6},
+            {"<=", 7}, {">=", 7}, {"<<", 8}, {">>", 8}, {"<", 7}, {">", 7},
+            {"+", 9}, {"-", 9}, {"*", 10}, {"/", 10}, {"%", 10}};
+        const Operator* found = nullptr;
+        for (const Operator& candidate : kOperators) {
+          if (peek(candidate.token) && (found == nullptr ||
+              std::char_traits<char>::length(candidate.token) >
+                  std::char_traits<char>::length(found->token))) {
+            found = &candidate;
+          }
+        }
+        if ((found == nullptr) || (found->level < minimum)) {
+          break;
+        }
+        take(found->token);
+        const long long right = parse_expression(found->level + 1);
+        const std::string op = found->token;
+        if (op == "||") left = (left != 0) || (right != 0);
+        else if (op == "&&") left = (left != 0) && (right != 0);
+        else if (op == "|") left = left | right;
+        else if (op == "^") left = left ^ right;
+        else if (op == "&") left = left & right;
+        else if (op == "==") left = left == right;
+        else if (op == "!=") left = left != right;
+        else if (op == "<=") left = left <= right;
+        else if (op == ">=") left = left >= right;
+        else if (op == "<") left = left < right;
+        else if (op == ">") left = left > right;
+        else if (op == "<<") left = left << right;
+        else if (op == ">>") left = left >> right;
+        else if (op == "+") left = left + right;
+        else if (op == "-") left = left - right;
+        else if (op == "*") left = left * right;
+        else if ((op == "/") || (op == "%")) {
+          if (right == 0) { ok = false; return 0; }
+          left = (op == "/") ? left / right : left % right;
+        }
+      }
+      return left;
+    }
+  };
+
   const Recorder& recorder_;
+  clang::Preprocessor& preprocessor_;
   const clang::LangOptions& language_;
   std::map<std::string, clang::SourceLocation> defined_;
   std::set<std::string> used_;
@@ -1479,8 +1785,8 @@ class ExtraMacroObserver final : public clang::PPCallbacks {
 }  // namespace
 
 std::unique_ptr<clang::PPCallbacks> make_extra_macro_observer(
-    const Recorder& recorder, const clang::LangOptions& language) {
-  return std::make_unique<ExtraMacroObserver>(recorder, language);
+    const Recorder& recorder, clang::Preprocessor& preprocessor) {
+  return std::make_unique<ExtraMacroObserver>(recorder, preprocessor);
 }
 
 void collect_extra_observations(clang::ASTContext& ast, const Recorder& recorder,
@@ -1495,6 +1801,7 @@ void collect_extra_observations(clang::ASTContext& ast, const Recorder& recorder
   visitor.Finish();
   scan_main_file_text(ast, recorder);
   collect_cfg_observations(ast, recorder);
+  collect_rest_observations(ast, recorder);
 
   // Rules 5.4 / 5.5 from the recorded macro names, then drop the helper rows.
   std::map<std::string, std::set<std::string>> prefixes;

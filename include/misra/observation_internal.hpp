@@ -6,13 +6,13 @@
 #include <string>
 #include <utility>
 
-#include "clang/Basic/LangOptions.h"
 #include "clang/Basic/SourceManager.h"
 #include "misra/rule.hpp"
 
 namespace clang {
 class ASTContext;
 class PPCallbacks;
+class Preprocessor;
 }  // namespace clang
 
 namespace misra {
@@ -54,7 +54,10 @@ class Recorder final {
 
 // Extra preprocessor observer (macro definition/use analysis).
 [[nodiscard]] std::unique_ptr<clang::PPCallbacks> make_extra_macro_observer(
-    const Recorder& recorder, const clang::LangOptions& language);
+    const Recorder& recorder, clang::Preprocessor& preprocessor);
+
+// Raw-text, per-function and expression-level observations (second wave).
+void collect_rest_observations(clang::ASTContext& ast, const Recorder& recorder);
 
 // Control-flow-graph based observations (Rules 2.1, 2.2, 9.1, 17.4).
 void collect_cfg_observations(clang::ASTContext& ast, const Recorder& recorder);

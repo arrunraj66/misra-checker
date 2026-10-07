@@ -6,12 +6,16 @@
  * Analysis expansion: Inspect parser diagnostics, implementation limits, language extensions, and the controlled catalogue of undefined or unspecified behavior.
  * Normative notice: Wording, amplification, exceptions, and examples remain in
  * the licensed MISRA specification and require independent approval.
- * Implementation status: Scaffold only; no compliance decision is made.
+ * Detection contract: Report every compiler error (syntax or constraint violation) located in the main file.
+ * Evidence: AST, preprocessor, diagnostic and control-flow observations recorded by the Clang adapter.
+ * Implementation status: Implemented; independent validation is pending.
  */
 
 #include "misra/c2012/rule_factories.hpp"
 
 #include <memory>
+
+#include "misra/observation_rule.hpp"
 
 namespace misra::c2012 {
 namespace {
@@ -28,15 +32,15 @@ class Rule_01_01 final : public Rule {
         "Standard C conformance",
         "Independent checker contract for Rule 1.1 in the Standard C conformance family. The exact normative predicate remains linked to the controlled licensed rule specification.",
         "Inspect parser diagnostics, implementation limits, language extensions, and the controlled catalogue of undefined or unspecified behavior.",
-        ImplementationStatus::Scaffold,
+        ImplementationStatus::Implemented,
     };
     return descriptor;
   }
 
   [[nodiscard]] RuleEvaluation evaluate(
       const AnalysisContext& context) const override {
-    (void)context;
-    return {EvaluationStatus::NotImplemented};
+    return findings_from_observations(context, {"language-violation"},
+                                      "misra-c2012-1.1-language-violation", {}, {});
   }
 };
 

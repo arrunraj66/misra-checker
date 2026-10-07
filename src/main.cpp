@@ -84,7 +84,23 @@ int main(int argc, char* argv[]) {
         compilation_database.string(), requested_files);
     if (!frontend_result.success) {
       std::cerr << "misra-checker: " << frontend_result.error_message << '\n';
-      return 2;
+      // Rules driven by compiler diagnostics are still meaningful.
+      const misra::RuleRegistry failed_registry;
+      std::size_t diagnostic_findings = 0U;
+      for (const char* id : {"1.1", "20.14"}) {
+        const misra::Rule* rule = failed_registry.find(id);
+        if (rule == nullptr) {
+          continue;
+        }
+        for (const misra::Finding& finding : rule->evaluate(frontend_result.context).findings) {
+          ++diagnostic_findings;
+          std::cout << finding.location.file << ':' << finding.location.line << ':'
+                    << finding.location.column << ": "
+                    << category_name(rule->descriptor().category)
+                    << ": MISRA C:2012 Rule " << id << " [" << finding.message_key << "]\n";
+        }
+      }
+      return diagnostic_findings == 0U ? 2 : 1;
     }
 
     const misra::RuleRegistry registry;

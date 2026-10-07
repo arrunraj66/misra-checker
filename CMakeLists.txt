@@ -40,6 +40,7 @@ add_library(
   misra-clang STATIC
   src/clang_frontend.cpp src/clang_observations.cpp
   src/clang_observations_extra.cpp src/clang_observations_cfg.cpp
+  src/clang_observations_rest.cpp
 )
 target_include_directories(misra-clang PUBLIC include)
 target_include_directories(
