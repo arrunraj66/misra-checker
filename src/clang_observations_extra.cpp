@@ -70,8 +70,15 @@ const char* const kStandardNames[] = {
 
 class ExtraVisitor final : public clang::RecursiveASTVisitor<ExtraVisitor> {
  public:
-  ExtraVisitor(clang::ASTContext& ast, const Recorder& recorder)
-      : ast_(ast), recorder_(recorder), sm_(ast.getSourceManager()) {
+  ExtraVisitor(clang::ASTContext& ast, const Recorder& recorder,
+               AnalysisContext& context)
+      : ast_(ast), recorder_(recorder), sm_(ast.getSourceManager()),
+        context_(context) {
+    const clang::PresumedLoc main_loc =
+        sm_.getPresumedLoc(sm_.getLocForStartOfFile(sm_.getMainFileID()));
+    if (main_loc.isValid()) {
+      translation_unit_ = main_loc.getFilename();
+    }
     for (const clang::Decl* declaration :
          ast.getTranslationUnitDecl()->decls()) {
       if (const auto* named = llvm::dyn_cast<clang::NamedDecl>(declaration)) {
@@ -123,6 +130,12 @@ class ExtraVisitor final : public clang::RecursiveASTVisitor<ExtraVisitor> {
       return true;
     }
     const clang::SourceLocation location = function->getLocation();
+    if (function->getDeclContext()->isTranslationUnit() && !function->isMain()) {
+      record_symbol(function,
+                    function->isThisDeclarationADefinition() ? SymbolRole::Definition
+                                                             : SymbolRole::Declaration,
+                    location);
+    }
     note_named(function, location);
     check_reserved(function, location);
     check_attributes(function);
@@ -161,6 +174,13 @@ class ExtraVisitor final : public clang::RecursiveASTVisitor<ExtraVisitor> {
       return true;
     }
     const clang::SourceLocation location = variable->getLocation();
+    if (variable->isFileVarDecl()) {
+      record_symbol(variable,
+                    variable->isThisDeclarationADefinition() == clang::VarDecl::DeclarationOnly
+                        ? SymbolRole::Declaration
+                        : SymbolRole::Definition,
+                    location);
+    }
     note_named(variable, location);
     check_reserved(variable, location);
     check_attributes(variable);
@@ -283,6 +303,14 @@ class ExtraVisitor final : public clang::RecursiveASTVisitor<ExtraVisitor> {
   bool VisitDeclRefExpr(clang::DeclRefExpr* reference) {
     if (const auto* variable = llvm::dyn_cast<clang::VarDecl>(reference->getDecl())) {
       object_users_[variable->getCanonicalDecl()].insert(current_function_);
+      if (variable->isFileVarDecl()) {
+        record_symbol(variable, SymbolRole::Reference, reference->getLocation());
+      }
+    } else if (const auto* function =
+                   llvm::dyn_cast<clang::FunctionDecl>(reference->getDecl())) {
+      if (function->getDeclContext()->isTranslationUnit() && !function->isMain()) {
+        record_symbol(function, SymbolRole::Reference, reference->getLocation());
+      }
     }
     return true;
   }
@@ -725,6 +753,41 @@ class ExtraVisitor final : public clang::RecursiveASTVisitor<ExtraVisitor> {
     return list;
   }
 
+  void record_symbol(const clang::NamedDecl* declaration, const SymbolRole role,
+                     const clang::SourceLocation spelling) {
+    const clang::SourceLocation location = sm_.getExpansionLoc(spelling);
+    if (location.isInvalid() || sm_.isInSystemHeader(location) ||
+        declaration->getName().empty()) {
+      return;
+    }
+    const clang::PresumedLoc presumed = sm_.getPresumedLoc(location);
+    if (presumed.isInvalid()) {
+      return;
+    }
+    SymbolFact fact{declaration->getNameAsString(),
+                    llvm::isa<clang::FunctionDecl>(declaration),
+                    declaration->isExternallyVisible(),
+                    role,
+                    {presumed.getFilename(), presumed.getLine(), presumed.getColumn()},
+                    translation_unit_,
+                    {},
+                    {}};
+    if (const auto* function = llvm::dyn_cast<clang::FunctionDecl>(declaration)) {
+      fact.type_text = function->getReturnType().getAsString() + "(";
+      for (const clang::ParmVarDecl* parameter : function->parameters()) {
+        fact.type_text += parameter->getType().getAsString() + ",";
+        if (!fact.param_names.empty()) {
+          fact.param_names += ",";
+        }
+        fact.param_names += parameter->getNameAsString();
+      }
+      fact.type_text += ")";
+    } else if (const auto* variable = llvm::dyn_cast<clang::VarDecl>(declaration)) {
+      fact.type_text = variable->getType().getAsString();
+    }
+    context_.symbols.push_back(std::move(fact));
+  }
+
   void note_named(const clang::NamedDecl* declaration, const clang::SourceLocation location) {
     if (declaration->getName().empty()) {
       return;
@@ -1109,6 +1172,8 @@ class ExtraVisitor final : public clang::RecursiveASTVisitor<ExtraVisitor> {
   const Recorder& recorder_;
   clang::SourceManager& sm_;
   clang::FunctionDecl* current_function_ = nullptr;
+  AnalysisContext& context_;
+  std::string translation_unit_;
   std::vector<std::set<std::string>> scopes_;
   std::set<std::string> file_scope_names_;
   std::vector<NamedEntry> entries_;
@@ -1415,7 +1480,12 @@ std::unique_ptr<clang::PPCallbacks> make_extra_macro_observer(
 
 void collect_extra_observations(clang::ASTContext& ast, const Recorder& recorder,
                                 AnalysisContext& context) {
-  ExtraVisitor visitor(ast, recorder);
+  ExtraVisitor visitor(ast, recorder, context);
+  const clang::PresumedLoc main_loc = ast.getSourceManager().getPresumedLoc(
+      ast.getSourceManager().getLocForStartOfFile(ast.getSourceManager().getMainFileID()));
+  if (main_loc.isValid()) {
+    context.translation_units.push_back(main_loc.getFilename());
+  }
   visitor.TraverseDecl(ast.getTranslationUnitDecl());
   visitor.Finish();
   scan_main_file_text(ast, recorder);

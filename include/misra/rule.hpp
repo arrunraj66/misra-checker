@@ -82,9 +82,30 @@ struct Observation final {
   std::string detail;
 };
 
+enum class SymbolRole {
+  Declaration,
+  Definition,
+  Reference,
+};
+
+// A file-scope function or object seen by the Clang adapter. Facts from every
+// translation unit of a run are merged for whole-program rules.
+struct SymbolFact final {
+  std::string name;
+  bool is_function;
+  bool external_linkage;
+  SymbolRole role;
+  SourceLocation location;
+  std::string translation_unit;
+  std::string type_text;   // return/parameter or object type, qualifiers kept
+  std::string param_names; // comma separated, empty for objects
+};
+
 struct AnalysisContext final {
   ControlFlowFacts control_flow;
   std::vector<Observation> observations;
+  std::vector<SymbolFact> symbols;
+  std::vector<std::string> translation_units;
 };
 
 enum class EvaluationStatus {

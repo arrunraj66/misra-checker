@@ -321,4 +321,56 @@ if(BUILD_TESTING)
       )
     endif()
   endforeach()
+
+  # Whole-program fixtures: each directory under tests/fixtures/sys is one
+  # program; all of its .c files are analyzed together.
+  file(GLOB MISRA_SYS_CASES LIST_DIRECTORIES true CONFIGURE_DEPENDS
+       "${CMAKE_CURRENT_SOURCE_DIR}/tests/fixtures/sys/r*")
+  foreach(case_dir ${MISRA_SYS_CASES})
+    if(NOT IS_DIRECTORY "${case_dir}")
+      continue()
+    endif()
+    get_filename_component(case_name "${case_dir}" NAME)
+    string(REGEX MATCH "^r([0-9]+)_([0-9]+)_(bad|ok)$" matched "${case_name}")
+    if(NOT matched)
+      continue()
+    endif()
+    set(rule_pattern "misra-c2012-${CMAKE_MATCH_1}\\.${CMAKE_MATCH_2}-")
+    set(case_kind "${CMAKE_MATCH_3}")
+    file(GLOB case_sources "${case_dir}/*.c")
+    set(case_json "[\n")
+    set(case_sep "")
+    foreach(source ${case_sources})
+      string(
+        APPEND case_json
+        "${case_sep}  {\"directory\": \"${case_dir}\", \"file\": \"${source}\", "
+        "\"arguments\": [\"${CLANG_EXECUTABLE}\", \"-std=c99\", \"-c\", \"${source}\"]}"
+      )
+      set(case_sep ",\n")
+    endforeach()
+    string(APPEND case_json "\n]\n")
+    set(case_db "${CMAKE_CURRENT_BINARY_DIR}/tests/sys_${case_name}.json")
+    file(WRITE "${case_db}" "${case_json}")
+    if(case_kind STREQUAL "bad")
+      add_test(
+        NAME sys_${case_name}
+        COMMAND
+          "${CMAKE_COMMAND}"
+          "-DCHECKER=$<TARGET_FILE:misra-checker>"
+          "-DDATABASE=${case_db}"
+          "-DEXPECTED_DIAGNOSTIC=${rule_pattern}"
+          -P "${CMAKE_CURRENT_SOURCE_DIR}/tests/expect_violation.cmake"
+      )
+    else()
+      add_test(
+        NAME sys_${case_name}
+        COMMAND
+          "${CMAKE_COMMAND}"
+          "-DCHECKER=$<TARGET_FILE:misra-checker>"
+          "-DDATABASE=${case_db}"
+          "-DUNEXPECTED_DIAGNOSTIC=${rule_pattern}"
+          -P "${CMAKE_CURRENT_SOURCE_DIR}/tests/expect_no_diagnostic.cmake"
+      )
+    endif()
+  endforeach()
 endif()

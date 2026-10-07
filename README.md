@@ -33,8 +33,8 @@ src/rule_registry.cpp                  constructs the complete rule pack
 tests/rule_registry_test.cpp           validates count, uniqueness and totals
 ```
 
-104 rules now have Clang-backed detectors (see
-[docs/rules/observation-rules.md](docs/rules/observation-rules.md)). The remaining 39
+110 rules now have Clang-backed detectors (see
+[docs/rules/observation-rules.md](docs/rules/observation-rules.md)). The remaining 33
 classes are scaffolds returning `EvaluationStatus::NotImplemented`. All implemented
 rules still require independent validation; the product must not yet be
 represented as qualified, certified, or compliance-ready. Each detector will

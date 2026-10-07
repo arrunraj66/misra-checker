@@ -2,7 +2,7 @@
 
 This catalog records the engineering structures present in the checker. It deliberately does not reproduce the copyrighted normative rule wording. The licensed MISRA specification is the controlled source for rule predicates, amplification, exceptions, and examples.
 
-Current milestone: 39 rule classes are **scaffolds**. 104 rules have implemented Clang-backed syntactic detectors, but independent validation remains pending. A scaffold provides identity, metadata, an analysis plan, a factory, and a non-compliant-safe `NotImplemented` result. It is not a working compliance check.
+Current milestone: 33 rule classes are **scaffolds**. 110 rules have implemented Clang-backed syntactic detectors, but independent validation remains pending. A scaffold provides identity, metadata, an analysis plan, a factory, and a non-compliant-safe `NotImplemented` result. It is not a working compliance check.
 
 | Rule | Category | Decidability | Scope | C90 | C99 | Topic | Status |
 |---|---|---|---|---:|---:|---|---|
@@ -27,8 +27,8 @@ Current milestone: 39 rule classes are **scaffolds**. 104 rules have implemented
 | 5.5 | Required | Decidable | Single Translation Unit | Yes | Yes | Identifiers | Implemented; independent validation pending |
 | 5.6 | Required | Decidable | System | Yes | Yes | Identifiers | Implemented; independent validation pending |
 | 5.7 | Required | Decidable | System | Yes | Yes | Identifiers | Implemented; independent validation pending |
-| 5.8 | Required | Decidable | System | Yes | Yes | Identifiers | Scaffold |
-| 5.9 | Advisory | Decidable | System | Yes | Yes | Identifiers | Scaffold |
+| 5.8 | Required | Decidable | System | Yes | Yes | Identifiers | Implemented; independent validation pending |
+| 5.9 | Advisory | Decidable | System | Yes | Yes | Identifiers | Implemented; independent validation pending |
 | 6.1 | Required | Decidable | Single Translation Unit | Yes | Yes | Types and bit-fields | Implemented; independent validation pending |
 | 6.2 | Required | Decidable | Single Translation Unit | Yes | Yes | Types and bit-fields | Implemented; independent validation pending |
 | 7.1 | Required | Decidable | Single Translation Unit | Yes | Yes | Literals and constants | Implemented; independent validation pending |
@@ -37,11 +37,11 @@ Current milestone: 39 rule classes are **scaffolds**. 104 rules have implemented
 | 7.4 | Required | Decidable | Single Translation Unit | Yes | Yes | Literals and constants | Implemented; independent validation pending |
 | 8.1 | Required | Decidable | Single Translation Unit | Yes | No | Declarations and definitions | Scaffold |
 | 8.2 | Required | Decidable | Single Translation Unit | Yes | Yes | Declarations and definitions | Implemented; independent validation pending |
-| 8.3 | Required | Decidable | System | Yes | Yes | Declarations and definitions | Scaffold |
+| 8.3 | Required | Decidable | System | Yes | Yes | Declarations and definitions | Implemented; independent validation pending |
 | 8.4 | Required | Decidable | Single Translation Unit | Yes | Yes | Declarations and definitions | Implemented; independent validation pending |
-| 8.5 | Required | Decidable | System | Yes | Yes | Declarations and definitions | Scaffold |
-| 8.6 | Required | Decidable | System | Yes | Yes | Declarations and definitions | Scaffold |
-| 8.7 | Advisory | Decidable | System | Yes | Yes | Declarations and definitions | Scaffold |
+| 8.5 | Required | Decidable | System | Yes | Yes | Declarations and definitions | Implemented; independent validation pending |
+| 8.6 | Required | Decidable | System | Yes | Yes | Declarations and definitions | Implemented; independent validation pending |
+| 8.7 | Advisory | Decidable | System | Yes | Yes | Declarations and definitions | Implemented; independent validation pending |
 | 8.8 | Required | Decidable | Single Translation Unit | Yes | Yes | Declarations and definitions | Implemented; independent validation pending |
 | 8.9 | Advisory | Decidable | System | Yes | Yes | Declarations and definitions | Implemented; independent validation pending |
 | 8.10 | Required | Decidable | Single Translation Unit | No | Yes | Declarations and definitions | Implemented; independent validation pending |

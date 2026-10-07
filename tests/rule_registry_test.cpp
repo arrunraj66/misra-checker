@@ -76,8 +76,8 @@ int main() {
   require(undecidable == 27U, "expected 27 undecidable rules");
   require(single_unit == 104U, "expected 104 single-unit rules");
   require(system == 39U, "expected 39 system rules");
-  require(scaffold == 39U, "expected 39 scaffold rules");
-  require(implemented == 104U, "expected 104 implemented rules");
+  require(scaffold == 33U, "expected 33 scaffold rules");
+  require(implemented == 110U, "expected 110 implemented rules");
   require(registry.find("1.1") != nullptr, "Rule 1.1 must be registered");
   require(registry.find("22.6") != nullptr, "Rule 22.6 must be registered");
   require(registry.find("15.1")->descriptor().status ==

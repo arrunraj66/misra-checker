@@ -89,10 +89,15 @@ int main(int argc, char* argv[]) {
 
     const misra::RuleRegistry registry;
     std::size_t completed_rules = 0U;
+    std::size_t inconclusive_rules = 0U;
     std::size_t finding_count = 0U;
     for (const auto& rule : registry.rules()) {
       const misra::RuleEvaluation evaluation =
           rule->evaluate(frontend_result.context);
+      if (evaluation.status == misra::EvaluationStatus::Inconclusive) {
+        ++inconclusive_rules;
+        continue;
+      }
       if (evaluation.status != misra::EvaluationStatus::Complete) {
         continue;
       }
@@ -112,6 +117,11 @@ int main(int argc, char* argv[]) {
     std::cout << "Analyzed " << frontend_result.analyzed_files.size()
               << " translation unit(s); " << completed_rules
               << " implemented rule(s); " << finding_count << " finding(s).\n";
+    if (inconclusive_rules != 0U) {
+      std::cout << inconclusive_rules
+                << " whole-program rule(s) inconclusive: analyze at least two "
+                   "translation units together.\n";
+    }
     return finding_count == 0U ? 0 : 1;
   }
 
