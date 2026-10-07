@@ -757,8 +757,13 @@ class ExtraVisitor final : public clang::RecursiveASTVisitor<ExtraVisitor> {
                      const clang::SourceLocation spelling) {
     const clang::SourceLocation location = sm_.getExpansionLoc(spelling);
     if (location.isInvalid() || sm_.isInSystemHeader(location) ||
-        declaration->getName().empty()) {
+        declaration->getName().empty() || declaration->isImplicit()) {
       return;
+    }
+    if (const auto* builtin = llvm::dyn_cast<clang::FunctionDecl>(declaration)) {
+      if (builtin->getBuiltinID() != 0U) {
+        return;
+      }
     }
     const clang::PresumedLoc presumed = sm_.getPresumedLoc(location);
     if (presumed.isInvalid()) {
