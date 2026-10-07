@@ -494,7 +494,10 @@ class ObservationVisitor final
         kind == clang::CK_PointerToIntegral) {
       const bool source_function = source->isFunctionPointerType();
       const bool target_function = target->isFunctionPointerType();
-      if ((source_function || target_function) &&
+      const bool null_constant =
+          cast->getSubExpr()->isNullPointerConstant(
+              ast_, clang::Expr::NPC_ValueDependentIsNull) != clang::Expr::NPCK_NotNull;
+      if ((source_function || target_function) && !null_constant &&
           (ast_.getCanonicalType(source) != ast_.getCanonicalType(target))) {
         recorder_.add("function-pointer-conversion", location);
       }
@@ -530,17 +533,17 @@ class ObservationVisitor final
     const std::string text = spelling(literal->getBeginLoc());
     if ((text.size() > 1U) && (text[0] == '0') &&
         (std::isdigit(static_cast<unsigned char>(text[1])) != 0)) {
-      recorder_.add("octal-constant", literal->getBeginLoc());
+      recorder_.add("octal-constant", literal->getBeginLoc(), {}, true);
     }
     if (text.find('l') != std::string::npos) {
-      recorder_.add("lowercase-l-suffix", literal->getBeginLoc());
+      recorder_.add("lowercase-l-suffix", literal->getBeginLoc(), {}, true);
     }
     return true;
   }
 
   bool VisitFloatingLiteral(clang::FloatingLiteral* literal) {
     if (spelling(literal->getBeginLoc()).find('l') != std::string::npos) {
-      recorder_.add("lowercase-l-suffix", literal->getBeginLoc());
+      recorder_.add("lowercase-l-suffix", literal->getBeginLoc(), {}, true);
     }
     return true;
   }
@@ -549,7 +552,7 @@ class ObservationVisitor final
     for (unsigned int index = 0U; index < literal->getNumConcatenated(); ++index) {
       const clang::SourceLocation location = literal->getStrTokenLoc(index);
       if (!escapes_terminated(spelling(location))) {
-        recorder_.add("unterminated-escape", location);
+        recorder_.add("unterminated-escape", location, {}, true);
       }
     }
     return true;
@@ -557,7 +560,7 @@ class ObservationVisitor final
 
   bool VisitCharacterLiteral(clang::CharacterLiteral* literal) {
     if (!escapes_terminated(spelling(literal->getLocation()))) {
-      recorder_.add("unterminated-escape", literal->getLocation());
+      recorder_.add("unterminated-escape", literal->getLocation(), {}, true);
     }
     return true;
   }

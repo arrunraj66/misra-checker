@@ -23,14 +23,27 @@ class Recorder final {
   Recorder(clang::SourceManager& source_manager, AnalysisContext& context)
       : source_manager_(source_manager), context_(context) {}
 
+  // `at_spelling` reports a construct written inside a macro definition at
+  // that definition (when it is project code) instead of at each expansion.
+  // `unrestricted` also keeps helper facts from project headers.
   void add(std::string kind, const clang::SourceLocation spelling,
-           std::string detail = {}) const {
+           std::string detail = {}, const bool at_spelling = false,
+           const bool unrestricted = false) const {
     if (spelling.isInvalid()) {
       return;
     }
-    const clang::SourceLocation location =
-        source_manager_.getExpansionLoc(spelling);
-    if (!source_manager_.isWrittenInMainFile(location)) {
+    clang::SourceLocation location = source_manager_.getExpansionLoc(spelling);
+    if (at_spelling) {
+      const clang::SourceLocation written = source_manager_.getSpellingLoc(spelling);
+      if (written.isValid() && !source_manager_.isInSystemHeader(written) &&
+          (source_manager_.isWrittenInMainFile(written) ||
+           allowed_outside_main(written, kind))) {
+        location = written;
+      }
+    }
+    if (!source_manager_.isWrittenInMainFile(location) &&
+        !(unrestricted && !source_manager_.isInSystemHeader(location)) &&
+        !allowed_outside_main(location, kind)) {
       return;
     }
     const clang::PresumedLoc presumed = source_manager_.getPresumedLoc(location);
@@ -41,6 +54,27 @@ class Recorder final {
         {std::move(kind),
          {presumed.getFilename(), presumed.getLine(), presumed.getColumn()},
          std::move(detail)});
+  }
+
+  // Project headers are reported too, except for findings that only make
+  // sense relative to one translation unit (usage-based ones).
+  [[nodiscard]] bool allowed_outside_main(const clang::SourceLocation location,
+                                          const std::string& kind) const {
+    if (source_manager_.isInSystemHeader(location) ||
+        source_manager_.isWrittenInMainFile(location)) {
+      return false;
+    }
+    static const char* const kTranslationUnitRelative[] = {
+        "unused-typedef", "unused-tag", "unused-macro", "single-function-object",
+        "macro-definition", "unused-parameter", "no-prior-declaration",
+        "hides-outer-declaration", "missing-return-value", "include-after-code"};
+    for (const char* excluded : kTranslationUnitRelative) {
+      if (kind == excluded) {
+        return false;
+      }
+    }
+    const clang::PresumedLoc presumed = source_manager_.getPresumedLoc(location);
+    return presumed.isValid();
   }
 
   [[nodiscard]] clang::SourceManager& source_manager() const {

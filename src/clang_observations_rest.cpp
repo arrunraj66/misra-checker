@@ -285,8 +285,7 @@ class RestVisitor final : public clang::RecursiveASTVisitor<RestVisitor> {
     }
 
     // Rule 12.4: constant unsigned expressions that wrap around.
-    if (((code == clang::BO_Add) || (code == clang::BO_Sub) || (code == clang::BO_Mul) ||
-         (code == clang::BO_Shl)) &&
+    if (((code == clang::BO_Add) || (code == clang::BO_Sub) || (code == clang::BO_Mul)) &&
         op->getType()->isUnsignedIntegerType() && op->isIntegerConstantExpr(ast_)) {
       clang::Expr::EvalResult left;
       clang::Expr::EvalResult right;

@@ -316,9 +316,10 @@ class ExtraVisitor final : public clang::RecursiveASTVisitor<ExtraVisitor> {
   bool VisitCompoundStmt(clang::CompoundStmt* block) {
     for (const clang::Stmt* child : block->body()) {
       if (const auto* expression = llvm::dyn_cast<clang::Expr>(child)) {
-        const auto* cast = llvm::dyn_cast<clang::CStyleCastExpr>(expression);
+        const auto* cast = llvm::dyn_cast<clang::CStyleCastExpr>(expression->IgnoreParens());
         const bool void_cast = (cast != nullptr) && cast->getType()->isVoidType();
-        if (!void_cast && !expression->HasSideEffects(ast_)) {
+        if (!void_cast && !expression->getBeginLoc().isMacroID() &&
+            !expression->HasSideEffects(ast_)) {
           recorder_.add("no-effect-statement", expression->getBeginLoc());
         }
       }
@@ -707,7 +708,7 @@ class ExtraVisitor final : public clang::RecursiveASTVisitor<ExtraVisitor> {
     if (literal->getType()->isUnsignedIntegerType()) {
       const std::string text = spelling(literal->getBeginLoc());
       if (text.find_first_of("uU") == std::string::npos) {
-        recorder_.add("missing-unsigned-suffix", literal->getBeginLoc());
+        recorder_.add("missing-unsigned-suffix", literal->getBeginLoc(), {}, true);
       }
     }
     return true;
@@ -1016,7 +1017,22 @@ class ExtraVisitor final : public clang::RecursiveASTVisitor<ExtraVisitor> {
   }
 
   [[nodiscard]] bool string_decay_is_safe(const clang::CastExpr* cast) const {
-    for (const clang::DynTypedNode& parent : ast_.getParents(*cast)) {
+    // Look through parentheses and conditional operands to the real consumer.
+    const clang::Stmt* current = cast;
+    while (true) {
+      const auto parents = ast_.getParents(*current);
+      if (parents.size() != 1U) {
+        break;
+      }
+      const clang::Stmt* parent = parents[0].get<clang::Stmt>();
+      if ((parent != nullptr) && (llvm::isa<clang::ParenExpr>(parent) ||
+                                  llvm::isa<clang::ConditionalOperator>(parent))) {
+        current = parent;
+        continue;
+      }
+      break;
+    }
+    for (const clang::DynTypedNode& parent : ast_.getParents(*current)) {
       if (const auto* outer = parent.get<clang::ImplicitCastExpr>()) {
         if (outer->getType()->isPointerType() &&
             outer->getType()->getPointeeType().isConstQualified()) {
@@ -1498,14 +1514,17 @@ class ExtraMacroObserver final : public clang::PPCallbacks {
                     const clang::MacroDirective* directive) override {
     const clang::IdentifierInfo* identifier = name_token.getIdentifierInfo();
     if ((identifier == nullptr) ||
-        !recorder_.source_manager().isWrittenInMainFile(
-            recorder_.source_manager().getExpansionLoc(name_token.getLocation()))) {
+        recorder_.source_manager().isInSystemHeader(name_token.getLocation())) {
       return;
     }
     const std::string name = identifier->getName().str();
+    recorder_.add("macro-definition", name_token.getLocation(), name, false, true);
+    if (!recorder_.source_manager().isWrittenInMainFile(
+            recorder_.source_manager().getExpansionLoc(name_token.getLocation()))) {
+      return;
+    }
     const clang::MacroInfo* info = directive->getMacroInfo();
     defined_[name] = name_token.getLocation();
-    recorder_.add("macro-definition", name_token.getLocation(), name);
     if (identifier->isKeyword(language_)) {
       recorder_.add("macro-named-keyword", name_token.getLocation(), name);
     }
@@ -1621,16 +1640,47 @@ class ExtraMacroObserver final : public clang::PPCallbacks {
   void check_condition(clang::SourceLocation location, clang::SourceRange range) {
     const clang::SourceManager& sm = recorder_.source_manager();
     bool invalid = false;
-    const std::string text = clang::Lexer::getSourceText(
+    std::string text = clang::Lexer::getSourceText(
                                  clang::CharSourceRange::getTokenRange(range), sm,
                                  language_, &invalid)
                                  .str();
     if (invalid) {
       return;
     }
+    // Drop comments and note names tested with `defined`: those guard later
+    // uses of the same name in the condition.
+    for (std::size_t open = text.find("/*"); open != std::string::npos; open = text.find("/*")) {
+      const std::size_t close = text.find("*/", open + 2U);
+      text.replace(open, close == std::string::npos ? std::string::npos : close + 2U - open, " ");
+    }
+    if (const std::size_t line_comment = text.find("//"); line_comment != std::string::npos) {
+      text.erase(line_comment);
+    }
+    std::set<std::string> guarded;
+    for (std::size_t at = text.find("defined"); at != std::string::npos;
+         at = text.find("defined", at + 7U)) {
+      std::size_t begin = text.find_first_not_of(" \t(", at + 7U);
+      std::size_t end = begin;
+      while ((end != std::string::npos) && (end < text.size()) &&
+             ((std::isalnum(static_cast<unsigned char>(text[end])) != 0) || (text[end] == '_'))) {
+        ++end;
+      }
+      if (begin != std::string::npos) {
+        guarded.insert(text.substr(begin, end - begin));
+      }
+    }
     // Identifiers that are neither defined nor operands of `defined`.
     bool has_identifier = false;
     for (std::size_t i = 0U; i < text.size();) {
+      if ((text[i] == '\'') || (text[i] == '"')) {
+        const char quote = text[i];
+        ++i;
+        while ((i < text.size()) && (text[i] != quote)) {
+          i += (text[i] == '\\') ? 2U : 1U;
+        }
+        ++i;
+        continue;
+      }
       if ((std::isalpha(static_cast<unsigned char>(text[i])) != 0) || (text[i] == '_')) {
         std::size_t end = i;
         while ((end < text.size()) &&
@@ -1648,7 +1698,8 @@ class ExtraMacroObserver final : public clang::PPCallbacks {
           i = (next == std::string::npos) ? text.size() : next;
           continue;
         }
-        if ((name.rfind("__has_", 0U) != 0U) && !preprocessor_.isMacroDefined(name)) {
+        if ((name.rfind("__has_", 0U) != 0U) && (guarded.count(name) == 0U) &&
+            !preprocessor_.isMacroDefined(name)) {
           recorder_.add("undefined-identifier-in-if", location, name);
         }
         i = end;

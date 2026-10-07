@@ -1,4 +1,8 @@
+#include <algorithm>
 #include <filesystem>
+#include <tuple>
+#include <set>
+#include <sstream>
 #include <iostream>
 #include <string>
 #include <string_view>
@@ -104,6 +108,15 @@ int main(int argc, char* argv[]) {
     }
 
     const misra::RuleRegistry registry;
+    std::set<std::string> printed;
+    struct Row {
+      std::string file;
+      unsigned int line;
+      unsigned int column;
+      std::string rule;
+      std::string text;
+    };
+    std::vector<Row> ordered;
     std::size_t completed_rules = 0U;
     std::size_t inconclusive_rules = 0U;
     std::size_t finding_count = 0U;
@@ -120,14 +133,29 @@ int main(int argc, char* argv[]) {
 
       ++completed_rules;
       for (const misra::Finding& finding : evaluation.findings) {
-        ++finding_count;
-        std::cout << finding.location.file << ':' << finding.location.line << ':'
-                  << finding.location.column << ": "
-                  << category_name(rule->descriptor().category)
-                  << ": MISRA C:2012 Rule "
-                  << rule->descriptor().id << " [" << finding.message_key
-                  << "]\n";
+        std::ostringstream line;
+        line << finding.location.file << ':' << finding.location.line << ':'
+             << finding.location.column << ": "
+             << category_name(rule->descriptor().category)
+             << ": MISRA C:2012 Rule " << rule->descriptor().id << " ["
+             << finding.message_key << "]\n";
+        // Headers are seen by several translation units; report each once.
+        if (printed.insert(line.str()).second) {
+          ++finding_count;
+          ordered.push_back({finding.location.file, finding.location.line,
+                             finding.location.column, std::string{rule->descriptor().id},
+                             line.str()});
+        }
       }
+    }
+
+    // Deterministic output regardless of container iteration order.
+    std::sort(ordered.begin(), ordered.end(), [](const Row& a, const Row& b) {
+      return std::tie(a.file, a.line, a.column, a.rule, a.text) <
+             std::tie(b.file, b.line, b.column, b.rule, b.text);
+    });
+    for (const Row& row : ordered) {
+      std::cout << row.text;
     }
 
     std::cout << "Analyzed " << frontend_result.analyzed_files.size()
