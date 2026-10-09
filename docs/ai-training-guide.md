@@ -6,6 +6,15 @@ locally on the RX 6700 XT through Docker. The commands were checked on this
 machine, except the Colab notebook and the GPU model container, which need
 Colab and the downloaded model to try.
 
+## Shortcut: do everything in Google Colab
+
+`colab/misra_colab_pipeline.ipynb` runs the whole flow in one notebook: build the checker,
+upload a project zip, find findings, let an AI (Claude API, or a local model on the Colab GPU) propose fixes,
+gate them, and download `report.html`, `findings.csv` and `fixed_project.zip`. The same flow runs anywhere with
+`scripts/run_project_pipeline.py PROJECT.zip --out OUT --provider-cmd ... --license ...`.
+Open the notebook from GitHub in Colab (File > Open notebook > GitHub). Training (section 5 below) is the last part of the notebook.
+It needs a few hundred accepted pairs and an `eval.jsonl` that is only written once enough pairs exist.
+
 ## 0. Put the code on GitHub
 
 ```bash
