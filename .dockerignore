@@ -1,3 +1,7 @@
 build
 build-*
 .git
+dist
+models
+workspace
+**/__pycache__

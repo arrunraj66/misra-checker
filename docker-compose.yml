@@ -1,0 +1,39 @@
+# docker compose up -d --build                 GUI at http://localhost:8765
+# docker compose --profile llm up -d --build   GUI + local model server (AMD GPU)
+services:
+  misra:
+    build:
+      context: .
+      dockerfile: docker/app.Dockerfile
+    image: misra-checker-app:latest
+    ports:
+      - "127.0.0.1:8765:8765"   # loopback only: the GUI has no authentication
+    environment:
+      OLLAMA_HOST: http://llm:11434
+      MISRA_AI_MODEL: misra-fixer
+    volumes:
+      - ./workspace:/workspace
+    restart: unless-stopped
+
+  llm:
+    profiles: ["llm"]
+    image: ollama/ollama:rocm
+    # RX 6700 XT (gfx1031) is not an officially supported ROCm target; this
+    # override makes it use the gfx1030 kernels, which is the usual workaround.
+    environment:
+      HSA_OVERRIDE_GFX_VERSION: "10.3.0"
+    devices:
+      - /dev/kfd
+      - /dev/dri
+    group_add:
+      - "${VIDEO_GID:-44}"
+      - "${RENDER_GID:-110}"    # check: getent group render
+    ports:
+      - "127.0.0.1:11434:11434"
+    volumes:
+      - ollama:/root/.ollama
+      - ./models:/models:ro     # put your fine-tuned .gguf here
+    restart: unless-stopped
+
+volumes:
+  ollama:

@@ -44,3 +44,5 @@ secrets*
 /licensed/
 /customer-code/
 /proprietary-corpora/
+/models/
+/workspace/
