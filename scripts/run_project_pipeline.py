@@ -31,6 +31,19 @@ FINDING = re.compile(
     r"(?P<rule>[\d.]+) \[(?P<key>[^\]]+)\]")
 
 
+# Rules each converter fix class can address (mirrors src/converter.cpp; keep in sync).
+CLASS_RULES = {
+    "literal-hygiene": {"7.1", "7.2", "7.3"},
+    "goto-elimination": {"15.1", "15.2", "15.3"},
+    "structured-control-flow": {"14.2", "15.5", "15.6", "15.7", "16.3", "16.4", "16.5", "16.6"},
+    "boolean-and-side-effects": {"12.3", "13.4", "13.5", "13.6", "14.4"},
+    "call-and-parameter-hygiene": {"2.7", "17.7", "17.8"},
+    "declaration-hygiene": {"8.2", "8.8", "8.10", "8.11", "8.14"},
+    "pointer-cast-hygiene": {"7.4", "11.5", "11.8", "11.9"},
+}
+FIXABLE = set().union(*CLASS_RULES.values())
+
+
 def safe_extract(archive: Path, dest: Path) -> None:
     root = dest.resolve()
     with zipfile.ZipFile(archive) as zf:
@@ -64,12 +77,12 @@ def make_db(project: Path, std: str, defines) -> Path:
     return project / "compile_commands.json"
 
 
-def convert_file(args, database: Path, source: str, out_dir: Path) -> dict:
+def convert_file(args, database: Path, source: str, out_dir: Path, fix_class: str) -> dict:
     out_dir.mkdir(parents=True, exist_ok=True)
     cmd = [args.checker, "convert", "--compile-commands", str(database),
            "--file", source, "--provider-cmd", args.provider_cmd,
            "--verify-cmd", args.verify_cmd, "--output-dir", str(out_dir),
-           "--license", str(args.license)]
+           "--license", str(args.license), "--fix-class", fix_class]
     try:
         done = subprocess.run(cmd, capture_output=True, text=True, timeout=args.timeout)
         message = (done.stdout + done.stderr).strip().splitlines()
@@ -114,6 +127,11 @@ def write_report(out: Path, summary: dict, results, findings_before, findings_af
         for r in results)
     patches = "".join(
         f"<h3>{esc(r['file'])}</h3><pre>{esc(r['patch'])}</pre>" for r in results if r["patch"])
+    fixable_note = (
+        "<p>Findings of rules with <b>no automatic fix class</b> are never changed by the converter "
+        "(for example 8.4, 8.7, 2.x, 5.x, 9.x, 10.x, 18.x, 20.x, 21.x). They stay in the fixed project "
+        "and need manual work. Rules the converter can attempt: "
+        + esc(", ".join(sorted(FIXABLE, key=lambda x: [int(p) for p in x.split(".")]))) + ".</p>")
     note_html = "".join(f"<li>{esc(n)}</li>" for n in notices[:50])
     (out / "report.html").write_text(f"""<!doctype html><meta charset="utf-8">
 <title>MISRA conversion report</title>
@@ -127,7 +145,7 @@ Review every patch before using it.</p>
 <ul>{"".join(f"<li>{esc(k)}: <b>{esc(str(v))}</b></li>" for k, v in summary.items())}</ul>
 <h2>Findings per rule (before / after applying accepted fixes)</h2>
 <table><tr><th>Rule</th><th>Before</th><th>After</th></tr>{rule_rows}</table>
-<h2>Files</h2>
+{fixable_note}<h2>Files</h2>
 <table><tr><th>File</th><th>Outcome</th><th>Fix class</th><th>Before</th><th>After</th><th>Detail</th></tr>{file_rows}</table>
 <h2>Notices</h2><ul>{note_html}</ul>
 <h2>Patches</h2>{patches}""")
@@ -147,6 +165,8 @@ def main() -> int:
                     help="glob (relative path) of files not to convert, e.g. 'lib/*'")
     ap.add_argument("--max-files", type=int, default=0, help="0 = all")
     ap.add_argument("--timeout", type=int, default=1800, help="seconds per file")
+    ap.add_argument("--passes", type=int, default=4,
+                    help="repeat find/fix on the fixed copy until nothing changes (max passes)")
     args = ap.parse_args()
 
     out = args.out.resolve()
@@ -169,30 +189,56 @@ def main() -> int:
         todo = todo[:args.max_files]
     print(f"{len(findings_before)} findings in {len(per_file)} files; converting {len(todo)}")
 
-    results = []
-    for index, source in enumerate(todo, 1):
-        print(f"[{index}/{len(todo)}] {Path(source).relative_to(project)}", flush=True)
-        results.append(convert_file(args, database, source, out / "converter" / str(index)))
-        print("   ", results[-1]["outcome"], "-", results[-1]["detail"], flush=True)
-
     fixed = out / "fixed_project"
     shutil.copytree(project, fixed, ignore=shutil.ignore_patterns("compile_commands.json"))
-    for r in results:
-        if r["outcome"] == "proposed" and r["proposed"]:
-            shutil.copyfile(r["proposed"], fixed / Path(r["file"]).relative_to(project))
     fixed_db = make_db(fixed, args.std, args.defines)
-    _, findings_after, notices_after = run_analyze(args.checker, fixed_db)
+    allowed = {str(fixed / Path(f).relative_to(project)) for f in todo}
 
+    results, passes_used, job = [], 0, 0
+    for pass_no in range(1, args.passes + 1):
+        _, current, _ = run_analyze(args.checker, fixed_db)
+        by_file = {}
+        for f in current:
+            if f["file"] in allowed:
+                by_file.setdefault(f["file"], set()).add(f["rule"])
+        work_list = [(src, [c for c, rules in CLASS_RULES.items() if rules & r])
+                     for src, r in by_file.items()]
+        work_list = [(src, classes) for src, classes in work_list if classes]
+        if not work_list:
+            break
+        passes_used = pass_no
+        changed = 0
+        print(f"--- pass {pass_no}: {len(work_list)} files with fixable findings", flush=True)
+        for source, classes in work_list:
+            rel = Path(source).relative_to(fixed)
+            for fix_class in classes:
+                job += 1
+                print(f"[{job}] pass {pass_no} {rel} ({fix_class})", flush=True)
+                r = convert_file(args, fixed_db, source, out / "converter" / f"{job:04d}", fix_class)
+                r["pass"] = pass_no
+                results.append(r)
+                print("   ", r["outcome"], "-", r["detail"], flush=True)
+                if r["outcome"] == "proposed" and r["proposed"]:
+                    shutil.copyfile(r["proposed"], source)
+                    changed += 1
+                    break          # re-analyze before trying this file's other classes
+        if not changed:
+            break
+
+    _, findings_after, notices_after = run_analyze(args.checker, fixed_db)
+    unfixable = Counter(f["rule"] for f in findings_after if f["rule"] not in FIXABLE)
     summary = {"files with findings": len(per_file), "files attempted": len(todo),
+               "passes run": passes_used,
                "fixes accepted by the gates": sum(r["outcome"] == "proposed" for r in results),
                "fixes rejected or failed": sum(r["outcome"] != "proposed" for r in results),
                "findings before": len(findings_before),
-               "findings after accepted fixes": len(findings_after)}
+               "findings after accepted fixes": len(findings_after),
+               "remaining with no automatic fix class": sum(unfixable.values())}
     for rows, base in ((findings_before, project), (findings_after, fixed)):
         for f in rows:
             f["file"] = str(Path(f["file"]).relative_to(base))
     for r in results:
-        r["file"] = str(Path(r["file"]).relative_to(project))
+        r["file"] = str(Path(r["file"]).relative_to(fixed))
     write_report(out, summary, results, findings_before, findings_after, notices + notices_after)
     shutil.make_archive(str(out / "fixed_project"), "zip", fixed)
     print(json.dumps(summary, indent=1))
