@@ -348,7 +348,10 @@ ConvertReport convert_file(const ConvertOptions& options) {
                            report.patch_path.string() + "'";
   const fs::path original_copy = fs::path(stem).concat(".orig");
   write_file(original_copy, original);
-  (void)std::system(diff.c_str());  // exit 1 simply means "files differ"
+  // Exit status 1 simply means "files differ"; the status is deliberately
+  // ignored. (A void cast alone does not silence warn_unused_result in GCC.)
+  const int diff_status = std::system(diff.c_str());
+  static_cast<void>(diff_status);
   fs::remove(original_copy, ec);
 
   if (options.apply) {
