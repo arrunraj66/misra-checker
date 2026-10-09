@@ -1,15 +1,23 @@
+#include <algorithm>
 #include <filesystem>
+#include <tuple>
+#include <set>
+#include <sstream>
 #include <iostream>
 #include <string>
 #include <string_view>
 #include <vector>
 
+#include <cstdlib>
+
 #include "misra/clang_frontend.hpp"
+#include "misra/converter.hpp"
+#include "misra/license.hpp"
 #include "misra/rule_registry.hpp"
 
 namespace {
 
-constexpr std::string_view kVersion = "0.3.0";
+constexpr std::string_view kVersion = "0.4.0";
 
 constexpr std::string_view category_name(const misra::RuleCategory category) {
   switch (category) {
@@ -29,7 +37,10 @@ void print_usage() {
       << "  misra-checker --version\n"
       << "  misra-checker --list-rules\n"
       << "  misra-checker analyze --compile-commands <file-or-directory> "
-         "[--file <source>]...\n";
+         "[--file <source>]...\n"
+      << "  misra-checker convert --compile-commands <file> --file <source>\n"
+         "      --provider-cmd <shell-command> [--verify-cmd <shell-command>]\n"
+         "      [--output-dir <dir>] [--license <file>] [--fix-class <id>] [--apply]\n";
 }
 
 }  // namespace
@@ -75,37 +86,145 @@ int main(int argc, char* argv[]) {
     const misra::ClangFrontend frontend;
     const misra::FrontendResult frontend_result = frontend.analyze(
         compilation_database.string(), requested_files);
-    if (!frontend_result.success) {
-      std::cerr << "misra-checker: " << frontend_result.error_message << '\n';
-      return 2;
+    // Clang recovers from most errors and still hands over a usable AST, so a
+    // compile error must not hide every other finding. Analysis continues on
+    // the recovered AST; the user is told the result may be incomplete.
+    const bool compile_errors = !frontend_result.success;
+    if (compile_errors) {
+      if (frontend_result.analyzed_files.empty()) {
+        std::cerr << "misra-checker: " << frontend_result.error_message << '\n';
+        return 2;
+      }
+      std::cerr << "misra-checker: " << frontend_result.error_message
+                << "; continuing on the recovered AST, results may be incomplete\n";
     }
 
     const misra::RuleRegistry registry;
+    std::set<std::string> printed;
+    struct Row {
+      std::string file;
+      unsigned int line;
+      unsigned int column;
+      std::string rule;
+      std::string text;
+    };
+    std::vector<Row> ordered;
     std::size_t completed_rules = 0U;
+    std::size_t inconclusive_rules = 0U;
     std::size_t finding_count = 0U;
     for (const auto& rule : registry.rules()) {
       const misra::RuleEvaluation evaluation =
           rule->evaluate(frontend_result.context);
+      if (evaluation.status == misra::EvaluationStatus::Inconclusive) {
+        ++inconclusive_rules;
+        continue;
+      }
       if (evaluation.status != misra::EvaluationStatus::Complete) {
         continue;
       }
 
       ++completed_rules;
       for (const misra::Finding& finding : evaluation.findings) {
-        ++finding_count;
-        std::cout << finding.location.file << ':' << finding.location.line << ':'
-                  << finding.location.column << ": "
-                  << category_name(rule->descriptor().category)
-                  << ": MISRA C:2012 Rule "
-                  << rule->descriptor().id << " [" << finding.message_key
-                  << "]\n";
+        std::ostringstream line;
+        line << finding.location.file << ':' << finding.location.line << ':'
+             << finding.location.column << ": "
+             << category_name(rule->descriptor().category)
+             << ": MISRA C:2012 Rule " << rule->descriptor().id << " ["
+             << finding.message_key << "]\n";
+        // Headers are seen by several translation units; report each once.
+        if (printed.insert(line.str()).second) {
+          ++finding_count;
+          ordered.push_back({finding.location.file, finding.location.line,
+                             finding.location.column, std::string{rule->descriptor().id},
+                             line.str()});
+        }
       }
+    }
+
+    // Deterministic output regardless of container iteration order.
+    std::sort(ordered.begin(), ordered.end(), [](const Row& a, const Row& b) {
+      return std::tie(a.file, a.line, a.column, a.rule, a.text) <
+             std::tie(b.file, b.line, b.column, b.rule, b.text);
+    });
+    for (const Row& row : ordered) {
+      std::cout << row.text;
     }
 
     std::cout << "Analyzed " << frontend_result.analyzed_files.size()
               << " translation unit(s); " << completed_rules
               << " implemented rule(s); " << finding_count << " finding(s).\n";
-    return finding_count == 0U ? 0 : 1;
+    if (inconclusive_rules != 0U) {
+      std::cout << inconclusive_rules
+                << " whole-program rule(s) inconclusive: analyze at least two "
+                   "translation units together.\n";
+    }
+    if (finding_count != 0U) {
+      return 1;
+    }
+    return compile_errors ? 2 : 0;
+  }
+
+  if ((argc >= 2) && (std::string_view{argv[1]} == "convert")) {
+    misra::ConvertOptions options;
+    options.output_dir = "misra-convert-out";
+    std::string license_path;
+    if (const char* env = std::getenv("MISRA_LICENSE_FILE")) {
+      license_path = env;
+    }
+    for (int index = 2; index < argc; ++index) {
+      const std::string_view argument{argv[index]};
+      const bool has_value = (index + 1) < argc;
+      if ((argument == "--compile-commands") && has_value) {
+        options.compilation_database = argv[++index];
+      } else if ((argument == "--file") && has_value) {
+        options.source_file = argv[++index];
+      } else if ((argument == "--provider-cmd") && has_value) {
+        options.provider_command = argv[++index];
+      } else if ((argument == "--verify-cmd") && has_value) {
+        options.verify_command = argv[++index];
+      } else if ((argument == "--output-dir") && has_value) {
+        options.output_dir = argv[++index];
+      } else if ((argument == "--license") && has_value) {
+        license_path = argv[++index];
+      } else if ((argument == "--fix-class") && has_value) {
+        options.fix_class = argv[++index];
+      } else if (argument == "--apply") {
+        options.apply = true;
+      } else {
+        print_usage();
+        return 64;
+      }
+    }
+    if (options.compilation_database.empty() || options.source_file.empty() ||
+        options.provider_command.empty()) {
+      print_usage();
+      return 64;
+    }
+    if (std::filesystem::is_directory(options.compilation_database)) {
+      options.compilation_database += "/compile_commands.json";
+    }
+
+    const misra::LicenseResult license =
+        misra::load_license_file(license_path, misra::today_iso_date());
+    if (!license.valid || !misra::has_feature(license.info, "convert")) {
+      std::cerr << "misra-checker: converter requires a valid license with the "
+                   "'convert' feature ("
+                << (license.valid ? "feature not granted" : license.error_message)
+                << ")\n";
+      return 77;
+    }
+
+    const misra::ConvertReport report = misra::convert_file(options);
+    std::cout << misra::outcome_name(report.outcome) << ": " << report.detail
+              << '\n';
+    if (!report.patch_path.empty()) {
+      std::cout << "patch: " << report.patch_path.string() << '\n';
+    }
+    return (report.outcome == misra::ConvertOutcome::Proposed ||
+            report.outcome == misra::ConvertOutcome::Applied ||
+            report.outcome == misra::ConvertOutcome::NothingToConvert)
+               ? 0
+               : 1;
   }
 
   const misra::RuleRegistry registry;

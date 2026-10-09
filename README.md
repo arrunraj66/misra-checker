@@ -15,6 +15,35 @@ See [ROADMAP.md](ROADMAP.md) for the 78-week implementation and assurance progra
 - A successful scan is not by itself a MISRA compliance claim.
 - Automatic remediation is restricted to independently approved transformation classes.
 
+## Per-rule validation and GUI
+
+```bash
+python3 scripts/validate_rules.py            # validate each rule against its bad/ok fixtures
+python3 scripts/validate_rules.py 8.4 15.3   # only selected rules
+python3 gui/misra_gui.py                     # local web GUI on http://127.0.0.1:8765
+```
+
+`validate_rules.py` checks every rule one at a time: each `bad` fixture must report
+the rule, each `ok` fixture must not. Results are in
+[docs/rule-validation.md](docs/rule-validation.md). This is a regression check
+against the repository's own fixtures, not independent validation.
+
+The GUI (Python standard library only, loopback only) analyzes pasted or uploaded
+C code or a `compile_commands.json`. Several `.c`/`.h` files can be added as tabs and
+are analyzed together, which also enables the whole-program rules. Findings can be
+filtered by severity or text, sorted, exported as CSV, JSON or a standalone HTML
+report, and clicked to jump to the line in the built-in editor, which shows
+line numbers and marks violating lines (Ctrl+Enter runs the analysis; your input
+and theme are remembered in the browser; light and dark themes are supported). A whole project can be uploaded as a `.zip` (sources, headers
+and bundled libraries): every `.c` file is analyzed together, with every project
+directory on the include path, optional `-D` defines and extra include dirs, so
+cross-file and whole-program rules apply. Findings in `lib`/`vendor`/`drivers`-style
+folders are tagged as library code and can be hidden. Only `.c`/`.h` files are
+extracted, unsafe archive paths are rejected, and size limits apply. The Rules
+tab lists all rules and validates them individually or all at once, showing each
+rule's fixtures and outcomes. Code with compile errors is still checked; see
+`scripts/fuzz_broken_input.py` for the robustness check.
+
 ## MISRA C:2012 rule structures
 
 The repository now has one C++ translation unit and one concrete `Rule` class
@@ -33,8 +62,9 @@ src/rule_registry.cpp                  constructs the complete rule pack
 tests/rule_registry_test.cpp           validates count, uniqueness and totals
 ```
 
-Rules 15.1 and 15.2 now have Clang-backed detectors. The remaining 141 classes
-are scaffolds returning `EvaluationStatus::NotImplemented`. Both implemented
+All 143 rules now have detectors (see
+[docs/rules/observation-rules.md](docs/rules/observation-rules.md)). None of the
+classes are scaffolds returning `EvaluationStatus::NotImplemented`. All implemented
 rules still require independent validation; the product must not yet be
 represented as qualified, certified, or compliance-ready. Each detector will
 advance independently through specification, implementation, positive/negative
@@ -105,3 +135,10 @@ The wrapper:
 6. creates a local Git commit only when staged changes exist.
 
 It intentionally does not push automatically. Pushing should remain an explicit action, and protected branches should require CI.
+
+## Controlled AI converter
+
+`misra-checker convert` uses a pluggable AI provider to propose fixes, gated by
+re-compilation, re-analysis, and optional test commands, behind a signed
+licence. See [docs/converter.md](docs/converter.md). The software is
+proprietary; see [LICENSE](LICENSE).
