@@ -1,0 +1,815 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>MISRA Checker</title>
+<style>
+:root {
+  --bg:#f3f5f8; --surface:#ffffff; --surface-2:#f8f9fb; --text:#171c24; --muted:#5d6775; --line:#dde2e9;
+  --accent:#2457d6; --accent-ink:#ffffff; --accent-soft:#e7eefc;
+  --pass:#16794c; --fail:#c62a35; --warn:#946200; --none:#6b7380;
+  --mandatory:#c62a35; --required:#b45309; --advisory:#2457d6;
+  --hit-mandatory:rgba(198,42,53,.13); --hit-required:rgba(180,83,9,.14); --hit-advisory:rgba(36,87,214,.12);
+  --editor-bg:#fcfcfd; --gutter-bg:#f1f3f6; --shadow:0 1px 2px rgba(16,24,40,.06),0 1px 3px rgba(16,24,40,.08);
+  --mono:ui-monospace,SFMono-Regular,"JetBrains Mono",Menlo,Consolas,monospace;
+}
+:root[data-theme="dark"] {
+  --bg:#0c1016; --surface:#141a22; --surface-2:#10151c; --text:#e5eaf1; --muted:#97a2b2; --line:#283240;
+  --accent:#6ea0ff; --accent-ink:#0b1220; --accent-soft:#182540;
+  --pass:#43c27a; --fail:#ff6b72; --warn:#e3b341; --none:#8a94a3;
+  --mandatory:#ff6b72; --required:#f0a35e; --advisory:#7fb0ff;
+  --hit-mandatory:rgba(255,107,114,.16); --hit-required:rgba(240,163,94,.16); --hit-advisory:rgba(127,176,255,.15);
+  --editor-bg:#0f141b; --gutter-bg:#121821; --shadow:0 1px 2px rgba(0,0,0,.4);
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg:#0c1016; --surface:#141a22; --surface-2:#10151c; --text:#e5eaf1; --muted:#97a2b2; --line:#283240;
+    --accent:#6ea0ff; --accent-ink:#0b1220; --accent-soft:#182540;
+    --pass:#43c27a; --fail:#ff6b72; --warn:#e3b341; --none:#8a94a3;
+    --mandatory:#ff6b72; --required:#f0a35e; --advisory:#7fb0ff;
+    --hit-mandatory:rgba(255,107,114,.16); --hit-required:rgba(240,163,94,.16); --hit-advisory:rgba(127,176,255,.15);
+    --editor-bg:#0f141b; --gutter-bg:#121821; --shadow:0 1px 2px rgba(0,0,0,.4);
+  }
+}
+* { box-sizing:border-box; }
+html, body { height:100%; }
+body { margin:0; background:var(--bg); color:var(--text); display:flex; flex-direction:column;
+  font:14px/1.5 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif; }
+button, input, select, textarea { font:inherit; color:inherit; }
+:focus-visible { outline:2px solid var(--accent); outline-offset:1px; }
+
+/* ---- app bar */
+.appbar { display:flex; align-items:center; gap:20px; padding:0 20px; height:52px; flex:none;
+  background:var(--surface); border-bottom:1px solid var(--line); }
+.brand { display:flex; align-items:center; gap:10px; font-weight:650; letter-spacing:.2px; }
+.logo { width:26px; height:26px; border-radius:7px; background:var(--accent); color:var(--accent-ink);
+  display:grid; place-items:center; font:700 12px/1 var(--mono); }
+.brand small { font-weight:500; color:var(--muted); }
+.nav { display:flex; gap:2px; height:100%; }
+.nav button { background:none; border:0; border-bottom:2px solid transparent; padding:0 14px; cursor:pointer;
+  color:var(--muted); height:100%; }
+.nav button:hover { color:var(--text); }
+.nav button[aria-selected="true"] { color:var(--text); border-bottom-color:var(--accent); font-weight:600; }
+.spacer { flex:1; }
+.iconbtn { background:none; border:1px solid var(--line); border-radius:8px; width:34px; height:34px; cursor:pointer;
+  color:var(--muted); display:grid; place-items:center; }
+.iconbtn:hover { color:var(--text); background:var(--surface-2); }
+
+/* ---- layout */
+main { flex:1; min-height:0; padding:16px 20px; display:flex; }
+.view { flex:1; min-width:0; min-height:0; display:flex; flex-direction:column; }
+.view[hidden] { display:none; }
+.split { flex:1; min-height:0; display:grid; grid-template-columns:minmax(0,1.05fr) minmax(0,1fr); gap:16px; }
+@media (max-width:980px) { .split { grid-template-columns:1fr; } main { overflow:auto; } .view { min-height:auto; } .pane { min-height:420px; } }
+.pane { background:var(--surface); border:1px solid var(--line); border-radius:12px; box-shadow:var(--shadow);
+  display:flex; flex-direction:column; min-height:0; min-width:0; overflow:hidden; }
+.pane-head { display:flex; align-items:center; gap:8px; padding:10px 12px; border-bottom:1px solid var(--line);
+  flex-wrap:wrap; background:var(--surface-2); }
+.pane-title { font-weight:600; margin-right:auto; }
+.pane-body { flex:1; min-height:0; overflow:auto; }
+
+/* ---- controls */
+.btn { display:inline-flex; align-items:center; gap:6px; padding:6px 12px; border-radius:8px; cursor:pointer;
+  border:1px solid var(--line); background:var(--surface); white-space:nowrap; }
+.btn:hover { background:var(--surface-2); }
+.btn.primary { background:var(--accent); border-color:var(--accent); color:var(--accent-ink); font-weight:600; }
+.btn.primary:hover { filter:brightness(1.08); }
+.btn:disabled { opacity:.55; cursor:default; }
+.btn.small { padding:3px 9px; font-size:13px; }
+select, input[type=search], input[type=text] { padding:6px 10px; border-radius:8px; border:1px solid var(--line);
+  background:var(--surface); min-width:0; }
+kbd { font:11px var(--mono); border:1px solid var(--line); border-bottom-width:2px; border-radius:4px; padding:0 5px;
+  color:var(--muted); background:var(--surface-2); }
+.btn.primary kbd { color:inherit; background:rgba(255,255,255,.18); border-color:rgba(255,255,255,.35); }
+
+/* ---- file tabs */
+.ftabs { display:flex; gap:2px; padding:6px 8px 0; background:var(--surface-2); border-bottom:1px solid var(--line);
+  overflow-x:auto; flex:none; }
+.ftab { display:inline-flex; align-items:center; gap:8px; padding:5px 12px; cursor:pointer; white-space:nowrap;
+  border:1px solid transparent; border-bottom:0; border-radius:8px 8px 0 0; color:var(--muted); font-size:13px; }
+.ftab:hover { color:var(--text); }
+.ftab.active { background:var(--editor-bg); border-color:var(--line); color:var(--text); margin-bottom:-1px;
+  padding-bottom:6px; }
+.ftab .cnt { font-size:11px; padding:0 6px; border-radius:9px; background:var(--accent-soft); color:var(--accent); }
+.ftab .x { opacity:.5; } .ftab .x:hover { opacity:1; color:var(--fail); }
+
+/* ---- editor */
+.editor { flex:1; min-height:0; display:flex; position:relative; background:var(--editor-bg);
+  font:13px/20px var(--mono); overflow:hidden; }
+.gutter { flex:none; width:56px; background:var(--gutter-bg); border-right:1px solid var(--line);
+  overflow:hidden; position:relative; user-select:none; }
+.gutter-inner, .backdrop-inner { position:absolute; left:0; right:0; top:8px; will-change:transform; }
+.gl { height:20px; padding-right:8px; text-align:right; color:var(--muted); position:relative; }
+.gl.has { font-weight:700; }
+.gl.has::before { content:""; position:absolute; left:8px; top:6px; width:8px; height:8px; border-radius:50%; }
+.gl.mandatory::before { background:var(--mandatory); } .gl.required::before { background:var(--required); }
+.gl.advisory::before { background:var(--advisory); }
+.gl.stale { opacity:.45; }
+.edit-wrap { position:relative; flex:1; min-width:0; }
+.backdrop { position:absolute; inset:0; overflow:hidden; pointer-events:none; }
+.bl { height:20px; }
+.bl.mandatory { background:var(--hit-mandatory); } .bl.required { background:var(--hit-required); }
+.bl.advisory { background:var(--hit-advisory); }
+.bl.flash { animation:flash 1.4s ease-out; }
+@keyframes flash { from { box-shadow:inset 0 0 0 2px var(--accent); } to { box-shadow:inset 0 0 0 2px transparent; } }
+textarea.code { position:absolute; inset:0; width:100%; height:100%; padding:8px 12px; margin:0; border:0; resize:none;
+  background:transparent; color:var(--text); font:13px/20px var(--mono); white-space:pre; overflow:auto; tab-size:4;
+  outline:none; caret-color:var(--accent); }
+.empty-hint { position:absolute; left:14px; top:10px; color:var(--muted); pointer-events:none; max-width:420px; font:13px/1.5 system-ui,sans-serif; }
+.empty-hint[hidden] { display:none; }
+
+.projbar { padding:8px 12px; border-bottom:1px solid var(--line); background:var(--surface-2); display:flex;
+  flex-direction:column; gap:6px; flex:none; }
+.projbar[hidden] { display:none; }
+.projhead { display:flex; align-items:center; gap:10px; flex-wrap:wrap; }
+.projopts { display:grid; grid-template-columns:1fr 1fr; gap:6px; }
+.projopts input, .projbar > input { width:100%; }
+.pj-files { max-height:150px; overflow:auto; border:1px solid var(--line); border-radius:8px; background:var(--surface); }
+.pj-file { display:flex; align-items:center; gap:8px; padding:2px 10px; cursor:pointer; font:12.5px var(--mono); }
+.pj-file:hover { background:var(--surface-2); } .pj-file.active { background:var(--accent-soft); }
+.pj-file .path { flex:1; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.tag { font:600 10px system-ui,sans-serif; text-transform:uppercase; letter-spacing:.4px; padding:0 6px; border-radius:6px;
+  border:1px solid var(--line); color:var(--muted); }
+.cnt-pill { font:600 11px system-ui,sans-serif; padding:0 7px; border-radius:9px; background:var(--accent-soft); color:var(--accent); }
+.foot { display:flex; gap:10px; align-items:center; padding:8px 12px; border-top:1px solid var(--line);
+  background:var(--surface-2); flex-wrap:wrap; }
+.foot input[type=text] { flex:1; min-width:200px; }
+
+/* ---- results */
+.cards { display:grid; grid-template-columns:repeat(auto-fit,minmax(96px,1fr)); gap:8px; padding:12px; }
+.card { border:1px solid var(--line); border-radius:10px; padding:8px 12px; background:var(--surface); }
+.card b { display:block; font-size:22px; line-height:1.2; }
+.card span { color:var(--muted); font-size:12px; text-transform:uppercase; letter-spacing:.5px; }
+.card.k-mandatory b { color:var(--mandatory); } .card.k-required b { color:var(--required); }
+.card.k-advisory b { color:var(--advisory); }
+.banner { margin:0 12px 10px; padding:9px 12px; border-radius:8px; border:1px solid; font-size:13px; }
+.banner[hidden] { display:none; }
+.banner.warn { color:var(--warn); border-color:var(--warn); background:color-mix(in srgb,var(--warn) 10%,transparent); }
+.banner.err { color:var(--fail); border-color:var(--fail); background:color-mix(in srgb,var(--fail) 9%,transparent); }
+.banner.ok { color:var(--pass); border-color:var(--pass); background:color-mix(in srgb,var(--pass) 9%,transparent); }
+.banner details pre { margin:6px 0 0; white-space:pre-wrap; font:12px/1.4 var(--mono); max-height:160px; overflow:auto; color:var(--text); }
+.toolbar { display:flex; gap:6px; align-items:center; flex-wrap:wrap; padding:0 12px 10px; }
+.toolbar input[type=search] { flex:1; min-width:140px; }
+.chip { display:inline-flex; align-items:center; gap:6px; padding:3px 10px; border-radius:999px; cursor:pointer;
+  border:1px solid var(--line); font-size:12px; user-select:none; background:var(--surface); }
+.chip i { width:8px; height:8px; border-radius:50%; display:inline-block; }
+.chip.off { opacity:.4; }
+.chip.k-mandatory i { background:var(--mandatory); } .chip.k-required i { background:var(--required); }
+.chip.k-advisory i { background:var(--advisory); }
+table { width:100%; border-collapse:collapse; }
+th, td { text-align:left; padding:7px 12px; border-top:1px solid var(--line); vertical-align:top; }
+th { font-size:12px; color:var(--muted); font-weight:600; text-transform:uppercase; letter-spacing:.4px;
+  position:sticky; top:0; background:var(--surface-2); z-index:1; border-top:0; border-bottom:1px solid var(--line); }
+th.sortable { cursor:pointer; user-select:none; } th.sortable:hover { color:var(--text); }
+tbody tr.clickable { cursor:pointer; } tbody tr.clickable:hover, tbody tr.sel { background:var(--accent-soft); }
+td.loc { font:12.5px var(--mono); color:var(--muted); white-space:nowrap; }
+.sev { display:inline-flex; align-items:center; gap:6px; font-size:12px; font-weight:600; }
+.sev i { width:8px; height:8px; border-radius:50%; display:inline-block; }
+.sev.mandatory { color:var(--mandatory); } .sev.mandatory i { background:var(--mandatory); }
+.sev.required { color:var(--required); } .sev.required i { background:var(--required); }
+.sev.advisory { color:var(--advisory); } .sev.advisory i { background:var(--advisory); }
+.rulecode { font:600 13px var(--mono); }
+.sub { color:var(--muted); font-size:12px; }
+.badge { display:inline-block; padding:1px 9px; border-radius:999px; font-size:12px; font-weight:600; border:1px solid currentColor; white-space:nowrap; }
+.PASS { color:var(--pass); } .FAIL { color:var(--fail); } .PARTIAL { color:var(--warn); } .UNTESTED { color:var(--none); }
+.empty { padding:36px 20px; text-align:center; color:var(--muted); }
+.empty b { display:block; color:var(--text); font-size:15px; margin-bottom:4px; }
+.spin { display:inline-block; width:14px; height:14px; border:2px solid var(--line); border-top-color:var(--accent);
+  border-radius:50%; animation:s .7s linear infinite; vertical-align:-2px; }
+@keyframes s { to { transform:rotate(360deg); } }
+
+/* ---- rules view */
+.bar { display:flex; height:10px; border-radius:6px; overflow:hidden; background:var(--line); margin:0 12px 12px; }
+.bar span { display:block; height:100%; }
+.bar .PASS { background:var(--pass); } .bar .PARTIAL { background:var(--warn); } .bar .FAIL { background:var(--fail); }
+.case { border:1px solid var(--line); border-radius:10px; margin:0 12px 12px; overflow:hidden; }
+.case-head { display:flex; gap:8px; align-items:center; padding:7px 10px; background:var(--surface-2); flex-wrap:wrap; }
+.codeblock { margin:0; padding:8px 0; overflow:auto; max-height:280px; font:12.5px/1.5 var(--mono); background:var(--editor-bg); }
+.codeblock .ln { display:block; padding:0 12px 0 0; white-space:pre; }
+.codeblock .ln::before { content:attr(data-n); display:inline-block; width:3em; text-align:right; margin-right:12px; color:var(--muted); }
+.detail-title { padding:14px 12px 4px; font-size:16px; font-weight:650; }
+.detail-meta { padding:0 12px 10px; color:var(--muted); font-size:13px; }
+
+/* ---- status bar */
+.statusbar { flex:none; display:flex; gap:16px; align-items:center; padding:5px 20px; font-size:12px; color:var(--muted);
+  background:var(--surface); border-top:1px solid var(--line); flex-wrap:wrap; }
+.statusbar .grow { flex:1; }
+.toast { position:fixed; bottom:44px; left:50%; transform:translateX(-50%); background:var(--text); color:var(--bg);
+  padding:8px 16px; border-radius:8px; font-size:13px; opacity:0; transition:opacity .2s; pointer-events:none; z-index:10; }
+.toast.show { opacity:1; }
+</style>
+</head>
+<body>
+<header class="appbar">
+  <div class="brand"><span class="logo">M</span><span>MISRA Checker <small id="ver"></small></span></div>
+  <nav class="nav" role="tablist">
+    <button role="tab" id="nav-analyze" aria-selected="true" data-view="analyze">Analyze</button>
+    <button role="tab" id="nav-rules" aria-selected="false" data-view="rules">Rules &amp; validation</button>
+  </nav>
+  <span class="spacer"></span>
+  <button class="iconbtn" id="theme" title="Toggle light / dark theme" aria-label="Toggle theme">◐</button>
+</header>
+
+<main>
+  <section class="view" id="view-analyze">
+    <div class="split">
+      <div class="pane">
+        <div class="pane-head">
+          <span class="pane-title">Source</span>
+          <select id="sample" aria-label="Load sample"><option value="">Samples…</option></select>
+          <label class="btn" title="Add .c / .h files">Add files<input type="file" id="file" accept=".c,.h,text/plain" multiple hidden></label>
+          <label class="btn" title="Upload a whole project as a .zip (sources, headers, libraries)">Upload project (.zip)<input type="file" id="zip" accept=".zip,application/zip" hidden></label>
+          <select id="std" aria-label="Language standard" title="Language standard"><option>c99</option><option>c90</option><option>c11</option><option>c17</option></select>
+          <button class="btn primary" id="run"><span id="run-label">Analyze</span> <kbd>Ctrl ↵</kbd></button>
+        </div>
+        <div class="projbar" id="projbar" hidden>
+          <div class="projhead"><b id="pj-name"></b><span class="sub" id="pj-meta"></span>
+            <button class="btn small" id="pj-close" style="margin-left:auto">Remove project</button></div>
+          <div class="projopts">
+            <input type="text" id="pj-defs" placeholder="Defines, e.g. STM32F4 DEBUG=1" aria-label="Preprocessor defines">
+            <input type="text" id="pj-incs" placeholder="Extra include dirs (relative, comma separated)" aria-label="Extra include directories">
+          </div>
+          <input type="search" id="pj-filter" placeholder="Filter project files" aria-label="Filter project files">
+          <div class="pj-files" id="pj-files"></div>
+        </div>
+        <div class="ftabs" id="filetabs" role="tablist"></div>
+        <div class="editor" id="editor">
+          <div class="gutter"><div class="gutter-inner" id="gutter"></div></div>
+          <div class="edit-wrap">
+            <div class="backdrop"><div class="backdrop-inner" id="backdrop"></div></div>
+            <textarea class="code" id="code" spellcheck="false" autocomplete="off" aria-label="C source code"></textarea>
+            <div class="empty-hint" id="hint">Paste C code, load a sample, or add files. Several files are analyzed together, which also enables the whole-program rules.</div>
+          </div>
+        </div>
+        <div class="foot">
+          <input type="text" id="db" placeholder="Or analyze an existing project: path to compile_commands.json / build directory" aria-label="Compile database path">
+          <button class="btn" id="rundb">Analyze project</button>
+        </div>
+      </div>
+
+      <div class="pane">
+        <div class="pane-head">
+          <span class="pane-title">Results</span>
+          <button class="btn small" id="exp-report" disabled>Report</button>
+          <button class="btn small" id="exp-csv" disabled>CSV</button>
+          <button class="btn small" id="exp-json" disabled>JSON</button>
+        </div>
+        <div class="pane-body" id="result">
+          <div class="empty"><b>No analysis yet</b>Run an analysis to see findings here. Press Ctrl+Enter.</div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section class="view" id="view-rules" hidden>
+    <div class="split" style="grid-template-columns:minmax(0,1.1fr) minmax(0,1fr)">
+      <div class="pane">
+        <div class="pane-head">
+          <span class="pane-title">Rule catalog</span>
+          <input type="search" id="filter" placeholder="Search rule or topic" aria-label="Search rules">
+          <select id="fcat" aria-label="Category"><option value="">All categories</option><option>Mandatory</option><option>Required</option><option>Advisory</option></select>
+          <select id="fstat" aria-label="Status"><option value="">All statuses</option><option>PASS</option><option>PARTIAL</option><option>FAIL</option><option>UNTESTED</option></select>
+          <button class="btn primary" id="valall">Validate all</button>
+        </div>
+        <div class="cards" id="vsummary"></div>
+        <div class="bar" id="vbar"></div>
+        <div class="pane-body"><table>
+          <thead><tr><th>Rule</th><th>Category</th><th>Topic</th><th>Fixtures</th><th></th></tr></thead>
+          <tbody id="rulebody"></tbody></table></div>
+      </div>
+      <div class="pane">
+        <div class="pane-head"><span class="pane-title">Rule detail</span></div>
+        <div class="pane-body" id="detail"><div class="empty"><b>Select a rule</b>See its fixtures, run its validation, or open a violating example in the analyzer.</div></div>
+      </div>
+    </div>
+  </section>
+</main>
+
+<footer class="statusbar">
+  <span id="st-run">Ready</span>
+  <span class="grow"></span>
+  <span>Engineering fixture checks only. Not a MISRA compliance claim and no substitute for independent validation or tool qualification.</span>
+</footer>
+<div class="toast" id="toast" role="status"></div>
+
+<script>
+"use strict";
+const $ = (id) => document.getElementById(id);
+const el = (tag, props = {}, ...kids) => {
+  const e = Object.assign(document.createElement(tag), props);
+  kids.forEach((k) => e.append(k));
+  return e;
+};
+async function api(path, opts) {
+  const r = await fetch(path, opts);
+  const data = await r.json();
+  if (!r.ok) throw new Error(data.error || r.statusText);
+  return data;
+}
+const store = {
+  get(k, d) { try { const v = localStorage.getItem(k); return v === null ? d : JSON.parse(v); } catch { return d; } },
+  set(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); } catch { /* storage unavailable */ } },
+};
+let toastTimer = null;
+function toast(msg) {
+  const t = $("toast"); t.textContent = msg; t.classList.add("show");
+  clearTimeout(toastTimer); toastTimer = setTimeout(() => t.classList.remove("show"), 2200);
+}
+const LH = 20;
+const SEVS = ["mandatory", "required", "advisory"];
+const cap = (s) => s.charAt(0).toUpperCase() + s.slice(1);
+
+// ---- theme
+function applyTheme(t) { if (t) document.documentElement.dataset.theme = t; }
+applyTheme(store.get("theme", null));
+$("theme").addEventListener("click", () => {
+  const dark = document.documentElement.dataset.theme
+    ? document.documentElement.dataset.theme === "dark"
+    : window.matchMedia && matchMedia("(prefers-color-scheme: dark)").matches;
+  const next = dark ? "light" : "dark"; applyTheme(next); store.set("theme", next);
+});
+
+// ---- views
+function showView(name) {
+  for (const v of ["analyze", "rules"]) {
+    $("view-" + v).hidden = v !== name;
+    $("nav-" + v).setAttribute("aria-selected", String(v === name));
+  }
+}
+document.querySelectorAll(".nav button").forEach((b) => b.addEventListener("click", () => showView(b.dataset.view)));
+
+// ---- workspace state
+const DEFAULT_FILES = [{ name: "input.c", code: "" }];
+let files = store.get("files", DEFAULT_FILES);
+if (!Array.isArray(files) || !files.length) files = DEFAULT_FILES.map((f) => ({ ...f }));
+let active = Math.max(0, Math.min(store.get("active", 0), files.length - 1));
+let lastRes = null, stale = false;
+let sortKey = "loc", sortDir = 1, selectedFinding = null;
+const sevOff = new Set(); let findQuery = "";
+let rules = [];
+let project = null, viewPath = null;
+const libOff = { v: false };
+
+function saveFiles() { store.set("files", files); store.set("active", active); }
+function findingsFor(name) { return lastRes && (lastRes.sources || lastRes.project) ? lastRes.findings.filter((f) => f.file === name) : []; }
+
+// ---- editor (textarea over a highlight backdrop, with a gutter)
+let renderQueued = false;
+function queueEditorRender() {
+  if (renderQueued) return;
+  renderQueued = true;
+  requestAnimationFrame(() => { renderQueued = false; renderEditorLines(); });
+}
+function worstSeverity(list) { return SEVS.find((s) => list.some((f) => f.category === s)); }
+function renderEditorLines() {
+  const code = $("code").value, count = code.split("\n").length;
+  const byLine = new Map();
+  findingsFor(files[active].name).forEach((f) => {
+    if (!byLine.has(f.line)) byLine.set(f.line, []);
+    byLine.get(f.line).push(f);
+  });
+  const gutter = $("gutter"), backdrop = $("backdrop");
+  gutter.replaceChildren(); backdrop.replaceChildren();
+  const gf = document.createDocumentFragment(), bf = document.createDocumentFragment();
+  for (let n = 1; n <= count; n++) {
+    const hits = byLine.get(n), sev = hits ? worstSeverity(hits) : null;
+    const g = el("div", { className: "gl" + (sev ? ` has ${sev}` : "") + (sev && stale ? " stale" : "") }, String(n));
+    if (hits) g.title = hits.map((f) => `Rule ${f.rule}: ${f.message}`).join("\n");
+    gf.append(g);
+    const b = el("div", { className: "bl" + (sev && !stale ? " " + sev : "") });
+    b.dataset.n = String(n);
+    bf.append(b);
+  }
+  gutter.append(gf); backdrop.append(bf);
+  $("hint").hidden = code.length > 0;
+  syncScroll();
+}
+function syncScroll() {
+  const t = $("code").scrollTop;
+  $("gutter").style.transform = `translateY(${-t}px)`;
+  $("backdrop").style.transform = `translateY(${-t}px)`;
+}
+$("code").addEventListener("scroll", syncScroll);
+$("code").addEventListener("input", () => {
+  files[active].code = $("code").value; saveFiles();
+  if (lastRes) { stale = true; markStale(); }
+  queueEditorRender();
+});
+$("code").addEventListener("keydown", (e) => {
+  if (e.key === "Tab" && !e.ctrlKey && !e.metaKey && !e.altKey) {
+    e.preventDefault();
+    const ta = e.target;
+    ta.setRangeText("    ", ta.selectionStart, ta.selectionEnd, "end");
+    ta.dispatchEvent(new Event("input"));
+  }
+});
+function jumpTo(line) {
+  const ta = $("code"), lines = ta.value.split("\n");
+  let offset = 0;
+  for (let i = 0; i < Math.min(line - 1, lines.length); i++) offset += lines[i].length + 1;
+  ta.focus();
+  ta.setSelectionRange(offset, offset + (lines[line - 1] || "").length);
+  ta.scrollTop = Math.max(0, (line - 4) * LH);
+  syncScroll();
+  const b = $("backdrop").children[line - 1];
+  if (b) { b.classList.remove("flash"); void b.offsetWidth; b.classList.add("flash"); }
+}
+
+// ---- file tabs
+function renderTabs() {
+  const box = $("filetabs");
+  box.replaceChildren();
+  files.forEach((f, i) => {
+    const n = findingsFor(f.name).length;
+    const t = el("span", { className: "ftab" + (i === active ? " active" : ""), role: "tab" }, f.name);
+    if (n && !stale) t.append(el("span", { className: "cnt" }, String(n)));
+    t.addEventListener("click", () => selectFile(i));
+    if (files.length > 1) {
+      const x = el("span", { className: "x", title: "Remove file" }, "×");
+      x.addEventListener("click", (ev) => {
+        ev.stopPropagation(); files.splice(i, 1);
+        active = Math.max(0, Math.min(active > i ? active - 1 : active, files.length - 1));
+        saveFiles(); selectFile(active);
+      });
+      t.append(x);
+    }
+    box.append(t);
+  });
+  const add = el("span", { className: "ftab", title: "New empty file" }, "+");
+  add.addEventListener("click", () => {
+    const name = (prompt("File name (e.g. util.c or util.h)", "file" + (files.length + 1) + ".c") || "").trim();
+    if (!name) return;
+    if (!/^[A-Za-z0-9_][A-Za-z0-9_.-]{0,63}\.[ch]$/.test(name) || files.some((f) => f.name === name)) {
+      toast("Use a unique name ending in .c or .h"); return;
+    }
+    files.push({ name, code: "" }); selectFile(files.length - 1);
+  });
+  box.append(add);
+}
+function selectFile(i) {
+  active = i; $("code").value = files[i].code; $("code").scrollTop = 0;
+  saveFiles(); renderTabs(); renderEditorLines();
+}
+function setSingle(code, name = "input.c") { if (project) { project = null; viewPath = null; setProjectUi(false); } files = [{ name, code }]; lastRes = null; stale = false; renderResult(); selectFile(0); }
+
+// ---- findings helpers
+function topicOf(rule) { const r = rules.find((x) => x.id === rule); return r ? r.topic : ""; }
+function visibleFindings() {
+  if (!lastRes) return [];
+  const q = findQuery.toLowerCase();
+  const rows = lastRes.findings.filter((x) => !sevOff.has(x.category) && !(libOff.v && x.library) &&
+    (!q || `${x.rule} ${x.message} ${topicOf(x.rule)} ${x.file}`.toLowerCase().includes(q)));
+  const ruleNum = (r) => r.split(".").map(Number);
+  const cmp = {
+    loc: (a, b) => a.file.localeCompare(b.file) || a.line - b.line || a.col - b.col,
+    rule: (a, b) => ruleNum(a.rule)[0] - ruleNum(b.rule)[0] || ruleNum(a.rule)[1] - ruleNum(b.rule)[1] || a.line - b.line,
+    sev: (a, b) => SEVS.indexOf(a.category) - SEVS.indexOf(b.category) || a.line - b.line,
+  }[sortKey];
+  return rows.sort((a, b) => sortDir * cmp(a, b));
+}
+const sevTag = (c) => el("span", { className: "sev " + c }, el("i"), cap(c));
+
+// ---- exports
+function download(name, text, type) {
+  const a = el("a", { href: URL.createObjectURL(new Blob([text], { type })), download: name });
+  document.body.append(a); a.click(); a.remove();
+}
+function exportCsv() {
+  const q = (v) => '"' + String(v).replace(/"/g, '""') + '"';
+  download("misra-findings.csv", ["file,line,column,rule,category,check,topic,origin",
+    ...visibleFindings().map((x) => [x.file, x.line, x.col, x.rule, x.category, x.message, topicOf(x.rule), x.library ? "library" : "project"].map(q).join(","))].join("\n"), "text/csv");
+}
+function exportJson() { download("misra-findings.json", JSON.stringify(visibleFindings(), null, 2), "application/json"); }
+function exportReport() {
+  const esc = (s) => String(s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+  const rows = lastRes.findings.slice().sort((a, b) => a.file.localeCompare(b.file) || a.line - b.line);
+  const counts = SEVS.map((s) => `${cap(s)}: ${rows.filter((r) => r.category === s).length}`).join(" &middot; ");
+  const html = `<!doctype html><html lang="en"><head><meta charset="utf-8"><title>MISRA analysis report</title>
+<style>body{font:14px/1.5 system-ui,sans-serif;margin:32px;color:#171c24}h1{font-size:20px}table{border-collapse:collapse;width:100%}
+th,td{border:1px solid #dde2e9;padding:6px 10px;text-align:left}th{background:#f3f5f8}td.m{font-family:monospace}
+.note{margin-top:24px;color:#5d6775;font-size:12px}</style></head><body>
+<h1>MISRA C:2012 analysis report</h1>
+<p>Generated ${esc(new Date().toLocaleString())} &middot; ${esc($("ver").textContent)} &middot; ${esc(lastRes.summary || "")}</p>
+<p>${rows.length} finding(s) &mdash; ${counts}</p>
+<table><thead><tr><th>Location</th><th>Rule</th><th>Category</th><th>Check</th><th>Topic</th></tr></thead><tbody>
+${rows.map((r) => `<tr><td class="m">${esc(r.file)}:${r.line}:${r.col}</td><td>${esc(r.rule)}</td><td>${esc(r.category)}</td><td>${esc(r.message)}</td><td>${esc(topicOf(r.rule))}</td></tr>`).join("")}
+</tbody></table>
+<p class="note">Produced by an engineering tool whose detectors are validated only against internal fixtures. This report is not a MISRA compliance claim and does not replace independent validation or tool qualification.</p>
+</body></html>`;
+  download("misra-report.html", html, "text/html");
+}
+$("exp-csv").addEventListener("click", exportCsv);
+$("exp-json").addEventListener("click", exportJson);
+$("exp-report").addEventListener("click", exportReport);
+
+// ---- results rendering
+function card(n, label, kind) { return el("div", { className: "card" + (kind ? " k-" + kind : "") }, el("b", {}, String(n)), el("span", {}, label)); }
+
+function markStale() {
+  const b = $("stale-banner");
+  if (b) b.hidden = !stale;
+  renderTabs();
+}
+function renderResult() {
+  const box = $("result"), res = lastRes;
+  box.replaceChildren();
+  ["exp-csv", "exp-json", "exp-report"].forEach((id) => { $(id).disabled = !res; });
+  if (!res) { box.append(el("div", { className: "empty" }, el("b", {}, "No analysis yet"), "Run an analysis to see findings here. Press Ctrl+Enter.")); return; }
+
+  const all = res.findings;
+  const counts = Object.fromEntries(SEVS.map((s) => [s, all.filter((x) => x.category === s).length]));
+  box.append(el("div", { className: "cards" }, card(all.length, "Findings"),
+    card(new Set(all.map((x) => x.rule)).size, "Rules hit"),
+    ...SEVS.filter((s) => counts[s]).map((s) => card(counts[s], s, s))));
+
+  const staleBanner = el("div", { className: "banner warn", id: "stale-banner" }, "The code changed since this analysis. Run it again to refresh the results.");
+  staleBanner.hidden = !stale;
+  box.append(staleBanner);
+  if (res.error) box.append(el("div", { className: "banner err" }, res.error));
+  if (res.compile_errors) {
+    box.append(el("div", { className: "banner warn" }, "The code has compile errors. Every other rule was still checked on the recovered code, but results near the errors may be incomplete.",
+      el("details", {}, el("summary", {}, "Compiler messages"), el("pre", {}, res.compiler_output))));
+  }
+  if (res.summary && /inconclusive/.test(res.summary) && res.sources && res.sources.length < 2) {
+    box.append(el("div", { className: "banner ok" }, "Tip: whole-program rules need at least two source files. Add more files to enable them."));
+  }
+  if (!all.length) {
+    if (!res.error) box.append(el("div", { className: "empty" }, el("b", {}, "No findings"), "None of the implemented rules reported a violation."));
+    return;
+  }
+
+  const bar = el("div", { className: "toolbar" });
+  SEVS.filter((s) => counts[s]).forEach((s) => {
+    const chip = el("span", { className: `chip k-${s}` + (sevOff.has(s) ? " off" : ""), role: "button", tabIndex: 0, title: "Toggle " + s }, el("i"), `${cap(s)} ${counts[s]}`);
+    const toggle = () => { sevOff.has(s) ? sevOff.delete(s) : sevOff.add(s); renderResult(); };
+    chip.addEventListener("click", toggle);
+    chip.addEventListener("keydown", (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); toggle(); } });
+    bar.append(chip);
+  });
+  const libCount = all.filter((x) => x.library).length;
+  if (libCount) {
+    const lc = el("span", { className: "chip" + (libOff.v ? " off" : ""), role: "button", tabIndex: 0, title: "Show or hide findings in library / vendor code" }, `Libraries ${libCount}`);
+    lc.addEventListener("click", () => { libOff.v = !libOff.v; renderResult(); });
+    bar.append(lc);
+  }
+  const q = el("input", { type: "search", placeholder: "Filter findings", value: findQuery });
+  q.setAttribute("aria-label", "Filter findings");
+  q.addEventListener("input", () => { findQuery = q.value; renderTable(); });
+  bar.append(q);
+  box.append(bar, el("div", { id: "ftable" }));
+  renderTable();
+  if (res.summary) box.append(el("div", { className: "sub", style: "padding:10px 12px" }, res.summary));
+}
+function renderTable() {
+  const rows = visibleFindings(), body = el("tbody");
+  const th = (label, key) => {
+    const h = el("th", { className: "sortable", scope: "col" }, label + (sortKey === key ? (sortDir > 0 ? " ▲" : " ▼") : ""));
+    h.addEventListener("click", () => { sortDir = sortKey === key ? -sortDir : 1; sortKey = key; renderTable(); });
+    return h;
+  };
+  rows.forEach((x) => {
+    const base = x.file.split("/").pop();
+    const tr = el("tr", { className: "clickable" + (selectedFinding === x ? " sel" : "") },
+      el("td", {}, sevTag(x.category)),
+      el("td", {}, el("div", { className: "rulecode" }, x.rule), el("div", { className: "sub" }, topicOf(x.rule))),
+      el("td", {}, x.message),
+      el("td", { className: "loc", title: x.file }, `${project ? x.file : base}:${x.line}:${x.col}`));
+    tr.addEventListener("click", () => {
+      selectedFinding = x;
+      if (project) {
+        openProjectFile(x.file).then(() => jumpTo(x.line));
+      } else {
+        const idx = files.findIndex((f) => f.name === x.file);
+        if (idx >= 0) { if (idx !== active) selectFile(idx); jumpTo(x.line); }
+      }
+      renderTable();
+    });
+    body.append(tr);
+  });
+  const t = el("table", {}, el("thead", {}, el("tr", {}, th("Severity", "sev"), th("Rule", "rule"), el("th", {}, "Check"), th("Location", "loc"))), body);
+  $("ftable").replaceChildren(t, ...(rows.length ? [] : [el("div", { className: "empty" }, "No findings match the current filter.")]));
+}
+
+// ---- analyze
+async function analyze(payload, sources) {
+  const btns = [$("run"), $("rundb")];
+  btns.forEach((b) => (b.disabled = true));
+  $("st-run").replaceChildren(el("span", { className: "spin" }), " Analyzing…");
+  $("result").replaceChildren(el("div", { className: "empty" }, el("span", { className: "spin" }), " Analyzing…"));
+  try {
+    lastRes = await api("/api/analyze", { method: "POST", body: JSON.stringify(payload) });
+    lastRes.sources = sources; stale = false; selectedFinding = null;
+    $("st-run").textContent = `Last run: ${lastRes.findings.length} finding(s) in ${(lastRes.elapsed_ms / 1000).toFixed(2)} s`;
+  } catch (e) {
+    lastRes = { findings: [], summary: "", error: e.message, sources };
+    $("st-run").textContent = "Analysis failed";
+  } finally { btns.forEach((b) => (b.disabled = false)); }
+  renderResult(); renderTabs(); renderEditorLines();
+  if (project) renderProjectFiles();
+}
+function runCode() {
+  if (project) { runProject(); return; }
+  const used = files.filter((f) => f.code.trim());
+  if (!used.length) { toast("Nothing to analyze yet"); return; }
+  const payload = used.map((f) => ({ name: f.name, code: f.code }));
+  analyze({ files: payload, std: $("std").value }, payload);
+}
+$("run").addEventListener("click", runCode);
+document.addEventListener("keydown", (e) => {
+  if ((e.ctrlKey || e.metaKey) && e.key === "Enter" && !$("view-analyze").hidden) { e.preventDefault(); runCode(); }
+});
+$("rundb").addEventListener("click", () => {
+  const p = $("db").value.trim();
+  if (p) analyze({ compile_commands: p }, null);
+});
+$("file").addEventListener("change", async (e) => {
+  let last = null;
+  if (project) { project = null; viewPath = null; setProjectUi(false); }
+  for (const f of e.target.files) {
+    const code = await f.text();
+    const name = f.name.replace(/[^A-Za-z0-9_.-]/g, "_");
+    const existing = files.findIndex((x) => x.name === name);
+    if (existing >= 0) { files[existing].code = code; last = existing; }
+    else if (files.length === 1 && !files[0].code.trim()) { files[0] = { name, code }; last = 0; }
+    else { files.push({ name, code }); last = files.length - 1; }
+  }
+  e.target.value = "";
+  if (last !== null) { lastRes = null; stale = false; renderResult(); selectFile(last); }
+});
+// ---- project (zip) mode
+function setProjectUi(on) {
+  $("projbar").hidden = !on;
+  $("filetabs").hidden = on;
+  $("code").readOnly = on;
+  $("run-label").textContent = on ? "Analyze project" : "Analyze";
+}
+function renderProjectFiles() {
+  const q = $("pj-filter").value.toLowerCase(), box = $("pj-files");
+  box.replaceChildren();
+  const counts = {};
+  if (lastRes && lastRes.project) lastRes.findings.forEach((f) => { counts[f.file] = (counts[f.file] || 0) + 1; });
+  project.files.filter((f) => !q || f.path.toLowerCase().includes(q))
+    .sort((a, b) => (counts[b.path] || 0) - (counts[a.path] || 0) || a.path.localeCompare(b.path))
+    .forEach((f) => {
+      const row = el("div", { className: "pj-file" + (f.path === viewPath ? " active" : ""), title: f.path },
+        el("span", { className: "path" }, f.path));
+      if (f.library) row.append(el("span", { className: "tag" }, "lib"));
+      if (counts[f.path]) row.append(el("span", { className: "cnt-pill" }, String(counts[f.path])));
+      row.addEventListener("click", () => openProjectFile(f.path));
+      box.append(row);
+    });
+}
+async function openProjectFile(path) {
+  try {
+    const data = await api(`/api/file?project=${encodeURIComponent(project.id)}&path=${encodeURIComponent(path)}`);
+    viewPath = path;
+    $("code").value = data.source; $("code").scrollTop = 0;
+    files[active] = files[active] || { name: "input.c", code: "" };
+    renderProjectFiles(); renderEditorLines();
+  } catch (e) { toast(e.message); }
+}
+function leaveProject() {
+  project = null; viewPath = null; lastRes = null; stale = false;
+  setProjectUi(false); renderResult(); selectFile(Math.min(active, files.length - 1));
+}
+$("pj-close").addEventListener("click", leaveProject);
+$("pj-filter").addEventListener("input", () => project && renderProjectFiles());
+$("zip").addEventListener("change", async (e) => {
+  const f = e.target.files[0];
+  e.target.value = "";
+  if (!f) return;
+  $("st-run").replaceChildren(el("span", { className: "spin" }), ` Uploading ${f.name}…`);
+  try {
+    const r = await fetch("/api/project?name=" + encodeURIComponent(f.name), { method: "POST", body: f });
+    const data = await r.json();
+    if (!r.ok) throw new Error(data.error || r.statusText);
+    project = data; viewPath = null; lastRes = null; stale = false;
+    $("pj-name").textContent = data.name;
+    $("pj-meta").textContent = `${data.c_files} C files · ${data.h_files} headers · ${data.library_files} in library folders`;
+    setProjectUi(true); renderResult(); renderProjectFiles();
+    const first = data.files.find((x) => x.kind === "c" && !x.library) || data.files[0];
+    await openProjectFile(first.path);
+    $("st-run").textContent = `Project loaded: ${data.name}`;
+    toast("Project loaded. Click Analyze project.");
+  } catch (err) { $("st-run").textContent = "Upload failed"; toast(err.message); }
+});
+async function runProject() {
+  const incs = $("pj-incs").value.split(/[,\n]+/).map((x) => x.trim()).filter(Boolean).join("\n");
+  const prev = project;
+  await analyze({ project: prev.id, std: $("std").value, defines: $("pj-defs").value, includes: incs }, null);
+  if (project) renderProjectFiles();
+}
+
+let samples = [];
+$("sample").addEventListener("change", (e) => {
+  const s = samples[e.target.value];
+  if (s) setSingle(s.code, "input.c");
+  e.target.value = "";
+});
+
+// ---- rules & validation
+let results = {}, selected = null;
+const statusOf = (id) => (results[id] ? results[id].status : "UNTESTED");
+function badge(status) { return el("span", { className: "badge " + status }, status); }
+
+function renderRules() {
+  const q = $("filter").value.toLowerCase(), cat = $("fcat").value, st = $("fstat").value;
+  const body = $("rulebody");
+  body.replaceChildren();
+  rules.forEach((r) => {
+    const status = statusOf(r.id);
+    if (cat && r.category !== cat) return;
+    if (st && status !== st) return;
+    if (q && !`${r.id} ${r.topic}`.toLowerCase().includes(q)) return;
+    const btn = el("button", { className: "btn small" }, "Validate");
+    btn.addEventListener("click", (ev) => { ev.stopPropagation(); validateRule(r.id, btn); });
+    const tr = el("tr", { className: "clickable" + (selected === r.id ? " sel" : "") },
+      el("td", {}, el("span", { className: "rulecode" }, r.id)),
+      el("td", {}, sevTag(r.category.toLowerCase())),
+      el("td", {}, r.topic),
+      el("td", {}, badge(status)),
+      el("td", {}, btn));
+    tr.addEventListener("click", () => { selected = r.id; showDetail(r.id); renderRules(); });
+    body.append(tr);
+  });
+  const counts = { PASS: 0, PARTIAL: 0, FAIL: 0, UNTESTED: 0 };
+  rules.forEach((r) => { counts[statusOf(r.id)]++; });
+  $("vsummary").replaceChildren(card(rules.length, "Rules"), card(counts.PASS, "Pass"), card(counts.PARTIAL, "Partial"),
+    card(counts.FAIL, "Fail"), card(counts.UNTESTED, "Untested"));
+  $("vbar").replaceChildren(...["PASS", "PARTIAL", "FAIL"].map((k) => {
+    const s = el("span", { className: k, title: `${k}: ${counts[k]}` }); s.style.width = `${(counts[k] / Math.max(1, rules.length)) * 100}%`; return s;
+  }));
+}
+async function validateRule(id, btn) {
+  if (btn) { btn.disabled = true; btn.textContent = "…"; }
+  try {
+    results[id] = await api("/api/validate?rule=" + encodeURIComponent(id));
+    selected = id; showDetail(id);
+  } catch (e) {
+    $("detail").replaceChildren(el("div", { className: "banner err", style: "margin:12px" }, e.message));
+  }
+  renderRules();
+}
+function plainCode(source) {
+  const pre = el("pre", { className: "codeblock" });
+  source.replace(/\n$/, "").split("\n").forEach((text, i) => { const s = el("span", { className: "ln" }, text || " "); s.dataset.n = String(i + 1); pre.append(s); });
+  return pre;
+}
+function showDetail(id) {
+  const r = rules.find((x) => x.id === id), res = results[id], box = $("detail");
+  box.replaceChildren(el("div", { className: "detail-title" }, `Rule ${id}`),
+    el("div", { className: "detail-meta" }, `${r.topic} · ${r.category} · ${r.decidability} · ${r.scope}`));
+  if (!res || !res.cases || !res.cases.length || !res.cases[0].files) {
+    if (res && res.cases && !res.cases.length) box.append(el("div", { className: "banner warn" }, "This rule has no fixtures."));
+    else {
+      const b = el("button", { className: "btn primary", style: "margin:0 12px" }, "Validate this rule");
+      b.addEventListener("click", () => validateRule(id, b));
+      box.append(b);
+    }
+    return;
+  }
+  box.append(el("div", { style: "padding:0 12px 12px" }, badge(res.status), " ", el("span", { className: "sub" }, res.note || "")));
+  res.cases.forEach((c) => {
+    const head = el("div", { className: "case-head" },
+      el("span", { className: "badge " + (c.passed ? "PASS" : "FAIL") }, c.passed ? "ok" : "error"),
+      el("b", {}, `${c.kind === "bad" ? "Violating" : "Compliant"} · ${c.name}`),
+      el("span", { className: "sub" }, c.detail));
+    if (c.files.length === 1) {
+      const open = el("button", { className: "btn small", style: "margin-left:auto" }, "Open in analyzer");
+      open.addEventListener("click", () => { setSingle(c.files[0].source); showView("analyze"); });
+      head.append(open);
+    }
+    const wrap = el("div", { className: "case" }, head);
+    c.files.forEach((f) => { if (c.files.length > 1) wrap.append(el("div", { className: "sub", style: "padding:4px 10px" }, f.name)); wrap.append(plainCode(f.source)); });
+    box.append(wrap);
+  });
+}
+$("valall").addEventListener("click", async () => {
+  const b = $("valall");
+  b.disabled = true; b.replaceChildren(el("span", { className: "spin" }), " Validating…");
+  try {
+    (await api("/api/validate-all")).results.forEach((r) => { results[r.rule] = r; });
+    renderRules(); if (selected) showDetail(selected);
+    toast("All rules validated");
+  } catch (e) { $("detail").replaceChildren(el("div", { className: "banner err", style: "margin:12px" }, e.message)); }
+  b.disabled = false; b.textContent = "Validate all";
+});
+["filter", "fcat", "fstat"].forEach((i) => $(i).addEventListener("input", renderRules));
+
+(async function init() {
+  selectFile(active);
+  try {
+    const data = await api("/api/rules");
+    rules = data.rules; $("ver").textContent = data.version;
+    renderRules();
+    samples = (await api("/api/samples")).samples;
+    const sel = $("sample");
+    samples.forEach((s, i) => sel.append(el("option", { value: String(i) }, `Rule ${s.rule} · ${s.name}`)));
+  } catch (e) {
+    $("result").replaceChildren(el("div", { className: "banner err", style: "margin:12px" }, e.message));
+  }
+})();
+</script>
+</body>
+</html>
