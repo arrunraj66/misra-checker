@@ -8,7 +8,7 @@ Colab and the downloaded model to try.
 
 ## Shortcut: do everything in Google Colab
 
-`colab/misra_colab_pipeline.ipynb` runs the whole flow in one notebook: build the checker,
+`colab/misra_colab_v2.ipynb` runs the whole flow in one notebook: build the checker,
 upload a project zip, find findings, let an AI (Claude API, or a local model on the Colab GPU) propose fixes,
 gate them, and download `report.html`, `findings.csv` and `fixed_project.zip`. The same flow runs anywhere with
 `scripts/run_project_pipeline.py PROJECT.zip --out OUT --provider-cmd ... --license ...`.
