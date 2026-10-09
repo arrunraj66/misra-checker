@@ -129,6 +129,8 @@ bool escapes_terminated(const std::string& spelling) {
 class ObservationVisitor final
     : public clang::RecursiveASTVisitor<ObservationVisitor> {
  public:
+  MISRA_SKIP_INVALID_AST
+
   ObservationVisitor(clang::ASTContext& ast, const Recorder& recorder)
       : ast_(ast), recorder_(recorder), sm_(ast.getSourceManager()) {}
 
@@ -757,11 +759,9 @@ std::unique_ptr<clang::CommentHandler> install_preprocessor_observers(
 }
 
 void collect_ast_observations(clang::ASTContext& ast, AnalysisContext& context) {
-  // Invalid ASTs (recovery expressions, null types) are not safe to analyze;
-  // the frontend reports the translation unit as failed anyway.
-  if (ast.getDiagnostics().hasErrorOccurred()) {
-    return;
-  }
+  // The AST may contain recovery expressions after compile errors; the
+  // visitors tolerate them (see scripts/fuzz_broken_input.py). The frontend
+  // still reports such a translation unit as failed.
   const Recorder recorder(ast.getSourceManager(), context);
   ObservationVisitor visitor(ast, recorder);
   visitor.TraverseDecl(ast.getTranslationUnitDecl());

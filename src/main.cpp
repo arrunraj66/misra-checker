@@ -86,25 +86,17 @@ int main(int argc, char* argv[]) {
     const misra::ClangFrontend frontend;
     const misra::FrontendResult frontend_result = frontend.analyze(
         compilation_database.string(), requested_files);
-    if (!frontend_result.success) {
-      std::cerr << "misra-checker: " << frontend_result.error_message << '\n';
-      // Rules driven by compiler diagnostics are still meaningful.
-      const misra::RuleRegistry failed_registry;
-      std::size_t diagnostic_findings = 0U;
-      for (const char* id : {"1.1", "20.14"}) {
-        const misra::Rule* rule = failed_registry.find(id);
-        if (rule == nullptr) {
-          continue;
-        }
-        for (const misra::Finding& finding : rule->evaluate(frontend_result.context).findings) {
-          ++diagnostic_findings;
-          std::cout << finding.location.file << ':' << finding.location.line << ':'
-                    << finding.location.column << ": "
-                    << category_name(rule->descriptor().category)
-                    << ": MISRA C:2012 Rule " << id << " [" << finding.message_key << "]\n";
-        }
+    // Clang recovers from most errors and still hands over a usable AST, so a
+    // compile error must not hide every other finding. Analysis continues on
+    // the recovered AST; the user is told the result may be incomplete.
+    const bool compile_errors = !frontend_result.success;
+    if (compile_errors) {
+      if (frontend_result.analyzed_files.empty()) {
+        std::cerr << "misra-checker: " << frontend_result.error_message << '\n';
+        return 2;
       }
-      return diagnostic_findings == 0U ? 2 : 1;
+      std::cerr << "misra-checker: " << frontend_result.error_message
+                << "; continuing on the recovered AST, results may be incomplete\n";
     }
 
     const misra::RuleRegistry registry;
@@ -166,7 +158,10 @@ int main(int argc, char* argv[]) {
                 << " whole-program rule(s) inconclusive: analyze at least two "
                    "translation units together.\n";
     }
-    return finding_count == 0U ? 0 : 1;
+    if (finding_count != 0U) {
+      return 1;
+    }
+    return compile_errors ? 2 : 0;
   }
 
   if ((argc >= 2) && (std::string_view{argv[1]} == "convert")) {

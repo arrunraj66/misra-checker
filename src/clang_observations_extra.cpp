@@ -70,6 +70,8 @@ const char* const kStandardNames[] = {
 
 class ExtraVisitor final : public clang::RecursiveASTVisitor<ExtraVisitor> {
  public:
+  MISRA_SKIP_INVALID_AST
+
   ExtraVisitor(clang::ASTContext& ast, const Recorder& recorder,
                AnalysisContext& context)
       : ast_(ast), recorder_(recorder), sm_(ast.getSourceManager()),
@@ -427,6 +429,9 @@ class ExtraVisitor final : public clang::RecursiveASTVisitor<ExtraVisitor> {
   }
 
   bool VisitInitListExpr(clang::InitListExpr* list) {
+    if (list->getType().isNull() || list->containsErrors()) {
+      return true;  // invalid initializer left by a compile error
+    }
     const clang::InitListExpr* syntactic = syntactic_form(list);
     if (!seen_lists_.insert(syntactic).second) {
       return true;

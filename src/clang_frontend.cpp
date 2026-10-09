@@ -1,6 +1,7 @@
 #include "misra/clang_frontend.hpp"
 
 #include "misra/clang_observations.hpp"
+#include "misra/observation_internal.hpp"
 
 #include <map>
 #include <memory>
@@ -26,6 +27,8 @@ namespace {
 
 class FactVisitor final : public clang::RecursiveASTVisitor<FactVisitor> {
  public:
+  MISRA_SKIP_INVALID_AST
+
   FactVisitor(clang::SourceManager& source_manager, AnalysisContext& context)
       : source_manager_(source_manager), context_(context) {}
 

@@ -88,6 +88,8 @@ struct CallFinder final : clang::RecursiveASTVisitor<CallFinder> {
 
 class RestVisitor final : public clang::RecursiveASTVisitor<RestVisitor> {
  public:
+  MISRA_SKIP_INVALID_AST
+
   RestVisitor(clang::ASTContext& ast, const Recorder& recorder)
       : ast_(ast), recorder_(recorder), sm_(ast.getSourceManager()) {}
 
@@ -166,6 +168,9 @@ class RestVisitor final : public clang::RecursiveASTVisitor<RestVisitor> {
   }
 
   bool VisitInitListExpr(clang::InitListExpr* list) {
+    if (list->getType().isNull() || list->containsErrors()) {
+      return true;  // invalid initializer left by a compile error
+    }
     const clang::InitListExpr* syntactic =
         (list->isSemanticForm() && (list->getSyntacticForm() != nullptr))
             ? list->getSyntacticForm()

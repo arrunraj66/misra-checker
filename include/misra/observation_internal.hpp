@@ -6,6 +6,10 @@
 #include <string>
 #include <utility>
 
+#include "clang/AST/Decl.h"
+#include "clang/AST/Expr.h"
+#include "clang/AST/RecursiveASTVisitor.h"
+#include "clang/AST/Stmt.h"
 #include "clang/Basic/SourceManager.h"
 #include "misra/rule.hpp"
 
@@ -16,6 +20,37 @@ class Preprocessor;
 }  // namespace clang
 
 namespace misra {
+
+// After a compile error Clang leaves recovery expressions and null types in
+// the AST. Visitors skip such subtrees so that one error does not hide, or
+// crash the analysis of, the rest of the translation unit.
+inline bool has_ast_errors(const clang::Stmt* node) {
+  const auto* expression = llvm::dyn_cast_or_null<clang::Expr>(node);
+  return (expression != nullptr) &&
+         (expression->getType().isNull() || expression->containsErrors());
+}
+
+inline bool has_decl_errors(const clang::Decl* node) {
+  if (node == nullptr) {
+    return false;
+  }
+  if (node->isInvalidDecl()) {
+    return true;
+  }
+  const auto* variable = llvm::dyn_cast<clang::VarDecl>(node);
+  return (variable != nullptr) && variable->hasInit() &&
+         has_ast_errors(variable->getInit());
+}
+
+#define MISRA_SKIP_INVALID_AST                                                \
+  bool TraverseStmt(clang::Stmt* node, DataRecursionQueue* queue = nullptr) { \
+    return ::misra::has_ast_errors(node) ||                                   \
+           RecursiveASTVisitor::TraverseStmt(node, queue);                    \
+  }                                                                           \
+  bool TraverseDecl(clang::Decl* node) {                                      \
+    return ::misra::has_decl_errors(node) ||                                  \
+           RecursiveASTVisitor::TraverseDecl(node);                           \
+  }
 
 // Appends observations written in the main file; everything else is ignored.
 class Recorder final {
