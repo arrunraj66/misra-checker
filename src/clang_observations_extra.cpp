@@ -1,4 +1,5 @@
 #include <cctype>
+#include <cstring>
 #include <map>
 #include <set>
 #include <string>
@@ -660,16 +661,30 @@ class ExtraVisitor final : public clang::RecursiveASTVisitor<ExtraVisitor> {
                type->getPointeeType()->isIncompleteType() &&
                !type->getPointeeType()->isFunctionType();
       };
-      if ((incomplete_pointee(source) || incomplete_pointee(target)) &&
+      // A null pointer constant may be converted to a pointer to an incomplete type.
+      const bool null_constant =
+          cast->getSubExpr()->isNullPointerConstant(
+              ast_, clang::Expr::NPC_ValueDependentIsNull) != clang::Expr::NPCK_NotNull;
+      if ((incomplete_pointee(source) || incomplete_pointee(target)) && !null_constant &&
           (ast_.getCanonicalType(source) != ast_.getCanonicalType(target))) {
         recorder_.add("incomplete-pointer-conversion", location);
       }
     }
     if (kind == clang::CK_NullToPointer) {
-      const clang::SourceLocation begin = cast->getBeginLoc();
-      const std::string name =
-          clang::Lexer::getImmediateMacroNameForDiagnostics(begin, sm_, ast_.getLangOpts()).str();
-      if (!begin.isMacroID() || (name != "NULL")) {
+      // The null constant must come from the NULL macro, possibly passed through
+      // the argument of another macro: walk the whole expansion chain.
+      // Parentheses added by an outer macro ("( xTask )") are not part of the constant.
+      const clang::SourceLocation begin = cast->getSubExpr()->IgnoreParenImpCasts()->getBeginLoc();
+      bool from_null_macro = false;
+      clang::SourceLocation chain = begin;
+      for (int depth = 0; chain.isMacroID() && (depth < 32); ++depth) {
+        if (clang::Lexer::getImmediateMacroName(chain, sm_, ast_.getLangOpts()) == "NULL") {
+          from_null_macro = true;
+          break;
+        }
+        chain = sm_.getImmediateMacroCallerLoc(chain);
+      }
+      if (!from_null_macro) {
         recorder_.add("null-pointer-constant-not-null-macro", location);
       }
     }
@@ -909,10 +924,34 @@ class ExtraVisitor final : public clang::RecursiveASTVisitor<ExtraVisitor> {
     return {Category::Other, 0U, nullptr};
   }
 
+  // The essential type model never applies integer promotion: an arithmetic
+  // expression on two `unsigned char` operands is essentially `unsigned char`,
+  // and `c ? a : b` takes its type from `a` and `b`, not from the promoted C type.
   [[nodiscard]] Essential essential(const clang::Expr* expression) const {
     const clang::Expr* stripped = expression->IgnoreParenImpCasts();
     if (is_boolean_like(stripped)) {
       return {Category::Boolean, 1U, nullptr};
+    }
+    if (const auto* conditional = llvm::dyn_cast<clang::ConditionalOperator>(stripped)) {
+      const clang::Expr* first = conditional->getTrueExpr();
+      const clang::Expr* second = conditional->getFalseExpr();
+      const bool first_constant = first->isIntegerConstantExpr(ast_);
+      const bool second_constant = second->isIntegerConstantExpr(ast_);
+      if (first_constant && !second_constant) {
+        return essential(second);
+      }
+      if (second_constant && !first_constant) {
+        return essential(first);
+      }
+      const Essential a = essential(first);
+      const Essential b = essential(second);
+      if (a.category == b.category) {
+        return {a.category, a.width > b.width ? a.width : b.width, a.enum_type};
+      }
+      return {Category::Other, 0U, nullptr};
+    }
+    if (is_composite(stripped)) {
+      return composite_essential(stripped);
     }
     return essential_of_type(stripped->getType());
   }
@@ -1224,43 +1263,49 @@ class ExtraVisitor final : public clang::RecursiveASTVisitor<ExtraVisitor> {
     return false;
   }
 
+  // Significant characters: external identifiers 31; internal identifiers and
+  // macro names 31 in C90 and 63 from C99 on (engineering parameters; the
+  // normative wording stays in the licensed MISRA specification).
+  static constexpr std::size_t kExternalSignificance = 31U;
+  std::size_t internal_significance() const { return ast_.getLangOpts().C99 ? 63U : 31U; }
+
   void analyze_names() {
-    // Rules 5.1 / 5.2: identifiers longer than 31 characters that differ only
-    // after the 31st.
+    // Rules 5.1 / 5.2: identifiers that differ only after the significant
+    // characters.
+    const std::size_t internal_limit = internal_significance();
     std::map<std::string, std::set<std::string>> external_prefixes;
     std::map<std::pair<const clang::DeclContext*, std::string>, std::set<std::string>>
         scope_prefixes;
     for (const NamedEntry& entry : entries_) {
       const std::string name = entry.declaration->getNameAsString();
-      if (name.size() <= 31U) {
-        continue;
-      }
-      const std::string prefix = name.substr(0U, 31U);
-      const bool object_or_function =
-          llvm::isa<clang::VarDecl>(entry.declaration) ||
-          llvm::isa<clang::FunctionDecl>(entry.declaration);
-      if (object_or_function && entry.declaration->isExternallyVisible()) {
-        external_prefixes[prefix].insert(name);
-      }
-      if (entry.kind != 'g') {
-        scope_prefixes[{entry.declaration->getDeclContext(), prefix}].insert(name);
-      }
-    }
-    for (const NamedEntry& entry : entries_) {
-      const std::string name = entry.declaration->getNameAsString();
-      if (!entry.in_main || (name.size() <= 31U)) {
-        continue;
-      }
-      const std::string prefix = name.substr(0U, 31U);
       const bool object_or_function =
           llvm::isa<clang::VarDecl>(entry.declaration) ||
           llvm::isa<clang::FunctionDecl>(entry.declaration);
       if (object_or_function && entry.declaration->isExternallyVisible() &&
-          (external_prefixes[prefix].size() > 1U)) {
+          (name.size() > kExternalSignificance)) {
+        external_prefixes[name.substr(0U, kExternalSignificance)].insert(name);
+      }
+      if ((entry.kind != 'g') && (name.size() > internal_limit)) {
+        scope_prefixes[{entry.declaration->getDeclContext(), name.substr(0U, internal_limit)}]
+            .insert(name);
+      }
+    }
+    for (const NamedEntry& entry : entries_) {
+      const std::string name = entry.declaration->getNameAsString();
+      if (!entry.in_main) {
+        continue;
+      }
+      const bool object_or_function =
+          llvm::isa<clang::VarDecl>(entry.declaration) ||
+          llvm::isa<clang::FunctionDecl>(entry.declaration);
+      if (object_or_function && entry.declaration->isExternallyVisible() &&
+          (name.size() > kExternalSignificance) &&
+          (external_prefixes[name.substr(0U, kExternalSignificance)].size() > 1U)) {
         recorder_.add("external-identifiers-not-distinct", entry.location, name);
       }
-      if ((entry.kind != 'g') &&
-          (scope_prefixes[{entry.declaration->getDeclContext(), prefix}].size() > 1U)) {
+      if ((entry.kind != 'g') && (name.size() > internal_limit) &&
+          (scope_prefixes[{entry.declaration->getDeclContext(), name.substr(0U, internal_limit)}]
+               .size() > 1U)) {
         recorder_.add("scope-identifiers-not-distinct", entry.location, name);
       }
     }
@@ -1412,6 +1457,23 @@ std::vector<LogicalLine> split_lines(const std::string& text) {
   return lines;
 }
 
+// Byte ranges of the main file that the preprocessor skipped (inactive #if
+// groups). Filled by ExtraMacroObserver for the current translation unit; the
+// raw text scan below must not treat directives or code in them as active.
+std::vector<std::pair<std::size_t, std::size_t>>& skipped_main_ranges() {
+  static std::vector<std::pair<std::size_t, std::size_t>> ranges;
+  return ranges;
+}
+
+bool in_skipped_range(const std::size_t offset) {
+  for (const auto& [begin, end] : skipped_main_ranges()) {
+    if ((offset >= begin) && (offset < end)) {
+      return true;
+    }
+  }
+  return false;
+}
+
 void scan_main_file_text(clang::ASTContext& ast, const Recorder& recorder) {
   clang::SourceManager& sm = ast.getSourceManager();
   const clang::FileID main_file = sm.getMainFileID();
@@ -1430,8 +1492,11 @@ void scan_main_file_text(clang::ASTContext& ast, const Recorder& recorder) {
     if (start == std::string::npos) {
       continue;
     }
+    // Inactive #if groups still have their directives validated (Rules 20.2,
+    // 20.13), but they are neither code nor an active #include for Rule 20.1.
+    const bool inactive = in_skipped_range(line.offset);
     if (line.stripped[start] != '#') {
-      seen_code = true;
+      seen_code = seen_code || !inactive;
       continue;
     }
     std::size_t name_begin = line.stripped.find_first_not_of(" \t", start + 1U);
@@ -1458,7 +1523,7 @@ void scan_main_file_text(clang::ASTContext& ast, const Recorder& recorder) {
     if (name != "include") {
       continue;
     }
-    if (seen_code) {
+    if (seen_code && !inactive) {
       recorder.add("include-after-code", location_of(line.offset));
     }
     const std::size_t raw_hash = line.raw.find('#');
@@ -1503,7 +1568,18 @@ class ExtraMacroObserver final : public clang::PPCallbacks {
   ExtraMacroObserver(const Recorder& recorder, clang::Preprocessor& preprocessor)
       : recorder_(recorder),
         preprocessor_(preprocessor),
-        language_(preprocessor.getLangOpts()) {}
+        language_(preprocessor.getLangOpts()) {
+    skipped_main_ranges().clear();
+  }
+
+  void SourceRangeSkipped(clang::SourceRange range, clang::SourceLocation) override {
+    const clang::SourceManager& sm = recorder_.source_manager();
+    const clang::SourceLocation begin = sm.getExpansionLoc(range.getBegin());
+    const clang::SourceLocation end = sm.getExpansionLoc(range.getEnd());
+    if (begin.isValid() && end.isValid() && sm.isWrittenInMainFile(begin)) {
+      skipped_main_ranges().emplace_back(sm.getFileOffset(begin), sm.getFileOffset(end));
+    }
+  }
 
   void If(clang::SourceLocation location, clang::SourceRange condition,
           ConditionValueKind) override {
@@ -1686,6 +1762,20 @@ class ExtraMacroObserver final : public clang::PPCallbacks {
         ++i;
         continue;
       }
+      if ((std::isdigit(static_cast<unsigned char>(text[i])) != 0) ||
+          ((text[i] == '.') && ((i + 1U) < text.size()) &&
+           (std::isdigit(static_cast<unsigned char>(text[i + 1U])) != 0))) {
+        // A preprocessing number, including suffixes such as 1U or 0x10UL.
+        ++i;
+        while ((i < text.size()) &&
+               ((std::isalnum(static_cast<unsigned char>(text[i])) != 0) || (text[i] == '.') ||
+                (text[i] == '_') ||
+                (((text[i] == '+') || (text[i] == '-')) &&
+                 (std::strchr("eEpP", text[i - 1U]) != nullptr)))) {
+          ++i;
+        }
+        continue;
+      }
       if ((std::isalpha(static_cast<unsigned char>(text[i])) != 0) || (text[i] == '_')) {
         std::size_t end = i;
         while ((end < text.size()) &&
@@ -1860,17 +1950,18 @@ void collect_extra_observations(clang::ASTContext& ast, const Recorder& recorder
   collect_rest_observations(ast, recorder);
 
   // Rules 5.4 / 5.5 from the recorded macro names, then drop the helper rows.
+  const std::size_t macro_limit = ast.getLangOpts().C99 ? 63U : 31U;
   std::map<std::string, std::set<std::string>> prefixes;
   std::vector<const Observation*> macros;
   for (const Observation& observation : context.observations) {
-    if ((observation.kind == "macro-definition") && (observation.detail.size() > 31U)) {
-      prefixes[observation.detail.substr(0U, 31U)].insert(observation.detail);
+    if ((observation.kind == "macro-definition") && (observation.detail.size() > macro_limit)) {
+      prefixes[observation.detail.substr(0U, macro_limit)].insert(observation.detail);
       macros.push_back(&observation);
     }
   }
   std::vector<Observation> derived;
   for (const Observation* macro : macros) {
-    if (prefixes[macro->detail.substr(0U, 31U)].size() > 1U) {
+    if (prefixes[macro->detail.substr(0U, macro_limit)].size() > 1U) {
       derived.push_back({"macro-name-not-distinct", macro->location, macro->detail});
     }
   }

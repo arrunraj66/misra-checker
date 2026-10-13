@@ -126,6 +126,35 @@ bool escapes_terminated(const std::string& spelling) {
   return true;
 }
 
+// Function pointer types that differ only in attributes such as noreturn or a
+// calling convention are the same type for the purposes of Rule 11.1.
+bool same_function_signature(clang::ASTContext& ast, const clang::QualType a,
+                             const clang::QualType b) {
+  const auto* first = a->getPointeeType()->getAs<clang::FunctionType>();
+  const auto* second = b->getPointeeType()->getAs<clang::FunctionType>();
+  if ((first == nullptr) || (second == nullptr) ||
+      (ast.getCanonicalType(first->getReturnType()) !=
+       ast.getCanonicalType(second->getReturnType()))) {
+    return false;
+  }
+  const auto* proto_a = llvm::dyn_cast<clang::FunctionProtoType>(first);
+  const auto* proto_b = llvm::dyn_cast<clang::FunctionProtoType>(second);
+  if ((proto_a == nullptr) || (proto_b == nullptr)) {
+    return (proto_a == nullptr) && (proto_b == nullptr);
+  }
+  if ((proto_a->getNumParams() != proto_b->getNumParams()) ||
+      (proto_a->isVariadic() != proto_b->isVariadic())) {
+    return false;
+  }
+  for (unsigned int i = 0U; i < proto_a->getNumParams(); ++i) {
+    if (ast.getCanonicalType(proto_a->getParamType(i)).getUnqualifiedType() !=
+        ast.getCanonicalType(proto_b->getParamType(i)).getUnqualifiedType()) {
+      return false;
+    }
+  }
+  return true;
+}
+
 class ObservationVisitor final
     : public clang::RecursiveASTVisitor<ObservationVisitor> {
  public:
@@ -500,7 +529,8 @@ class ObservationVisitor final
           cast->getSubExpr()->isNullPointerConstant(
               ast_, clang::Expr::NPC_ValueDependentIsNull) != clang::Expr::NPCK_NotNull;
       if ((source_function || target_function) && !null_constant &&
-          (ast_.getCanonicalType(source) != ast_.getCanonicalType(target))) {
+          (ast_.getCanonicalType(source) != ast_.getCanonicalType(target)) &&
+          !(source_function && target_function && same_function_signature(ast_, source, target))) {
         recorder_.add("function-pointer-conversion", location);
       }
     }
