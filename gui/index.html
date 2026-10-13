@@ -202,9 +202,13 @@ td.loc { font:12.5px var(--mono); color:var(--muted); white-space:nowrap; }
 .login-card h1 { margin:0; font-size:18px; display:flex; align-items:center; gap:10px; }
 .login-card label { display:flex; flex-direction:column; gap:4px; font-size:13px; color:var(--muted); }
 .login-card input { padding:9px 10px; font-size:14px; color:var(--text); }
-.userbox { display:flex; align-items:center; gap:8px; font-size:13px; color:var(--muted); }
+.userbox { display:flex; align-items:center; gap:10px; font-size:14px; color:var(--text); }
 .userbox[hidden] { display:none; }
-.userbox b { color:var(--text); }
+.userbox .avatar { width:30px; height:30px; border-radius:50%; background:var(--accent); color:var(--accent-ink);
+  display:grid; place-items:center; font-weight:700; font-size:13px; flex:none; }
+.userbox .who { display:flex; flex-direction:column; line-height:1.15; }
+.userbox .who b { color:var(--text); font-weight:650; }
+.userbox .who small { color:var(--text); opacity:.72; font-size:11.5px; text-transform:capitalize; letter-spacing:.2px; }
 tr.dev td { opacity:.62; } tr.dev td:first-child { opacity:1; }
 .devtag { font:600 10px system-ui,sans-serif; text-transform:uppercase; letter-spacing:.4px; padding:0 6px; border-radius:6px;
   border:1px solid var(--pass); color:var(--pass); margin-left:6px; }
@@ -221,7 +225,8 @@ tr.dev td { opacity:.62; } tr.dev td:first-child { opacity:1; }
     <button role="tab" id="nav-rules" aria-selected="false" data-view="rules">Rules &amp; validation</button>
   </nav>
   <span class="spacer"></span>
-  <div class="userbox" id="userbox" hidden><span><b id="u-name"></b> · <span id="u-role"></span></span>
+  <div class="userbox" id="userbox" hidden><span class="avatar" id="u-avatar" aria-hidden="true"></span>
+    <span class="who"><b id="u-name"></b><small id="u-role"></small></span>
     <button class="btn small" id="logout">Log out</button></div>
   <button class="iconbtn" id="theme" title="Toggle light / dark theme" aria-label="Toggle theme">◐</button>
 </header>
@@ -871,7 +876,10 @@ $("valall").addEventListener("click", async () => {
 // ---- login / startup
 function showUser() {
   $("userbox").hidden = !(me && me.auth);
-  if (me) { $("u-name").textContent = me.user; $("u-role").textContent = me.role; }
+  if (me) {
+    $("u-name").textContent = me.user; $("u-role").textContent = me.role;
+    $("u-avatar").textContent = (me.user || "?").charAt(0).toUpperCase();
+  }
   $("dbrow").hidden = !(me && me.db_paths);
 }
 function showLogin(message) {
