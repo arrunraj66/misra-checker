@@ -46,3 +46,4 @@ secrets*
 /proprietary-corpora/
 /models/
 /workspace/
+__pycache__/

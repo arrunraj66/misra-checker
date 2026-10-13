@@ -36,7 +36,7 @@ USER misra
 WORKDIR /workspace
 EXPOSE 8765
 HEALTHCHECK --interval=30s --timeout=5s --start-period=10s \
-  CMD python3 -c "import urllib.request as u; u.urlopen('http://127.0.0.1:8765/api/rules', timeout=4)"
+  CMD python3 -c "import urllib.request as u; u.urlopen('http://127.0.0.1:8765/', timeout=4)"
 # Login is on by default. On first start an 'admin' user is created from
 # MISRA_GUI_ADMIN_PASSWORD, or with a random password printed once in the log.
 # Keep the port on loopback or behind a TLS proxy (see docs/docker.md).
