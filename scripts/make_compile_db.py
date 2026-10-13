@@ -5,8 +5,12 @@ Every .c file becomes a translation unit; the root and every directory that hold
 a .c or .h file go on the include path (the same rule the web GUI uses for zip
 projects).
 
-    make_compile_db.py PROJECT_DIR [--std c99] [-D NAME[=VAL]]... [--compiler clang-14]
-Writes PROJECT_DIR/compile_commands.json (absolute paths, valid where it is run).
+    make_compile_db.py PROJECT_DIR [--std c99] [-D NAME[=VAL]]... [--compiler arm-none-eabi-gcc]
+                       [--flags="-mcpu=cortex-m4 -mthumb"]   (write --flags=... with an equals sign)
+--compiler names the compiler the project is built with. It is probed (target, system
+include dirs, version macros) and Clang is configured to imitate it; see
+scripts/compiler_profiles.py. Writes PROJECT_DIR/compile_commands.json (absolute
+paths, valid where it is run).
 """
 import argparse
 import json
@@ -14,26 +18,45 @@ import shutil
 import sys
 from pathlib import Path
 
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+import compiler_profiles as cp  # noqa: E402
+
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__.split("\n")[0])
     parser.add_argument("project", type=Path)
-    parser.add_argument("--std", default="c99", choices=["c90", "c99", "c11", "c17"])
+    parser.add_argument("--std", default="c99",
+                        choices=["c90", "c99", "c11", "c17", "gnu90", "gnu99", "gnu11", "gnu17"])
+    parser.add_argument("--flags", default="", help="extra compiler flags (restricted set, see compiler_profiles.py)")
     parser.add_argument("-D", dest="defines", action="append", default=[])
     parser.add_argument("--compiler", default=None)
     args = parser.parse_args()
 
     root = args.project.resolve()
-    compiler = args.compiler or shutil.which("clang-14") or shutil.which("clang") or "cc"
+    clang = shutil.which("clang-14") or shutil.which("clang") or "cc"
+    profile = []
+    if args.compiler:
+        located = shutil.which(args.compiler) or args.compiler
+        chosen = cp.probe("project", located, clang)
+        if not chosen.usable:
+            print(f"cannot use compiler '{args.compiler}': {chosen.reason}", file=sys.stderr)
+            return 1
+        profile = cp.clang_flags(chosen, clang)
+        print(f"compiler profile: {chosen.label}")
+    try:
+        extra = cp.validate_flags(args.flags)
+    except ValueError as exc:
+        print(exc, file=sys.stderr)
+        return 1
     sources = sorted(p for p in root.rglob("*.c") if "build" not in p.relative_to(root).parts)
     if not sources:
         print(f"no .c files under {root}", file=sys.stderr)
         return 1
     dirs = {root} | {p.parent for p in root.rglob("*") if p.suffix in (".c", ".h")}
-    flags = [f"-std={args.std}", *(f"-D{d}" for d in args.defines),
+    flags = [f"-std={args.std}", *profile, *extra, *(f"-D{d}" for d in args.defines),
              *(f"-I{d}" for d in sorted(dirs))]
     database = [{"directory": str(root), "file": str(s),
-                 "arguments": [compiler, *flags, "-c", str(s)]} for s in sources]
+                 "arguments": [clang, *flags, "-c", str(s)]} for s in sources]
     out = root / "compile_commands.json"
     out.write_text(json.dumps(database, indent=1))
     print(f"wrote {out} ({len(sources)} translation units)")

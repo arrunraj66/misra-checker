@@ -256,6 +256,12 @@ if(BUILD_TESTING)
     )
   endif()
   add_test(
+    NAME compiler_profiles
+    COMMAND
+      "${Python3_EXECUTABLE}" -I "${CMAKE_CURRENT_SOURCE_DIR}/tests/compiler_profiles_test.py"
+      "$<TARGET_FILE:misra-checker>" "${CLANG_EXECUTABLE}"
+  )
+  add_test(
     NAME report
     COMMAND
       "${Python3_EXECUTABLE}" -I "${CMAKE_CURRENT_SOURCE_DIR}/tests/report_test.py"

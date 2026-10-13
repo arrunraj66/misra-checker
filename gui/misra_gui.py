@@ -40,6 +40,7 @@ ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT / "scripts"))
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import auth  # noqa: E402
+import compiler_profiles as cp  # noqa: E402
 import validate_rules as vr  # noqa: E402
 
 INDEX = Path(__file__).resolve().parent / "index.html"
@@ -58,12 +59,12 @@ DEFINE_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*(=[^\s]*)?$")
 FINDING_RE = re.compile(
     r"^(?P<file>.+?):(?P<line>\d+):(?P<col>\d+): (?P<category>\w+): "
     r"MISRA C:2012 Rule (?P<rule>\S+) \[(?P<key>[^\]]+)\](?: \((?P<deviation>[^)]+)\))?$")
-STANDARDS = {"c90", "c99", "c11", "c17"}
+STANDARDS = {"c90", "c99", "c11", "c17", "gnu90", "gnu99", "gnu11", "gnu17"}
 SAFE_NAME = re.compile(r"^[A-Za-z0-9_][A-Za-z0-9_.-]{0,63}\.[ch]$")
 
 # Minimum role per route (see auth.ROLES).
 ROUTE_ROLE = {
-    ("GET", "/api/rules"): "viewer", ("GET", "/api/samples"): "viewer",
+    ("GET", "/api/compilers"): "viewer", ("GET", "/api/rules"): "viewer", ("GET", "/api/samples"): "viewer",
     ("GET", "/api/validate"): "analyst", ("GET", "/api/validate-all"): "analyst",
     ("GET", "/api/file"): "analyst", ("POST", "/api/analyze"): "analyst",
     ("POST", "/api/project"): "analyst",
@@ -74,6 +75,7 @@ class State:
     projects: "OrderedDict[str, Project]" = OrderedDict()
     checker: Path
     compiler: str
+    compilers: dict = {}
     cases: dict
     users: auth.UserStore
     sessions = auth.Sessions()
@@ -83,6 +85,15 @@ class State:
     secure_cookie = False
     allowed_hosts = {"127.0.0.1", "localhost", "::1"}
     db_roots: list[Path] = []
+
+
+def compile_profile(compiler_id: str, flags_text: str) -> tuple[list[str], str]:
+    """Clang flags that imitate the selected project compiler, plus a label for the report."""
+    chosen = State.compilers.get(compiler_id or "default")
+    if chosen is None:
+        raise ValueError("unknown compiler; pick one from the list")
+    flags = cp.clang_flags(chosen, State.compiler) + cp.validate_flags(flags_text)
+    return flags, chosen.label
 
 
 def load_rule_table() -> list[dict]:
@@ -160,7 +171,8 @@ def run_checker(db_path: Path, timeout: int = 300, deviations: str = "",
             "deviation_notes": notes, "error": error, "sarif": sarif}
 
 
-def analyze_files(files: list[dict], std: str, deviations: str) -> dict:
+def analyze_files(files: list[dict], std: str, deviations: str, compiler_id: str = "default",
+                  flags_text: str = "") -> dict:
     """Analyze several in-memory files together (enables whole-program rules)."""
     if std not in STANDARDS:
         raise ValueError("unsupported language standard")
@@ -171,13 +183,14 @@ def analyze_files(files: list[dict], std: str, deviations: str) -> dict:
         raise ValueError("file names must be unique and look like name.c or name.h")
     if not any(n.endswith(".c") for n in names):
         raise ValueError("at least one .c file is required")
+    profile_flags, compiler_label = compile_profile(compiler_id, flags_text)
     with tempfile.TemporaryDirectory(prefix="misra-gui-") as tmp:
         for f in files:
             (Path(tmp) / f["name"]).write_text(str(f.get("code", "")))
         db = Path(tmp) / "compile_commands.json"
         db.write_text(json.dumps([{
             "directory": tmp, "file": str(Path(tmp) / n),
-            "arguments": [State.compiler, f"-std={std}", "-I", tmp, "-c", str(Path(tmp) / n)]}
+            "arguments": [State.compiler, f"-std={std}", *profile_flags, "-I", tmp, "-c", str(Path(tmp) / n)]}
             for n in names if n.endswith(".c")]))
         result = run_checker(db, deviations=deviations, source_root=tmp)
         prefix = tmp + "/"
@@ -185,6 +198,7 @@ def analyze_files(files: list[dict], std: str, deviations: str) -> dict:
         result[key] = result[key].replace(prefix, "")
     for f in result["findings"] + result["deviated"]:
         f["file"] = f["file"].replace(prefix, "")
+    result["compiler"] = compiler_label
     return result
 
 
@@ -300,7 +314,7 @@ def project_for(session: dict, project_id: str) -> Project:
 
 
 def analyze_project(session: dict, project_id: str, std: str, defines: str, includes: str,
-                    deviations: str) -> dict:
+                    deviations: str, compiler_id: str = "default", flags_text: str = "") -> dict:
     project = project_for(session, project_id)
     if std not in STANDARDS:
         raise ValueError("unsupported language standard")
@@ -317,7 +331,8 @@ def analyze_project(session: dict, project_id: str, std: str, defines: str, incl
             if project.root not in (resolved, *resolved.parents) or not resolved.is_dir():
                 raise ValueError(f"include directory not in project: {line}")
             extra.append(str(resolved))
-    flags = [f"-std={std}", *(f"-D{d}" for d in macros),
+    profile_flags, compiler_label = compile_profile(compiler_id, flags_text)
+    flags = [f"-std={std}", *profile_flags, *(f"-D{d}" for d in macros),
              *("-I" + str(project.root / d) if d else "-I" + str(project.root) for d in project.include_dirs),
              *("-I" + e for e in extra)]
     db = [{"directory": str(project.root), "file": str(project.root / rel),
@@ -336,6 +351,7 @@ def analyze_project(session: dict, project_id: str, std: str, defines: str, incl
     for key in ("compiler_output", "error"):
         result[key] = result[key].replace(prefix, "")[:20000]
     result["project"] = project.describe() | {"files": []}
+    result["compiler"] = compiler_label
     return result
 
 
@@ -442,6 +458,8 @@ class Handler(BaseHTTPRequestHandler):
                                         "version": subprocess.run(
                                             [str(State.checker), "--version"],
                                             capture_output=True, text=True).stdout.strip()})
+            if url.path == "/api/compilers":
+                return self._json(200, {"compilers": [c.describe() for c in State.compilers.values()]})
             if url.path == "/api/validate":
                 rule = (query.get("rule") or [""])[0]
                 if not re.fullmatch(r"\d+\.\d+", rule):
@@ -497,7 +515,8 @@ class Handler(BaseHTTPRequestHandler):
             if body.get("project"):
                 result = analyze_project(session, str(body["project"]), str(body.get("std", "c99")),
                                          str(body.get("defines", "")), str(body.get("includes", "")),
-                                         deviations)
+                                         deviations, str(body.get("compiler", "default")),
+                                         str(body.get("flags", "")))
                 mode = "project"
             elif body.get("compile_commands"):
                 if session["role"] != "admin":
@@ -506,9 +525,11 @@ class Handler(BaseHTTPRequestHandler):
                 mode = "database"
             else:
                 files = body.get("files") or [{"name": "input.c", "code": str(body.get("code", ""))}]
-                result = analyze_files(files, str(body.get("std", "c99")), deviations)
+                result = analyze_files(files, str(body.get("std", "c99")), deviations,
+                                       str(body.get("compiler", "default")), str(body.get("flags", "")))
                 mode = "files"
-            State.audit.write(session["user"], "analyze", mode=mode, findings=len(result["findings"]),
+            State.audit.write(session["user"], "analyze", mode=mode, compiler=result.get("compiler", ""),
+                              findings=len(result["findings"]),
                               deviated=len(result["deviated"]), elapsed_ms=result["elapsed_ms"])
             return self._json(200, result)
         except subprocess.TimeoutExpired:
@@ -578,6 +599,9 @@ def main() -> int:
                         help="extra Host header value to accept (needed when not used via localhost)")
     parser.add_argument("--db-root", action="append", type=Path, default=[],
                         help="directory under which admins may analyze server-side compile databases")
+    parser.add_argument("--compiler", action="append", default=[], metavar="ID=PATH",
+                        help="make a project compiler selectable (repeatable; env MISRA_GUI_COMPILERS=id=path;id=path). "
+                             "Compilers found on PATH (gcc, arm-none-eabi-gcc, ...) are offered automatically.")
     parser.add_argument("--tls-cert", type=Path)
     parser.add_argument("--tls-key", type=Path)
     parser.add_argument("--add-user", metavar="NAME")
@@ -622,6 +646,16 @@ def main() -> int:
     State.checker = args.checker or vr.find_checker()
     State.compiler = vr.find_clang()
     State.cases = vr.discover_cases()
+    extra = {}
+    entries = list(args.compiler) + [e for e in os.environ.get("MISRA_GUI_COMPILERS", "").split(";") if e]
+    for entry in entries:
+        identifier, _, path = entry.partition("=")
+        if not re.fullmatch(r"[A-Za-z0-9_.+-]{1,40}", identifier) or not path or not Path(path).is_file():
+            print(f"error: --compiler expects ID=PATH to an existing file, got '{entry}'", file=sys.stderr)
+            return 2
+        extra[identifier] = path
+    State.compilers = cp.discover(State.compiler, extra)
+    print("compilers: " + ", ".join(f"{c.id}{'' if c.usable else ' (unusable)'}" for c in State.compilers.values()), flush=True)
 
     server = ThreadingHTTPServer((args.host, args.port), Handler)
     scheme = "http"

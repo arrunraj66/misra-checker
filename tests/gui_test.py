@@ -65,7 +65,27 @@ class Client:
         return status, data, cookie
 
 
+FAKE_GCC = '''#!/bin/sh
+case "$*" in
+  *--version*) echo "arm-none-eabi-gcc (Fake Toolchain) 10.3.1"; echo "Copyright Free Software Foundation";;
+  *-dumpmachine*) echo arm-none-eabi;;
+  *-dM*) printf '#define __GNUC__ 10\\n#define __GNUC_MINOR__ 3\\n#define __GNUC_PATCHLEVEL__ 1\\n';;
+  *"-E -x c -v"*) cat >&2 <<EOF
+#include <...> search starts here:
+ INCLUDE_DIR
+End of search list.
+EOF
+  ;;
+esac
+'''
+
 with tempfile.TemporaryDirectory() as data_dir:
+    fake_dir = Path(data_dir) / "fake-toolchain"
+    (fake_dir / "include").mkdir(parents=True)
+    (fake_dir / "include" / "fakelib.h").write_text("#define FAKE_NEWLIB 1\n")
+    fake_cc = fake_dir / "arm-none-eabi-gcc"
+    fake_cc.write_text(FAKE_GCC.replace("INCLUDE_DIR", str(fake_dir / "include")))
+    fake_cc.chmod(0o755)
     # ---- user management CLI
     short = cli(data_dir, "--add-user", "bob", "--role", "analyst", password="short")
     check("short password rejected", short.returncode == 2 and "at least" in short.stderr, short.stderr)
@@ -83,7 +103,8 @@ with tempfile.TemporaryDirectory() as data_dir:
     port = free_port()
     outside = tempfile.mkdtemp()
     server = subprocess.Popen([sys.executable, str(SERVER), "--data-dir", data_dir, "--port", str(port),
-                               "--no-browser", "--checker", CHECKER, "--db-root", outside],
+                               "--no-browser", "--checker", CHECKER, "--db-root", outside,
+                               "--compiler", f"arm-fake={fake_cc}"],
                               stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
     try:
         for _ in range(100):
@@ -176,6 +197,31 @@ with tempfile.TemporaryDirectory() as data_dir:
         check("owner reads file", bob.call("GET", f"/api/file?project={proj['id']}&path=src/m.c")[0] == 200)
         check("admin reads any project",
               alice.call("GET", f"/api/file?project={proj['id']}&path=src/m.c")[0] == 200)
+
+        # ---- project compilers
+        status, listing, _ = bob.call("GET", "/api/compilers")
+        ids = {c["id"]: c for c in listing["compilers"]} if status == 200 else {}
+        check("compilers listed", status == 200 and "default" in ids and ids["arm-fake"]["usable"], listing)
+        check("anonymous cannot list compilers", Client(port).call("GET", "/api/compilers")[0] == 401)
+        arm_code = '#include <fakelib.h>\n_Static_assert(sizeof(long) == 4, "32-bit long");\nint v = FAKE_NEWLIB;\n'
+        status, res, _ = bob.call("POST", "/api/analyze", {"files": [{"name": "a.c", "code": arm_code}],
+                                                           "compiler": "arm-fake", "flags": "-mcpu=cortex-m4 -mthumb -DSTM32F4"})
+        check("ARM profile compiles the project", status == 200 and not res["compile_errors"], res)
+        check("report names the compiler", "arm-none-eabi" in res.get("compiler", ""), res.get("compiler"))
+        status, res, _ = bob.call("POST", "/api/analyze", {"files": [{"name": "a.c", "code": arm_code}]})
+        check("default profile does not", status == 200 and res["compile_errors"], res)
+        status, res, _ = bob.call("POST", "/api/analyze", {"files": [{"name": "a.c", "code": "int x;"}], "compiler": "nonexistent"})
+        check("unknown compiler rejected", status == 400 and "unknown compiler" in res["error"], res)
+        status, res, _ = bob.call("POST", "/api/analyze", {"files": [{"name": "a.c", "code": "int x;"}],
+                                                           "flags": "-include /etc/passwd"})
+        check("dangerous flag rejected", status == 400 and "not allowed" in res["error"], res)
+        buf2 = io.BytesIO()
+        with zipfile.ZipFile(buf2, "w") as z:
+            z.writestr("src/m.c", arm_code)
+        status, proj2, _ = bob.call("POST", "/api/project?name=arm.zip", buf2.getvalue(), raw=True,
+                                    headers={"Content-Type": "application/octet-stream"})
+        status, res, _ = bob.call("POST", "/api/analyze", {"project": proj2["id"], "compiler": "arm-fake", "std": "gnu99"})
+        check("project honours the compiler and gnu99", status == 200 and not res["compile_errors"], res)
 
         # ---- logout invalidates the session
         token_cookie = bob.cookie

@@ -251,7 +251,8 @@ tr.dev td { opacity:.62; } tr.dev td:first-child { opacity:1; }
           <select id="sample" aria-label="Load sample"><option value="">Samples…</option></select>
           <label class="btn" title="Add .c / .h files">Add files<input type="file" id="file" accept=".c,.h,text/plain" multiple hidden></label>
           <label class="btn" title="Upload a whole project as a .zip (sources, headers, libraries)">Upload project (.zip)<input type="file" id="zip" accept=".zip,application/zip" hidden></label>
-          <select id="std" aria-label="Language standard" title="Language standard"><option>c99</option><option>c90</option><option>c11</option><option>c17</option></select>
+          <select id="std" aria-label="Language standard" title="Language standard"><option>c99</option><option>c90</option><option>c11</option><option>c17</option><option>gnu99</option><option>gnu11</option><option>gnu17</option></select>
+          <select id="compiler" aria-label="Project compiler" title="Compiler your project is built with"><option value="default">Compiler: default (Clang)</option></select>
           <button class="btn primary" id="run"><span id="run-label">Analyze</span> <kbd>Ctrl ↵</kbd></button>
         </div>
         <div class="projbar" id="projbar" hidden>
@@ -276,6 +277,7 @@ tr.dev td { opacity:.62; } tr.dev td:first-child { opacity:1; }
         <div class="foot">
           <label class="btn small" title="JSON file of approved deviation records">Deviations…<input type="file" id="devfile" accept=".json,application/json" hidden></label>
           <span class="chip" id="devchip" hidden></span>
+          <input type="text" id="cflags" placeholder="Compiler flags, e.g. -mcpu=cortex-m4 -mthumb -DSTM32F4" aria-label="Compiler flags" style="flex:1;min-width:200px">
         </div>
         <div class="foot" id="dbrow" hidden>
           <input type="text" id="db" placeholder="Or analyze an existing project: path to compile_commands.json / build directory" aria-label="Compile database path">
@@ -613,7 +615,7 @@ function renderResult() {
   bar.append(q);
   box.append(bar, el("div", { id: "ftable" }));
   renderTable();
-  if (res.summary) box.append(el("div", { className: "sub", style: "padding:10px 12px" }, res.summary));
+  if (res.summary) box.append(el("div", { className: "sub", style: "padding:10px 12px" }, res.summary + (res.compiler ? ` Compiler profile: ${res.compiler}.` : "")));
 }
 function renderTable() {
   const rows = visibleFindings(), body = el("tbody");
@@ -667,7 +669,7 @@ function runCode() {
   const used = files.filter((f) => f.code.trim());
   if (!used.length) { toast("Nothing to analyze yet"); return; }
   const payload = used.map((f) => ({ name: f.name, code: f.code }));
-  analyze({ files: payload, std: $("std").value, deviations: deviationsText }, payload);
+  analyze({ files: payload, std: $("std").value, deviations: deviationsText, ...compilerChoice() }, payload);
 }
 $("run").addEventListener("click", runCode);
 document.addEventListener("keydown", (e) => {
@@ -675,7 +677,7 @@ document.addEventListener("keydown", (e) => {
 });
 $("rundb").addEventListener("click", () => {
   const p = $("db").value.trim();
-  if (p) analyze({ compile_commands: p, deviations: deviationsText }, null);
+  if (p) analyze({ compile_commands: p, deviations: deviationsText }, null);  // uses the flags in its own database
 });
 $("file").addEventListener("change", async (e) => {
   let last = null;
@@ -773,7 +775,7 @@ $("zip").addEventListener("change", async (e) => {
 async function runProject() {
   const incs = $("pj-incs").value.split(/[,\n]+/).map((x) => x.trim()).filter(Boolean).join("\n");
   const prev = project;
-  await analyze({ project: prev.id, std: $("std").value, defines: $("pj-defs").value, includes: incs, deviations: deviationsText }, null);
+  await analyze({ project: prev.id, std: $("std").value, defines: $("pj-defs").value, includes: incs, deviations: deviationsText, ...compilerChoice() }, null);
   if (project) renderProjectFiles();
 }
 
@@ -873,6 +875,26 @@ $("valall").addEventListener("click", async () => {
 });
 ["filter", "fcat", "fstat"].forEach((i) => $(i).addEventListener("input", renderRules));
 
+// ---- project compiler
+function compilerChoice() { return { compiler: $("compiler").value, flags: $("cflags").value }; }
+async function loadCompilers() {
+  const sel = $("compiler");
+  try {
+    const list = (await api("/api/compilers")).compilers;
+    sel.replaceChildren(...list.map((c) => {
+      const o = el("option", { value: c.id }, (c.id === "default" ? "Compiler: " : "") + (c.usable ? c.label : `${c.id} (unavailable)`));
+      o.disabled = !c.usable;
+      o.title = c.usable ? c.label : c.reason;
+      return o;
+    }));
+    const saved = store.get("compiler", "default");
+    if (list.some((c) => c.id === saved && c.usable)) sel.value = saved;
+  } catch { /* the default option stays */ }
+  $("cflags").value = store.get("cflags", "");
+}
+$("compiler").addEventListener("change", () => store.set("compiler", $("compiler").value));
+$("cflags").addEventListener("input", () => store.set("cflags", $("cflags").value));
+
 // ---- login / startup
 function showUser() {
   $("userbox").hidden = !(me && me.auth);
@@ -921,6 +943,7 @@ let started = false;
 async function startApp() {
   selectFile(active);
   if (started) return;
+  await loadCompilers();
   try {
     const data = await api("/api/rules");
     rules = data.rules; $("ver").textContent = data.version;

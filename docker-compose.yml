@@ -11,12 +11,16 @@ services:
     environment:
       OLLAMA_HOST: http://llm:11434
       MISRA_AI_MODEL: misra-fixer
+      # Offer a cross compiler mounted below (see docs/compilers.md):
+      # MISRA_GUI_COMPILERS: arm=/opt/arm-gnu-toolchain/bin/arm-none-eabi-gcc
       # Initial password of the 'admin' user (first start only). Leave unset to
       # get a random one in `docker compose logs misra`.
       MISRA_GUI_ADMIN_PASSWORD: ${MISRA_GUI_ADMIN_PASSWORD:-}
     volumes:
       - ./workspace:/workspace
       - misra-data:/data         # users.json and audit.log
+      # - /opt/arm-gnu-toolchain:/opt/arm-gnu-toolchain:ro   # a project compiler
+
     restart: unless-stopped
 
   llm:

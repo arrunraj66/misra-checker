@@ -48,6 +48,9 @@ const analysis = {
 };
 const responses = {
   "/api/me": { status: 200, body: { user: "bob", role: "analyst", csrf: "tok", auth: true, db_paths: false } },
+  "/api/compilers": { status: 200, body: { compilers: [
+    { id: "default", label: "clang 14 [x86_64]", usable: true }, { id: "arm", label: "arm-none-eabi-gcc 10 [arm-none-eabi]", usable: true },
+    { id: "xt", label: "xt", usable: false, reason: "no target" }] } },
   "/api/rules": { status: 200, body: { version: "misra-checker x", rules: [
     { id: "7.1", category: "Required", decidability: "D", scope: "S", topic: "Constants" },
     { id: "15.1", category: "Advisory", decidability: "D", scope: "S", topic: "Control flow" },
@@ -62,7 +65,7 @@ const responses = {
 const calls = [];
 globalThis.fetch = async (url, opts = {}) => {
   const path = url.split("?")[0];
-  calls.push({ path, method: opts.method || "GET", headers: opts.headers || {} });
+  calls.push({ path, method: opts.method || "GET", headers: opts.headers || {}, body: opts.body });
   const r = responses[path] || { status: 404, body: { error: "not found" } };
   return { ok: r.status < 400, status: r.status, json: async () => r.body };
 };
@@ -90,12 +93,17 @@ const loop = new GLib.MainLoop(null, false);
   expect("rules loaded", calls.some((c) => c.path === "/api/rules"));
 
   // analysis sends the CSRF header and the deviations
+  expect("compilers requested", calls.some((c) => c.path === "/api/compilers"));
+  document.getElementById("compiler").value = "arm";
+  document.getElementById("cflags").value = "-mthumb";
   api.files()[0].code = "int x = 010;\n";
   api.setDeviations("{\"deviations\":[]}", 0);
   api.runCode();
   await tick();
   const post = calls.find((c) => c.path === "/api/analyze");
   expect("analyze POST has CSRF header", post && post.headers["X-CSRF-Token"] === "tok", JSON.stringify(post));
+  const sent = JSON.parse(post.body);
+  expect("payload carries compiler and flags", sent.compiler === "arm" && sent.flags === "-mthumb", post.body);
   const rows = api.visibleFindings();
   expect("deviated rows included", rows.length === 3 && rows.some((r) => r.deviated && r.deviation === "D1"), JSON.stringify(rows));
   api.devOffSet(true);

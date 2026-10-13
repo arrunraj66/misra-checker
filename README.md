@@ -143,6 +143,12 @@ re-compilation, re-analysis, and optional test commands, behind a signed
 licence. See [docs/converter.md](docs/converter.md). The software is
 proprietary; see [LICENSE](LICENSE).
 
+## Project compiler
+
+Each project can be analysed as its own compiler (GCC, `arm-none-eabi-gcc`, ...) sees it:
+target, system headers and version macros. Pick it in the GUI or use
+`scripts/make_compile_db.py --compiler ...`; see [docs/compilers.md](docs/compilers.md).
+
 ## SARIF and deviations
 
 ```bash
