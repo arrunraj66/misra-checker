@@ -62,8 +62,14 @@ target_compile_definitions(
 target_link_libraries(misra-converter PUBLIC misra-core misra-clang)
 misra_enable_warnings(misra-converter)
 
+add_library(misra-report STATIC src/report.cpp)
+target_include_directories(misra-report PUBLIC include)
+target_include_directories(misra-report SYSTEM PRIVATE ${LLVM_INCLUDE_DIRS})
+target_link_libraries(misra-report PUBLIC LLVM)
+misra_enable_warnings(misra-report)
+
 add_executable(misra-checker src/main.cpp)
-target_link_libraries(misra-checker PRIVATE misra-core misra-clang misra-converter)
+target_link_libraries(misra-checker PRIVATE misra-core misra-clang misra-converter misra-report)
 misra_enable_warnings(misra-checker)
 
 include(CTest)
@@ -234,6 +240,14 @@ if(BUILD_TESTING)
   add_executable(license-test tests/license_test.cpp)
   target_link_libraries(license-test PRIVATE misra-converter)
   misra_enable_warnings(license-test)
+  find_package(Python3 COMPONENTS Interpreter REQUIRED)
+  add_test(
+    NAME report
+    COMMAND
+      "${Python3_EXECUTABLE}" -I "${CMAKE_CURRENT_SOURCE_DIR}/tests/report_test.py"
+      "$<TARGET_FILE:misra-checker>" "${CLANG_EXECUTABLE}"
+      "${CMAKE_CURRENT_SOURCE_DIR}/tests/fixtures/obs"
+  )
   add_test(NAME license COMMAND license-test)
 
   add_executable(converter-test tests/converter_test.cpp)
