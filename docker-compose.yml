@@ -7,12 +7,16 @@ services:
       dockerfile: docker/app.Dockerfile
     image: misra-checker-app:latest
     ports:
-      - "127.0.0.1:8765:8765"   # loopback only: the GUI has no authentication
+      - "127.0.0.1:8765:8765"   # loopback only; use a TLS reverse proxy for team access
     environment:
       OLLAMA_HOST: http://llm:11434
       MISRA_AI_MODEL: misra-fixer
+      # Initial password of the 'admin' user (first start only). Leave unset to
+      # get a random one in `docker compose logs misra`.
+      MISRA_GUI_ADMIN_PASSWORD: ${MISRA_GUI_ADMIN_PASSWORD:-}
     volumes:
       - ./workspace:/workspace
+      - misra-data:/data         # users.json and audit.log
     restart: unless-stopped
 
   llm:
@@ -37,3 +41,4 @@ services:
 
 volumes:
   ollama:
+  misra-data:

@@ -242,6 +242,20 @@ if(BUILD_TESTING)
   misra_enable_warnings(license-test)
   find_package(Python3 COMPONENTS Interpreter REQUIRED)
   add_test(
+    NAME gui
+    COMMAND
+      "${Python3_EXECUTABLE}" -I "${CMAKE_CURRENT_SOURCE_DIR}/tests/gui_test.py"
+      "$<TARGET_FILE:misra-checker>"
+  )
+  find_program(GJS_EXECUTABLE gjs)
+  if(GJS_EXECUTABLE)
+    add_test(
+      NAME gui_ui_smoke
+      COMMAND "${GJS_EXECUTABLE}" "${CMAKE_CURRENT_SOURCE_DIR}/tests/ui_smoke.js"
+              "${CMAKE_CURRENT_SOURCE_DIR}/gui/index.html"
+    )
+  endif()
+  add_test(
     NAME report
     COMMAND
       "${Python3_EXECUTABLE}" -I "${CMAKE_CURRENT_SOURCE_DIR}/tests/report_test.py"

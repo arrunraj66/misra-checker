@@ -28,7 +28,7 @@ the rule, each `ok` fixture must not. Results are in
 [docs/rule-validation.md](docs/rule-validation.md). This is a regression check
 against the repository's own fixtures, not independent validation.
 
-The GUI (Python standard library only, loopback only) analyzes pasted or uploaded
+The GUI (Python standard library only, login required; see docs/docker.md for users and roles) analyzes pasted or uploaded
 C code or a `compile_commands.json`. Several `.c`/`.h` files can be added as tabs and
 are analyzed together, which also enables the whole-program rules. Findings can be
 filtered by severity or text, sorted, exported as CSV, JSON or a standalone HTML
@@ -142,3 +142,24 @@ It intentionally does not push automatically. Pushing should remain an explicit 
 re-compilation, re-analysis, and optional test commands, behind a signed
 licence. See [docs/converter.md](docs/converter.md). The software is
 proprietary; see [LICENSE](LICENSE).
+
+## SARIF and deviations
+
+```bash
+misra-checker analyze --compile-commands build/ \
+    --sarif-out results.sarif --source-root . --deviations misra-deviations.json
+misra-checker analyze --compile-commands build/ --format sarif > results.sarif
+```
+`--sarif-out` writes SARIF 2.1.0 next to the normal text output; `--format sarif`
+prints only the SARIF document. A deviation file is JSON:
+
+```json
+{"deviations": [{"id": "DEV-001", "rules": ["19.2"], "file": "lib/hal.c", "lines": [10, 40],
+  "justification": "...", "approved_by": "name", "expires": "2027-06-30"}]}
+```
+`id`, `rules`, `justification` and `approved_by` are required; `file` (a path suffix
+or a `*` pattern), `lines` and `expires` are optional. Mandatory rules cannot be
+deviated. Expired records are ignored and unused records are reported. Deviated
+findings are shown as `deviated`, carried in SARIF as accepted suppressions, and
+do not affect the exit status. An invalid file stops the run with exit status 65.
+A project zip may contain `misra-deviations.json` at its top level.

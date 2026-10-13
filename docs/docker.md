@@ -10,8 +10,27 @@ docker compose up -d --build          # GUI at http://localhost:8765
 docker compose down                   # stop
 ```
 
-The GUI port is published to loopback only (the GUI has no login). Put projects
-you want to use from the CLI in `./workspace` (mounted at `/workspace`).
+The GUI requires a login. On the first start an `admin` user is created: set
+`MISRA_GUI_ADMIN_PASSWORD` (at least 10 characters) in the environment or an
+`.env` file, or read the random password the first start prints:
+
+```bash
+docker compose logs misra | grep -A1 "First start"
+```
+Users, roles and the audit log live in the `misra-data` volume. Add people:
+
+```bash
+docker compose exec -e MISRA_GUI_PASSWORD='a long password' misra \
+    python3 /opt/misra/gui/misra_gui.py --add-user alice --role analyst
+docker compose exec misra python3 /opt/misra/gui/misra_gui.py --list-users
+```
+Roles: `viewer` (read rules and samples), `analyst` (analyze, upload projects,
+validate rules), `admin` (also analyze compile databases under `/workspace`).
+The port is published to loopback only; for access from other machines put a TLS
+reverse proxy in front (or start the server with `--tls-cert/--tls-key`) and add
+the public name with `--allowed-host`.
+
+Put projects you want to use from the CLI in `./workspace` (mounted at `/workspace`).
 
 CLI inside the container:
 

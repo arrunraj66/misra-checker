@@ -195,6 +195,19 @@ td.loc { font:12.5px var(--mono); color:var(--muted); white-space:nowrap; }
 .statusbar { flex:none; display:flex; gap:16px; align-items:center; padding:5px 20px; font-size:12px; color:var(--muted);
   background:var(--surface); border-top:1px solid var(--line); flex-wrap:wrap; }
 .statusbar .grow { flex:1; }
+.login-screen { position:fixed; inset:0; z-index:20; display:grid; place-items:center; background:var(--bg); padding:16px; }
+.login-screen[hidden] { display:none; }
+.login-card { width:100%; max-width:360px; background:var(--surface); border:1px solid var(--line); border-radius:14px;
+  box-shadow:var(--shadow); padding:24px; display:flex; flex-direction:column; gap:12px; }
+.login-card h1 { margin:0; font-size:18px; display:flex; align-items:center; gap:10px; }
+.login-card label { display:flex; flex-direction:column; gap:4px; font-size:13px; color:var(--muted); }
+.login-card input { padding:9px 10px; font-size:14px; color:var(--text); }
+.userbox { display:flex; align-items:center; gap:8px; font-size:13px; color:var(--muted); }
+.userbox[hidden] { display:none; }
+.userbox b { color:var(--text); }
+tr.dev td { opacity:.62; } tr.dev td:first-child { opacity:1; }
+.devtag { font:600 10px system-ui,sans-serif; text-transform:uppercase; letter-spacing:.4px; padding:0 6px; border-radius:6px;
+  border:1px solid var(--pass); color:var(--pass); margin-left:6px; }
 .toast { position:fixed; bottom:44px; left:50%; transform:translateX(-50%); background:var(--text); color:var(--bg);
   padding:8px 16px; border-radius:8px; font-size:13px; opacity:0; transition:opacity .2s; pointer-events:none; z-index:10; }
 .toast.show { opacity:1; }
@@ -208,8 +221,21 @@ td.loc { font:12.5px var(--mono); color:var(--muted); white-space:nowrap; }
     <button role="tab" id="nav-rules" aria-selected="false" data-view="rules">Rules &amp; validation</button>
   </nav>
   <span class="spacer"></span>
+  <div class="userbox" id="userbox" hidden><span><b id="u-name"></b> · <span id="u-role"></span></span>
+    <button class="btn small" id="logout">Log out</button></div>
   <button class="iconbtn" id="theme" title="Toggle light / dark theme" aria-label="Toggle theme">◐</button>
 </header>
+
+<div class="login-screen" id="login" hidden>
+  <form class="login-card" id="login-form" autocomplete="on">
+    <h1><span class="logo">M</span>MISRA Checker</h1>
+    <label>User name<input id="l-user" name="username" autocomplete="username" required autofocus></label>
+    <label>Password<input id="l-pass" name="password" type="password" autocomplete="current-password" required></label>
+    <div class="banner err" id="l-error" hidden style="margin:0"></div>
+    <button class="btn primary" type="submit" id="l-submit" style="justify-content:center">Sign in</button>
+    <span class="sub">Accounts are created by an administrator.</span>
+  </form>
+</div>
 
 <main>
   <section class="view" id="view-analyze">
@@ -243,6 +269,10 @@ td.loc { font:12.5px var(--mono); color:var(--muted); white-space:nowrap; }
           </div>
         </div>
         <div class="foot">
+          <label class="btn small" title="JSON file of approved deviation records">Deviations…<input type="file" id="devfile" accept=".json,application/json" hidden></label>
+          <span class="chip" id="devchip" hidden></span>
+        </div>
+        <div class="foot" id="dbrow" hidden>
           <input type="text" id="db" placeholder="Or analyze an existing project: path to compile_commands.json / build directory" aria-label="Compile database path">
           <button class="btn" id="rundb">Analyze project</button>
         </div>
@@ -252,6 +282,7 @@ td.loc { font:12.5px var(--mono); color:var(--muted); white-space:nowrap; }
         <div class="pane-head">
           <span class="pane-title">Results</span>
           <button class="btn small" id="exp-report" disabled>Report</button>
+          <button class="btn small" id="exp-sarif" disabled>SARIF</button>
           <button class="btn small" id="exp-csv" disabled>CSV</button>
           <button class="btn small" id="exp-json" disabled>JSON</button>
         </div>
@@ -301,9 +332,13 @@ const el = (tag, props = {}, ...kids) => {
   kids.forEach((k) => e.append(k));
   return e;
 };
-async function api(path, opts) {
-  const r = await fetch(path, opts);
+let csrf = "", me = null;
+async function api(path, opts = {}) {
+  const headers = { ...(opts.headers || {}) };
+  if (csrf && (opts.method || "GET") !== "GET") headers["X-CSRF-Token"] = csrf;
+  const r = await fetch(path, { ...opts, headers, credentials: "same-origin" });
   const data = await r.json();
+  if (r.status === 401 && me) { showLogin("Your session has expired. Please sign in again."); }
   if (!r.ok) throw new Error(data.error || r.statusText);
   return data;
 }
@@ -349,6 +384,8 @@ let sortKey = "loc", sortDir = 1, selectedFinding = null;
 const sevOff = new Set(); let findQuery = "";
 let rules = [];
 let project = null, viewPath = null;
+let deviationsText = "", deviationCount = 0;
+const devOff = { v: false };
 const libOff = { v: false };
 
 function saveFiles() { store.set("files", files); store.set("active", active); }
@@ -458,7 +495,8 @@ function topicOf(rule) { const r = rules.find((x) => x.id === rule); return r ? 
 function visibleFindings() {
   if (!lastRes) return [];
   const q = findQuery.toLowerCase();
-  const rows = lastRes.findings.filter((x) => !sevOff.has(x.category) && !(libOff.v && x.library) &&
+  const pool = lastRes.findings.concat(devOff.v ? [] : (lastRes.deviated || []).map((d) => ({ ...d, deviated: true })));
+  const rows = pool.filter((x) => !sevOff.has(x.category) && !(libOff.v && x.library) &&
     (!q || `${x.rule} ${x.message} ${topicOf(x.rule)} ${x.file}`.toLowerCase().includes(q)));
   const ruleNum = (r) => r.split(".").map(Number);
   const cmp = {
@@ -502,6 +540,10 @@ ${rows.map((r) => `<tr><td class="m">${esc(r.file)}:${r.line}:${r.col}</td><td>$
 $("exp-csv").addEventListener("click", exportCsv);
 $("exp-json").addEventListener("click", exportJson);
 $("exp-report").addEventListener("click", exportReport);
+$("exp-sarif").addEventListener("click", () => {
+  if (lastRes && lastRes.sarif) download("misra-results.sarif", lastRes.sarif, "application/sarif+json");
+  else toast("No SARIF available for this run");
+});
 
 // ---- results rendering
 function card(n, label, kind) { return el("div", { className: "card" + (kind ? " k-" + kind : "") }, el("b", {}, String(n)), el("span", {}, label)); }
@@ -514,14 +556,16 @@ function markStale() {
 function renderResult() {
   const box = $("result"), res = lastRes;
   box.replaceChildren();
-  ["exp-csv", "exp-json", "exp-report"].forEach((id) => { $(id).disabled = !res; });
+  ["exp-csv", "exp-json", "exp-report", "exp-sarif"].forEach((id) => { $(id).disabled = !res; });
   if (!res) { box.append(el("div", { className: "empty" }, el("b", {}, "No analysis yet"), "Run an analysis to see findings here. Press Ctrl+Enter.")); return; }
 
   const all = res.findings;
   const counts = Object.fromEntries(SEVS.map((s) => [s, all.filter((x) => x.category === s).length]));
   box.append(el("div", { className: "cards" }, card(all.length, "Findings"),
     card(new Set(all.map((x) => x.rule)).size, "Rules hit"),
-    ...SEVS.filter((s) => counts[s]).map((s) => card(counts[s], s, s))));
+    ...SEVS.filter((s) => counts[s]).map((s) => card(counts[s], s, s)),
+    ...((res.deviated || []).length ? [card(res.deviated.length, "Deviated")] : [])));
+  (res.deviation_notes || []).forEach((n) => box.append(el("div", { className: "banner warn" }, n)));
 
   const staleBanner = el("div", { className: "banner warn", id: "stale-banner" }, "The code changed since this analysis. Run it again to refresh the results.");
   staleBanner.hidden = !stale;
@@ -547,6 +591,11 @@ function renderResult() {
     chip.addEventListener("keydown", (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); toggle(); } });
     bar.append(chip);
   });
+  if ((res.deviated || []).length) {
+    const dc = el("span", { className: "chip" + (devOff.v ? " off" : ""), role: "button", tabIndex: 0, title: "Show or hide findings covered by deviations" }, `Deviated ${res.deviated.length}`);
+    dc.addEventListener("click", () => { devOff.v = !devOff.v; renderResult(); });
+    bar.append(dc);
+  }
   const libCount = all.filter((x) => x.library).length;
   if (libCount) {
     const lc = el("span", { className: "chip" + (libOff.v ? " off" : ""), role: "button", tabIndex: 0, title: "Show or hide findings in library / vendor code" }, `Libraries ${libCount}`);
@@ -570,8 +619,8 @@ function renderTable() {
   };
   rows.forEach((x) => {
     const base = x.file.split("/").pop();
-    const tr = el("tr", { className: "clickable" + (selectedFinding === x ? " sel" : "") },
-      el("td", {}, sevTag(x.category)),
+    const tr = el("tr", { className: "clickable" + (selectedFinding === x ? " sel" : "") + (x.deviated ? " dev" : "") },
+      el("td", {}, sevTag(x.category), ...(x.deviated ? [el("span", { className: "devtag", title: "Covered by deviation " + x.deviation }, x.deviation)] : [])),
       el("td", {}, el("div", { className: "rulecode" }, x.rule), el("div", { className: "sub" }, topicOf(x.rule))),
       el("td", {}, x.message),
       el("td", { className: "loc", title: x.file }, `${project ? x.file : base}:${x.line}:${x.col}`));
@@ -613,7 +662,7 @@ function runCode() {
   const used = files.filter((f) => f.code.trim());
   if (!used.length) { toast("Nothing to analyze yet"); return; }
   const payload = used.map((f) => ({ name: f.name, code: f.code }));
-  analyze({ files: payload, std: $("std").value }, payload);
+  analyze({ files: payload, std: $("std").value, deviations: deviationsText }, payload);
 }
 $("run").addEventListener("click", runCode);
 document.addEventListener("keydown", (e) => {
@@ -621,7 +670,7 @@ document.addEventListener("keydown", (e) => {
 });
 $("rundb").addEventListener("click", () => {
   const p = $("db").value.trim();
-  if (p) analyze({ compile_commands: p }, null);
+  if (p) analyze({ compile_commands: p, deviations: deviationsText }, null);
 });
 $("file").addEventListener("change", async (e) => {
   let last = null;
@@ -637,6 +686,30 @@ $("file").addEventListener("change", async (e) => {
   e.target.value = "";
   if (last !== null) { lastRes = null; stale = false; renderResult(); selectFile(last); }
 });
+// ---- deviations
+function renderDevChip() {
+  const chip = $("devchip");
+  chip.hidden = !deviationsText;
+  if (!deviationsText) return;
+  chip.replaceChildren(`Deviations: ${deviationCount} record(s) `);
+  const x = el("span", { className: "x", title: "Remove", style: "cursor:pointer;margin-left:6px" }, "×");
+  x.addEventListener("click", () => { deviationsText = ""; deviationCount = 0; renderDevChip(); });
+  chip.append(x);
+}
+$("devfile").addEventListener("change", async (e) => {
+  const f = e.target.files[0];
+  e.target.value = "";
+  if (!f) return;
+  const text = await f.text();
+  try {
+    const parsed = JSON.parse(text);
+    if (!parsed || !Array.isArray(parsed.deviations)) throw new Error('needs a "deviations" array');
+    deviationsText = text; deviationCount = parsed.deviations.length;
+    toast("Deviations loaded. Run the analysis again to apply them.");
+  } catch (err) { deviationsText = ""; deviationCount = 0; toast("Not a valid deviation file: " + err.message); }
+  renderDevChip();
+});
+
 // ---- project (zip) mode
 function setProjectUi(on) {
   $("projbar").hidden = !on;
@@ -681,9 +754,7 @@ $("zip").addEventListener("change", async (e) => {
   if (!f) return;
   $("st-run").replaceChildren(el("span", { className: "spin" }), ` Uploading ${f.name}…`);
   try {
-    const r = await fetch("/api/project?name=" + encodeURIComponent(f.name), { method: "POST", body: f });
-    const data = await r.json();
-    if (!r.ok) throw new Error(data.error || r.statusText);
+    const data = await api("/api/project?name=" + encodeURIComponent(f.name), { method: "POST", body: f });
     project = data; viewPath = null; lastRes = null; stale = false;
     $("pj-name").textContent = data.name;
     $("pj-meta").textContent = `${data.c_files} C files · ${data.h_files} headers · ${data.library_files} in library folders`;
@@ -697,7 +768,7 @@ $("zip").addEventListener("change", async (e) => {
 async function runProject() {
   const incs = $("pj-incs").value.split(/[,\n]+/).map((x) => x.trim()).filter(Boolean).join("\n");
   const prev = project;
-  await analyze({ project: prev.id, std: $("std").value, defines: $("pj-defs").value, includes: incs }, null);
+  await analyze({ project: prev.id, std: $("std").value, defines: $("pj-defs").value, includes: incs, deviations: deviationsText }, null);
   if (project) renderProjectFiles();
 }
 
@@ -797,8 +868,51 @@ $("valall").addEventListener("click", async () => {
 });
 ["filter", "fcat", "fstat"].forEach((i) => $(i).addEventListener("input", renderRules));
 
-(async function init() {
+// ---- login / startup
+function showUser() {
+  $("userbox").hidden = !(me && me.auth);
+  if (me) { $("u-name").textContent = me.user; $("u-role").textContent = me.role; }
+  $("dbrow").hidden = !(me && me.db_paths);
+}
+function showLogin(message) {
+  me = null; csrf = "";
+  showUser();
+  $("login").hidden = false;
+  const err = $("l-error");
+  err.hidden = !message; err.textContent = message || "";
+  $("l-pass").value = "";
+  $("l-user").focus();
+}
+$("login-form").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const btn = $("l-submit");
+  btn.disabled = true;
+  try {
+    const r = await fetch("/api/login", { method: "POST", credentials: "same-origin",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ username: $("l-user").value, password: $("l-pass").value }) });
+    const data = await r.json();
+    if (!r.ok) throw new Error(data.error || r.statusText);
+    csrf = data.csrf;
+    me = (await (await fetch("/api/me", { credentials: "same-origin" })).json());
+    $("login").hidden = true;
+    $("l-pass").value = "";
+    showUser();
+    await startApp();
+  } catch (err) {
+    $("l-error").hidden = false; $("l-error").textContent = err.message; $("l-pass").value = "";
+  } finally { btn.disabled = false; }
+});
+$("logout").addEventListener("click", async () => {
+  try { await api("/api/logout", { method: "POST", body: "{}" }); } catch { /* already signed out */ }
+  lastRes = null; project = null; viewPath = null; setProjectUi(false); renderResult();
+  showLogin();
+});
+
+let started = false;
+async function startApp() {
   selectFile(active);
+  if (started) return;
   try {
     const data = await api("/api/rules");
     rules = data.rules; $("ver").textContent = data.version;
@@ -806,9 +920,18 @@ $("valall").addEventListener("click", async () => {
     samples = (await api("/api/samples")).samples;
     const sel = $("sample");
     samples.forEach((s, i) => sel.append(el("option", { value: String(i) }, `Rule ${s.rule} · ${s.name}`)));
+    started = true;
   } catch (e) {
     $("result").replaceChildren(el("div", { className: "banner err", style: "margin:12px" }, e.message));
   }
+}
+(async function boot() {
+  try {
+    const r = await fetch("/api/me", { credentials: "same-origin" });
+    const data = await r.json();
+    if (r.ok) { me = data; csrf = data.csrf || ""; showUser(); await startApp(); }
+    else showLogin();
+  } catch (e) { showLogin("Cannot reach the server: " + e.message); }
 })();
 </script>
 </body>

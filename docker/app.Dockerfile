@@ -30,11 +30,15 @@ COPY scripts scripts
 COPY docs/rule-implementation-status.md docs/rule-implementation-status.md
 COPY tests/fixtures tests/fixtures
 RUN ln -s /opt/misra/build/misra-checker /usr/local/bin/misra-checker \
- && mkdir -p /workspace && chown misra:misra /workspace
+ && mkdir -p /workspace /data && chown misra:misra /workspace /data
+ENV MISRA_GUI_DATA=/data
 USER misra
 WORKDIR /workspace
 EXPOSE 8765
 HEALTHCHECK --interval=30s --timeout=5s --start-period=10s \
   CMD python3 -c "import urllib.request as u; u.urlopen('http://127.0.0.1:8765/api/rules', timeout=4)"
-# Only publish this port to loopback (see docker-compose.yml): the GUI has no login.
-CMD ["python3", "/opt/misra/gui/misra_gui.py", "--host", "0.0.0.0", "--no-browser"]
+# Login is on by default. On first start an 'admin' user is created from
+# MISRA_GUI_ADMIN_PASSWORD, or with a random password printed once in the log.
+# Keep the port on loopback or behind a TLS proxy (see docs/docker.md).
+VOLUME ["/data"]
+CMD ["python3", "/opt/misra/gui/misra_gui.py", "--host", "0.0.0.0", "--no-browser", "--db-root", "/workspace"]
