@@ -579,6 +579,12 @@ function renderResult() {
   box.append(staleBanner);
   if (res.error) box.append(el("div", { className: "banner err" }, res.error));
   if (res.compile_errors) {
+    if ((res.missing_headers || []).length) {
+      box.append(el("div", { className: "banner err" },
+        el("b", {}, "Missing header file(s): "), res.missing_headers.join(", "),
+        el("div", { className: "sub", style: "margin-top:4px;color:inherit" },
+          "The compiler stops reading further #include lines at the first missing header, so types such as uint32_t can be unknown and the rest of the file is only partly analysed. Upload the folder that contains the header (for example the Drivers/ and CMSIS folders of an STM32 project), or add its folder to Extra include dirs.")));
+    }
     box.append(el("div", { className: "banner warn" }, "The code has compile errors. Every other rule was still checked on the recovered code, but results near the errors may be incomplete.",
       el("details", {}, el("summary", {}, "Compiler messages"), el("pre", {}, res.compiler_output))));
   }

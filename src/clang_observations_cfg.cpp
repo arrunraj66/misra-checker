@@ -144,6 +144,19 @@ void collect_cfg_observations(clang::ASTContext& ast, const Recorder& recorder) 
         !sm.isWrittenInMainFile(sm.getExpansionLoc(function->getLocation()))) {
       continue;
     }
+    // After a compile error Clang marks affected functions invalid and may drop
+    // statements from their bodies (for example when a missing header leaves a
+    // return type unknown). The flow analyses would then see a body without a
+    // return, so such functions are not analysed.
+    if (function->isInvalidDecl()) {
+      continue;
+    }
+    if (ast.getDiagnostics().hasErrorOccurred()) {
+      const auto* block = llvm::dyn_cast<clang::CompoundStmt>(function->getBody());
+      if ((block != nullptr) && block->body_empty() && !function->getReturnType()->isVoidType()) {
+        continue;
+      }
+    }
     clang::AnalysisDeclContext* context = manager.getContext(function);
     context->getCFGBuildOptions().setAllAlwaysAdd();
     const clang::CFG* cfg = context->getCFG();

@@ -162,12 +162,17 @@ def run_checker(db_path: Path, timeout: int = 300, deviations: str = "",
     compile_errors = "results may be incomplete" in proc.stderr
     notes = [ln.replace("misra-checker: ", "") for ln in proc.stderr.splitlines()
              if "deviation" in ln and ("expired" in ln or "matched no finding" in ln)]
+    missing = []
+    for header in re.findall(r"fatal error: '([^']+)' file not found", proc.stderr):
+        if header not in missing and len(missing) < 20:
+            missing.append(header)
     error = ""
     if proc.returncode not in (0, 1) and not compile_errors:
         error = proc.stderr.strip()
     return {"exit_code": proc.returncode, "findings": findings, "deviated": deviated,
             "summary": summary, "elapsed_ms": elapsed_ms, "compile_errors": compile_errors,
             "compiler_output": proc.stderr.strip()[:20000] if compile_errors else "",
+            "missing_headers": missing,
             "deviation_notes": notes, "error": error, "sarif": sarif}
 
 

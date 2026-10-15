@@ -223,6 +223,13 @@ with tempfile.TemporaryDirectory() as data_dir:
         status, res, _ = bob.call("POST", "/api/analyze", {"project": proj2["id"], "compiler": "arm-fake", "std": "gnu99"})
         check("project honours the compiler and gnu99", status == 200 and not res["compile_errors"], res)
 
+        # ---- a missing header is named, and does not cause a bogus Rule 17.4
+        miss_code = ('#include "no_such_header.h"\nstatic volatile uint32_t g_ms = 0U;\n'
+                     'static uint32_t millis(void)\n{\n    return g_ms;\n}\n')
+        status, res, _ = bob.call("POST", "/api/analyze", {"files": [{"name": "m.c", "code": miss_code}]})
+        check("missing header reported", status == 200 and res["missing_headers"] == ["no_such_header.h"], res.get("missing_headers"))
+        check("no Rule 17.4 after a missing header", not any(f["rule"] == "17.4" for f in res["findings"]), res["findings"])
+
         # ---- logout invalidates the session
         token_cookie = bob.cookie
         check("logout", bob.call("POST", "/api/logout", {})[0] == 200)
