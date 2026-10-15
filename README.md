@@ -149,6 +149,12 @@ Each project can be analysed as its own compiler (GCC, `arm-none-eabi-gcc`, ...)
 target, system headers and version macros. Pick it in the GUI or use
 `scripts/make_compile_db.py --compiler ...`; see [docs/compilers.md](docs/compilers.md).
 
+## Cross-check with cppcheck
+
+The GUI can run cppcheck's MISRA add-on on the same files and mark each finding as confirmed
+by it, found only here, or found only by cppcheck. See
+[docs/cppcheck-cross-check.md](docs/cppcheck-cross-check.md).
+
 ## SARIF and deviations
 
 ```bash

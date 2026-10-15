@@ -230,6 +230,21 @@ with tempfile.TemporaryDirectory() as data_dir:
         check("missing header reported", status == 200 and res["missing_headers"] == ["no_such_header.h"], res.get("missing_headers"))
         check("no Rule 17.4 after a missing header", not any(f["rule"] == "17.4" for f in res["findings"]), res["findings"])
 
+        # ---- cppcheck cross-verification
+        status, me2, _ = bob.call("GET", "/api/me")
+        has_cppcheck = me2["tools"]["cppcheck"]["available"]
+        xcode = "int g(void)\n{\n    return 1;\n}\nint f(int a)\n{\n    goto end;\nend:\n    return a;\n}\n"
+        status, res, _ = bob.call("POST", "/api/analyze", {"files": [{"name": "x.c", "code": xcode}], "cppcheck": True})
+        if has_cppcheck:
+            cross = res.get("cross", {})
+            check("cppcheck cross-check runs", status == 200 and cross.get("agree", 0) >= 2, res.get("error") or cross)
+            check("findings are annotated", any(f.get("cross") == "both" for f in res["findings"]), res["findings"][:3])
+            check("cppcheck version reported", "Cppcheck" in cross.get("tool", ""), cross.get("tool"))
+            status, res, _ = bob.call("POST", "/api/analyze", {"files": [{"name": "x.c", "code": xcode}]})
+            check("cross-check is opt-in", "cross" not in res)
+        else:
+            check("cross-check refused without cppcheck", status == 400 and "cppcheck" in res["error"], res)
+
         # ---- logout invalidates the session
         token_cookie = bob.cookie
         check("logout", bob.call("POST", "/api/logout", {})[0] == 200)

@@ -16,11 +16,12 @@ RUN cmake -S . -B build -G Ninja -DLLVM_DIR=/usr/lib/llvm-14/lib/cmake/llvm \
 
 FROM ubuntu:22.04
 ENV DEBIAN_FRONTEND=noninteractive
+# cppcheck is the independent second opinion shown by the GUI cross-check.
 # clang-14 supplies the compiler and builtin headers used in compile databases;
 # libclang-cpp14 is the shared library misra-checker links against.
 RUN apt-get update \
  && apt-get install -y --no-install-recommends \
-      clang-14 libclang-cpp14 libc6-dev python3 ca-certificates \
+      clang-14 libclang-cpp14 libc6-dev python3 ca-certificates cppcheck \
  && rm -rf /var/lib/apt/lists/* \
  && useradd --create-home --uid 1000 misra
 WORKDIR /opt/misra

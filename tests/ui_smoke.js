@@ -42,12 +42,15 @@ const downloads = [];
 const analysis = {
   exit_code: 1, summary: "Analyzed 1 translation unit(s)", elapsed_ms: 12, compile_errors: false, error: "",
   compiler_output: "", sarif: "{\"version\":\"2.1.0\"}", deviation_notes: ["Deviation D9 matched no finding."],
-  findings: [{ file: "a.c", line: 1, col: 1, category: "required", rule: "7.1", key: "k", message: "octal constant" },
-             { file: "a.c", line: 3, col: 1, category: "advisory", rule: "15.1", key: "k", message: "goto", library: false }],
+  cross: { tool: "Cppcheck 2.7", rules_covered: 130, agree: 1, ours_only: 1, not_comparable: 0, cppcheck_only: 1, notes: [],
+    cppcheck_only_findings: [{ file: "a.c", line: 9, rule: "17.7", message: "Return value not used", cross: "cppcheck-only" }] },
+  findings: [{ file: "a.c", line: 1, col: 1, category: "required", rule: "7.1", key: "k", message: "octal constant", cross: "both" },
+             { file: "a.c", line: 3, col: 1, category: "advisory", rule: "15.1", key: "k", message: "goto", library: false, cross: "ours-only" }],
   deviated: [{ file: "a.c", line: 2, col: 1, category: "advisory", rule: "19.2", key: "k", message: "union declared", deviation: "D1" }],
 };
 const responses = {
-  "/api/me": { status: 200, body: { user: "bob", role: "analyst", csrf: "tok", auth: true, db_paths: false } },
+  "/api/me": { status: 200, body: { user: "bob", role: "analyst", csrf: "tok", auth: true, db_paths: false,
+    tools: { cppcheck: { available: true, version: "Cppcheck 2.7", rules_covered: 130 } } } },
   "/api/compilers": { status: 200, body: { compilers: [
     { id: "default", label: "clang 14 [x86_64]", usable: true }, { id: "arm", label: "arm-none-eabi-gcc 10 [arm-none-eabi]", usable: true },
     { id: "xt", label: "xt", usable: false, reason: "no target" }] } },
@@ -78,7 +81,7 @@ document.createElement = (tag) => {
 
 const api = new Function(source + `
 ;return { getMe: () => me, csrf: () => csrf, runCode, files: () => files, visibleFindings,
-  setLast: (r) => { lastRes = r; }, renderResult, showLogin, project: () => project, devOffSet: (v) => { devOff.v = v; },
+  setLast: (r) => { lastRes = r; }, crossOffAdd: (k) => crossOff.add(k), renderResult, showLogin, project: () => project, devOffSet: (v) => { devOff.v = v; },
   exportCsv, exportJson, exportReport, setDeviations: (t, n) => { deviationsText = t; deviationCount = n; },
   analyze, runProject, setProject: (p) => { project = p; }, openProjectFile, leaveProject };`)();
 
@@ -96,6 +99,8 @@ const loop = new GLib.MainLoop(null, false);
   expect("compilers requested", calls.some((c) => c.path === "/api/compilers"));
   document.getElementById("compiler").value = "arm";
   document.getElementById("cflags").value = "-mthumb";
+  expect("cppcheck option enabled when the server has it", document.getElementById("xcheck").disabled === false);
+  document.getElementById("xcheck").checked = true;
   api.files()[0].code = "int x = 010;\n";
   api.setDeviations("{\"deviations\":[]}", 0);
   api.runCode();
@@ -104,11 +109,15 @@ const loop = new GLib.MainLoop(null, false);
   expect("analyze POST has CSRF header", post && post.headers["X-CSRF-Token"] === "tok", JSON.stringify(post));
   const sent = JSON.parse(post.body);
   expect("payload carries compiler and flags", sent.compiler === "arm" && sent.flags === "-mthumb", post.body);
+  expect("payload asks for the cppcheck cross-check", sent.cppcheck === true, post.body);
   const rows = api.visibleFindings();
-  expect("deviated rows included", rows.length === 3 && rows.some((r) => r.deviated && r.deviation === "D1"), JSON.stringify(rows));
+  expect("rows from cppcheck are merged in", rows.some((r) => r.cross === "cppcheck-only" && r.rule === "17.7"), JSON.stringify(rows));
+  expect("deviated rows included", rows.length === 4 && rows.some((r) => r.deviated && r.deviation === "D1"), JSON.stringify(rows));
   api.devOffSet(true);
-  expect("deviated rows can be hidden", api.visibleFindings().length === 2);
+  expect("deviated rows can be hidden", api.visibleFindings().length === 3);
   api.devOffSet(false);
+  api.crossOffAdd("cppcheck-only");
+  expect("cppcheck-only rows can be hidden", !api.visibleFindings().some((r) => r.cross === "cppcheck-only"));
 
   // exports
   api.exportCsv(); api.exportJson(); api.exportReport();

@@ -256,6 +256,10 @@ if(BUILD_TESTING)
     )
   endif()
   add_test(
+    NAME cppcheck_cross
+    COMMAND "${Python3_EXECUTABLE}" -I "${CMAKE_CURRENT_SOURCE_DIR}/tests/cppcheck_cross_test.py"
+  )
+  add_test(
     NAME compiler_profiles
     COMMAND
       "${Python3_EXECUTABLE}" -I "${CMAKE_CURRENT_SOURCE_DIR}/tests/compiler_profiles_test.py"

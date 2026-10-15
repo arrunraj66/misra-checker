@@ -210,6 +210,11 @@ td.loc { font:12.5px var(--mono); color:var(--muted); white-space:nowrap; }
 .userbox .who b { color:var(--text); font-weight:650; }
 .userbox .who small { color:var(--text); opacity:.72; font-size:11.5px; text-transform:capitalize; letter-spacing:.2px; }
 tr.dev td { opacity:.62; } tr.dev td:first-child { opacity:1; }
+.xtag { display:inline-block; font:600 11px system-ui,sans-serif; padding:1px 8px; border-radius:999px; border:1px solid currentColor; white-space:nowrap; }
+.xtag.both { color:var(--pass); } .xtag.ours-only { color:var(--muted); } .xtag.cppcheck-only { color:var(--warn); }
+.xnote { padding:0 12px 10px; color:var(--muted); font-size:12.5px; }
+.chip.x-both i, .chip.x-ours-only i, .chip.x-cppcheck-only i { background:currentColor; }
+.chip.x-both { color:var(--pass); } .chip.x-cppcheck-only { color:var(--warn); }
 .devtag { font:600 10px system-ui,sans-serif; text-transform:uppercase; letter-spacing:.4px; padding:0 6px; border-radius:6px;
   border:1px solid var(--pass); color:var(--pass); margin-left:6px; }
 .toast { position:fixed; bottom:44px; left:50%; transform:translateX(-50%); background:var(--text); color:var(--bg);
@@ -277,6 +282,7 @@ tr.dev td { opacity:.62; } tr.dev td:first-child { opacity:1; }
         <div class="foot">
           <label class="btn small" title="JSON file of approved deviation records">Deviations…<input type="file" id="devfile" accept=".json,application/json" hidden></label>
           <span class="chip" id="devchip" hidden></span>
+          <label class="chip" id="xwrap" title="Also run cppcheck's MISRA add-on on the same files and compare"><input type="checkbox" id="xcheck"> Cross-check with cppcheck</label>
           <input type="text" id="cflags" placeholder="Compiler flags, e.g. -mcpu=cortex-m4 -mthumb -DSTM32F4" aria-label="Compiler flags" style="flex:1;min-width:200px">
         </div>
         <div class="foot" id="dbrow" hidden>
@@ -389,6 +395,7 @@ let active = Math.max(0, Math.min(store.get("active", 0), files.length - 1));
 let lastRes = null, stale = false;
 let sortKey = "loc", sortDir = 1, selectedFinding = null;
 const sevOff = new Set(); let findQuery = "";
+const crossOff = new Set();
 let rules = [];
 let project = null, viewPath = null;
 let deviationsText = "", deviationCount = 0;
@@ -498,12 +505,16 @@ function selectFile(i) {
 function setSingle(code, name = "input.c") { if (project) { project = null; viewPath = null; setProjectUi(false); } files = [{ name, code }]; lastRes = null; stale = false; renderResult(); selectFile(0); }
 
 // ---- findings helpers
+function ruleCategory(rule) { const r = rules.find((x) => x.id === rule); return r ? r.category.toLowerCase() : "advisory"; }
 function topicOf(rule) { const r = rules.find((x) => x.id === rule); return r ? r.topic : ""; }
 function visibleFindings() {
   if (!lastRes) return [];
   const q = findQuery.toLowerCase();
-  const pool = lastRes.findings.concat(devOff.v ? [] : (lastRes.deviated || []).map((d) => ({ ...d, deviated: true })));
-  const rows = pool.filter((x) => !sevOff.has(x.category) && !(libOff.v && x.library) &&
+  const crossOnly = ((lastRes.cross || {}).cppcheck_only_findings || []).map((c) => ({
+    ...c, col: 0, category: ruleCategory(c.rule), key: "cppcheck",
+    message: "reported only by cppcheck" + (c.message ? ": " + c.message : "") }));
+  const pool = lastRes.findings.concat(devOff.v ? [] : (lastRes.deviated || []).map((d) => ({ ...d, deviated: true })), crossOnly);
+  const rows = pool.filter((x) => !sevOff.has(x.category) && !(libOff.v && x.library) && !crossOff.has(x.cross) &&
     (!q || `${x.rule} ${x.message} ${topicOf(x.rule)} ${x.file}`.toLowerCase().includes(q)));
   const ruleNum = (r) => r.split(".").map(Number);
   const cmp = {
@@ -522,8 +533,8 @@ function download(name, text, type) {
 }
 function exportCsv() {
   const q = (v) => '"' + String(v).replace(/"/g, '""') + '"';
-  download("misra-findings.csv", ["file,line,column,rule,category,check,topic,origin",
-    ...visibleFindings().map((x) => [x.file, x.line, x.col, x.rule, x.category, x.message, topicOf(x.rule), x.library ? "library" : "project"].map(q).join(","))].join("\n"), "text/csv");
+  download("misra-findings.csv", ["file,line,column,rule,category,check,topic,origin,cppcheck",
+    ...visibleFindings().map((x) => [x.file, x.line, x.col, x.rule, x.category, x.message, topicOf(x.rule), x.library ? "library" : "project", x.cross || ""].map(q).join(","))].join("\n"), "text/csv");
 }
 function exportJson() { download("misra-findings.json", JSON.stringify(visibleFindings(), null, 2), "application/json"); }
 function exportReport() {
@@ -537,8 +548,10 @@ th,td{border:1px solid #dde2e9;padding:6px 10px;text-align:left}th{background:#f
 <h1>MISRA C:2012 analysis report</h1>
 <p>Generated ${esc(new Date().toLocaleString())} &middot; ${esc($("ver").textContent)} &middot; ${esc(lastRes.summary || "")}</p>
 <p>${rows.length} finding(s) &mdash; ${counts}</p>
-<table><thead><tr><th>Location</th><th>Rule</th><th>Category</th><th>Check</th><th>Topic</th></tr></thead><tbody>
-${rows.map((r) => `<tr><td class="m">${esc(r.file)}:${r.line}:${r.col}</td><td>${esc(r.rule)}</td><td>${esc(r.category)}</td><td>${esc(r.message)}</td><td>${esc(topicOf(r.rule))}</td></tr>`).join("")}
+${lastRes.cross ? `<p>Cross-check with ${esc(lastRes.cross.tool)} (covers ${lastRes.cross.rules_covered} rules): ${lastRes.cross.agree} confirmed, ${lastRes.cross.ours_only} only by misra-checker, ${lastRes.cross.cppcheck_only} only by cppcheck, ${lastRes.cross.not_comparable} without a counterpart. A difference means one of the tools should be checked; cppcheck is not ground truth.</p>` : ""}
+<table><thead><tr><th>Location</th><th>Rule</th><th>Category</th><th>Check</th><th>Topic</th>${lastRes.cross ? "<th>cppcheck</th>" : ""}</tr></thead><tbody>
+${rows.map((r) => `<tr><td class="m">${esc(r.file)}:${r.line}:${r.col}</td><td>${esc(r.rule)}</td><td>${esc(r.category)}</td><td>${esc(r.message)}</td><td>${esc(topicOf(r.rule))}</td>${lastRes.cross ? `<td>${esc(r.cross || "")}</td>` : ""}</tr>`).join("")}
+${((lastRes.cross || {}).cppcheck_only_findings || []).map((r) => `<tr><td class="m">${esc(r.file)}:${r.line}</td><td>${esc(r.rule)}</td><td>${esc(ruleCategory(r.rule))}</td><td>reported only by cppcheck</td><td>${esc(topicOf(r.rule))}</td><td>cppcheck-only</td></tr>`).join("")}
 </tbody></table>
 <p class="note">Produced by an engineering tool whose detectors are validated only against internal fixtures. This report is not a MISRA compliance claim and does not replace independent validation or tool qualification.</p>
 </body></html>`;
@@ -571,7 +584,14 @@ function renderResult() {
   box.append(el("div", { className: "cards" }, card(all.length, "Findings"),
     card(new Set(all.map((x) => x.rule)).size, "Rules hit"),
     ...SEVS.filter((s) => counts[s]).map((s) => card(counts[s], s, s)),
-    ...((res.deviated || []).length ? [card(res.deviated.length, "Deviated")] : [])));
+    ...((res.deviated || []).length ? [card(res.deviated.length, "Deviated")] : []),
+    ...(res.cross ? [card(res.cross.agree, "cppcheck agrees", "pass"), card(res.cross.ours_only, "only here"), card(res.cross.cppcheck_only, "only cppcheck")] : [])));
+  if (res.cross) {
+    box.append(el("div", { className: "xnote" },
+      `Cross-check with ${res.cross.tool}: its MISRA add-on implements ${res.cross.rules_covered} of the ${rules.length || 143} rules, ` +
+      `so ${res.cross.not_comparable} finding(s) have no counterpart. cppcheck is not ground truth: a difference means one of the two tools should be looked at.`));
+    (res.cross.notes || []).forEach((n) => box.append(el("div", { className: "banner warn" }, n)));
+  }
   (res.deviation_notes || []).forEach((n) => box.append(el("div", { className: "banner warn" }, n)));
 
   const staleBanner = el("div", { className: "banner warn", id: "stale-banner" }, "The code changed since this analysis. Run it again to refresh the results.");
@@ -609,6 +629,14 @@ function renderResult() {
     dc.addEventListener("click", () => { devOff.v = !devOff.v; renderResult(); });
     bar.append(dc);
   }
+  if (res.cross) {
+    [["both", "Confirmed by cppcheck", res.cross.agree], ["ours-only", "Only misra-checker", res.cross.ours_only],
+     ["cppcheck-only", "Only cppcheck", res.cross.cppcheck_only]].forEach(([key, label, n]) => {
+      const xc = el("span", { className: `chip x-${key}` + (crossOff.has(key) ? " off" : ""), role: "button", tabIndex: 0 }, el("i"), `${label} ${n}`);
+      xc.addEventListener("click", () => { crossOff.has(key) ? crossOff.delete(key) : crossOff.add(key); renderResult(); });
+      bar.append(xc);
+    });
+  }
   const libCount = all.filter((x) => x.library).length;
   if (libCount) {
     const lc = el("span", { className: "chip" + (libOff.v ? " off" : ""), role: "button", tabIndex: 0, title: "Show or hide findings in library / vendor code" }, `Libraries ${libCount}`);
@@ -636,7 +664,11 @@ function renderTable() {
       el("td", {}, sevTag(x.category), ...(x.deviated ? [el("span", { className: "devtag", title: "Covered by deviation " + x.deviation }, x.deviation)] : [])),
       el("td", {}, el("div", { className: "rulecode" }, x.rule), el("div", { className: "sub" }, topicOf(x.rule))),
       el("td", {}, x.message),
-      el("td", { className: "loc", title: x.file }, `${project ? x.file : base}:${x.line}:${x.col}`));
+      ...(lastRes.cross ? [el("td", {}, x.cross && x.cross !== "not-comparable"
+        ? el("span", { className: "xtag " + x.cross, title: x.cross === "both" ? "cppcheck reports the same rule on this line" : x.cross === "ours-only" ? "cppcheck does not report it" : "cppcheck reports it, misra-checker does not" },
+          x.cross === "both" ? "✓ cppcheck" : x.cross === "ours-only" ? "only here" : "only cppcheck")
+        : el("span", { className: "sub" }, "—"))] : []),
+      el("td", { className: "loc", title: x.file }, `${project ? x.file : base}:${x.line}${x.col ? ":" + x.col : ""}`));
     tr.addEventListener("click", () => {
       selectedFinding = x;
       if (project) {
@@ -649,7 +681,7 @@ function renderTable() {
     });
     body.append(tr);
   });
-  const t = el("table", {}, el("thead", {}, el("tr", {}, th("Severity", "sev"), th("Rule", "rule"), el("th", {}, "Check"), th("Location", "loc"))), body);
+  const t = el("table", {}, el("thead", {}, el("tr", {}, th("Severity", "sev"), th("Rule", "rule"), el("th", {}, "Check"), ...(lastRes.cross ? [el("th", {}, "cppcheck")] : []), th("Location", "loc"))), body);
   $("ftable").replaceChildren(t, ...(rows.length ? [] : [el("div", { className: "empty" }, "No findings match the current filter.")]));
 }
 
@@ -882,7 +914,9 @@ $("valall").addEventListener("click", async () => {
 ["filter", "fcat", "fstat"].forEach((i) => $(i).addEventListener("input", renderRules));
 
 // ---- project compiler
-function compilerChoice() { return { compiler: $("compiler").value, flags: $("cflags").value }; }
+function compilerChoice() {
+  return { compiler: $("compiler").value, flags: $("cflags").value, cppcheck: $("xcheck").checked && !$("xcheck").disabled };
+}
 async function loadCompilers() {
   const sel = $("compiler");
   try {
@@ -898,6 +932,7 @@ async function loadCompilers() {
   } catch { /* the default option stays */ }
   $("cflags").value = store.get("cflags", "");
 }
+$("xcheck").addEventListener("change", () => store.set("xcheck", $("xcheck").checked));
 $("compiler").addEventListener("change", () => store.set("compiler", $("compiler").value));
 $("cflags").addEventListener("input", () => store.set("cflags", $("cflags").value));
 
@@ -909,6 +944,11 @@ function showUser() {
     $("u-avatar").textContent = (me.user || "?").charAt(0).toUpperCase();
   }
   $("dbrow").hidden = !(me && me.db_paths);
+  const tool = me && me.tools && me.tools.cppcheck;
+  $("xcheck").disabled = !(tool && tool.available);
+  $("xwrap").title = tool && tool.available ? `Also run ${tool.version}'s MISRA add-on on the same files and compare (covers ${tool.rules_covered} rules)`
+    : "cppcheck is not installed on the server";
+  if (tool && tool.available) $("xcheck").checked = store.get("xcheck", false);
 }
 function showLogin(message) {
   me = null; csrf = "";

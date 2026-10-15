@@ -41,6 +41,7 @@ sys.path.insert(0, str(ROOT / "scripts"))
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import auth  # noqa: E402
 import compiler_profiles as cp  # noqa: E402
+import cppcheck_cross as cx  # noqa: E402
 import validate_rules as vr  # noqa: E402
 
 INDEX = Path(__file__).resolve().parent / "index.html"
@@ -76,6 +77,7 @@ class State:
     checker: Path
     compiler: str
     compilers: dict = {}
+    tools: dict = {}
     cases: dict
     users: auth.UserStore
     sessions = auth.Sessions()
@@ -176,8 +178,16 @@ def run_checker(db_path: Path, timeout: int = 300, deviations: str = "",
             "deviation_notes": notes, "error": error, "sarif": sarif}
 
 
+def cross_verify(result: dict, db: list[dict], prefix: str) -> None:
+    """Run cppcheck on the same translation units and annotate the findings."""
+    if not State.tools.get("cppcheck", {}).get("available"):
+        raise ValueError("cppcheck cross-checking is not available on this server")
+    both = result["findings"] + result["deviated"]
+    result["cross"] = cx.cross_check(db, both, prefix)
+
+
 def analyze_files(files: list[dict], std: str, deviations: str, compiler_id: str = "default",
-                  flags_text: str = "") -> dict:
+                  flags_text: str = "", cross: bool = False) -> dict:
     """Analyze several in-memory files together (enables whole-program rules)."""
     if std not in STANDARDS:
         raise ValueError("unsupported language standard")
@@ -193,16 +203,19 @@ def analyze_files(files: list[dict], std: str, deviations: str, compiler_id: str
         for f in files:
             (Path(tmp) / f["name"]).write_text(str(f.get("code", "")))
         db = Path(tmp) / "compile_commands.json"
-        db.write_text(json.dumps([{
+        entries = [{
             "directory": tmp, "file": str(Path(tmp) / n),
             "arguments": [State.compiler, f"-std={std}", *profile_flags, "-I", tmp, "-c", str(Path(tmp) / n)]}
-            for n in names if n.endswith(".c")]))
+            for n in names if n.endswith(".c")]
+        db.write_text(json.dumps(entries))
         result = run_checker(db, deviations=deviations, source_root=tmp)
         prefix = tmp + "/"
+        for f in result["findings"] + result["deviated"]:
+            f["file"] = f["file"].replace(prefix, "")
+        if cross:
+            cross_verify(result, entries, prefix)
     for key in ("compiler_output", "error"):
         result[key] = result[key].replace(prefix, "")
-    for f in result["findings"] + result["deviated"]:
-        f["file"] = f["file"].replace(prefix, "")
     result["compiler"] = compiler_label
     return result
 
@@ -319,7 +332,8 @@ def project_for(session: dict, project_id: str) -> Project:
 
 
 def analyze_project(session: dict, project_id: str, std: str, defines: str, includes: str,
-                    deviations: str, compiler_id: str = "default", flags_text: str = "") -> dict:
+                    deviations: str, compiler_id: str = "default", flags_text: str = "",
+                    cross: bool = False) -> dict:
     project = project_for(session, project_id)
     if std not in STANDARDS:
         raise ValueError("unsupported language standard")
@@ -353,6 +367,8 @@ def analyze_project(session: dict, project_id: str, std: str, defines: str, incl
     for f in result["findings"] + result["deviated"]:
         f["file"] = f["file"].replace(prefix, "")
         f["library"] = bool(LIBRARY_DIR.search(f["file"]))
+    if cross:
+        cross_verify(result, db, prefix)
     for key in ("compiler_output", "error"):
         result[key] = result[key].replace(prefix, "")[:20000]
     result["project"] = project.describe() | {"files": []}
@@ -453,7 +469,8 @@ class Handler(BaseHTTPRequestHandler):
                 return self._json(401, {"error": "login required", "auth": State.require_auth})
             return self._json(200, {"user": session["user"], "role": session["role"],
                                     "csrf": session["csrf"], "auth": State.require_auth,
-                                    "db_paths": bool(State.db_roots) and session["role"] == "admin"})
+                                    "db_paths": bool(State.db_roots) and session["role"] == "admin",
+                                    "tools": State.tools})
         session = self._authorize("GET", url.path)
         if session is None:
             return None
@@ -521,7 +538,7 @@ class Handler(BaseHTTPRequestHandler):
                 result = analyze_project(session, str(body["project"]), str(body.get("std", "c99")),
                                          str(body.get("defines", "")), str(body.get("includes", "")),
                                          deviations, str(body.get("compiler", "default")),
-                                         str(body.get("flags", "")))
+                                         str(body.get("flags", "")), bool(body.get("cppcheck")))
                 mode = "project"
             elif body.get("compile_commands"):
                 if session["role"] != "admin":
@@ -531,9 +548,11 @@ class Handler(BaseHTTPRequestHandler):
             else:
                 files = body.get("files") or [{"name": "input.c", "code": str(body.get("code", ""))}]
                 result = analyze_files(files, str(body.get("std", "c99")), deviations,
-                                       str(body.get("compiler", "default")), str(body.get("flags", "")))
+                                       str(body.get("compiler", "default")), str(body.get("flags", "")),
+                                       bool(body.get("cppcheck")))
                 mode = "files"
             State.audit.write(session["user"], "analyze", mode=mode, compiler=result.get("compiler", ""),
+                              cppcheck=bool(body.get("cppcheck")),
                               findings=len(result["findings"]),
                               deviated=len(result["deviated"]), elapsed_ms=result["elapsed_ms"])
             return self._json(200, result)
@@ -659,6 +678,7 @@ def main() -> int:
             print(f"error: --compiler expects ID=PATH to an existing file, got '{entry}'", file=sys.stderr)
             return 2
         extra[identifier] = path
+    State.tools = {"cppcheck": cx.status()}
     State.compilers = cp.discover(State.compiler, extra)
     print("compilers: " + ", ".join(f"{c.id}{'' if c.usable else ' (unusable)'}" for c in State.compilers.values()), flush=True)
 
