@@ -15,6 +15,16 @@ See [ROADMAP.md](ROADMAP.md) for the 78-week implementation and assurance progra
 - A successful scan is not by itself a MISRA compliance claim.
 - Automatic remediation is restricted to independently approved transformation classes.
 
+## Quick start (on your machine, no Docker)
+
+```bash
+sudo apt install clang-14 llvm-14-dev libclang-14-dev libclang-cpp14-dev cmake ninja-build python3 cppcheck
+python3 gui/misra_gui.py --add-user YOURNAME --role admin     # once: asks for a password (10+ characters)
+./start-gui.sh                                                # builds on first run, opens http://127.0.0.1:8765
+```
+`cppcheck` is optional (it enables the cross-check). Users and the audit log live in
+`~/.misra-gui`. Docker is optional; see [docs/docker.md](docs/docker.md).
+
 ## Per-rule validation and GUI
 
 ```bash
