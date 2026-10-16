@@ -83,7 +83,7 @@ const api = new Function(source + `
 ;return { getMe: () => me, csrf: () => csrf, runCode, files: () => files, visibleFindings,
   setLast: (r) => { lastRes = r; }, crossOffAdd: (k) => crossOff.add(k), renderResult, showLogin, project: () => project, devOffSet: (v) => { devOff.v = v; },
   exportCsv, exportJson, exportReport, setDeviations: (t, n) => { deviationsText = t; deviationCount = n; },
-  analyze, runProject, setProject: (p) => { project = p; }, openProjectFile, leaveProject };`)();
+  renderEditorLines, setViewPath: (v) => { viewPath = v; }, analyze, runProject, setProject: (p) => { project = p; }, openProjectFile, leaveProject };`)();
 
 const tick = () => new Promise((resolve) => GLib.timeout_add(GLib.PRIORITY_DEFAULT, 30, () => { resolve(); return false; }));
 const loop = new GLib.MainLoop(null, false);
@@ -129,6 +129,18 @@ const loop = new GLib.MainLoop(null, false);
   expect("project file opened", document.getElementById("code").value.startsWith("int x"));
   await api.runProject();
   expect("project analyze sends project id", calls.filter((c) => c.path === "/api/analyze").length >= 2);
+  // Violations must be marked in the code of the project file being viewed (this was broken:
+  // markers were looked up under the scratch file name instead of the viewed file).
+  document.getElementById("code").value = "int x = 010;\nint y;\n";
+  api.setProject({ id: "p1", name: "fw.zip", files: [] });
+  api.setViewPath("Core/Src/main.c");
+  api.setLast({ findings: [{ file: "Core/Src/main.c", line: 1, col: 1, category: "mandatory", rule: "17.3", key: "k", message: "m" },
+                           { file: "other.c", line: 2, col: 1, category: "required", rule: "7.1", key: "k", message: "m" }],
+               deviated: [], project: { id: "p1" } });
+  api.renderEditorLines();
+  const gutterLines = document.getElementById("gutter").children[0].children;
+  expect("project mode marks a mandatory violation in the viewed file", /\bmandatory\b/.test(gutterLines[0].className), gutterLines[0].className);
+  expect("findings of other files are not marked here", !/\bhas\b/.test(gutterLines[1].className), gutterLines[1].className);
   api.leaveProject();
   expect("left project mode", api.project() === null);
 

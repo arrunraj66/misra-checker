@@ -68,7 +68,8 @@ ROUTE_ROLE = {
     ("GET", "/api/compilers"): "viewer", ("GET", "/api/rules"): "viewer", ("GET", "/api/samples"): "viewer",
     ("GET", "/api/validate"): "analyst", ("GET", "/api/validate-all"): "analyst",
     ("GET", "/api/file"): "analyst", ("POST", "/api/analyze"): "analyst",
-    ("POST", "/api/project"): "analyst",
+    ("POST", "/api/project"): "analyst", ("POST", "/api/file"): "analyst",
+    ("GET", "/api/project-zip"): "analyst",
 }
 
 
@@ -376,6 +377,46 @@ def analyze_project(session: dict, project_id: str, std: str, defines: str, incl
     return result
 
 
+def project_member(project: Project, rel: str) -> Path:
+    """Validated absolute path of a .c/.h member of the project (it may not exist yet)."""
+    clean = rel.replace("\\", "/").strip()
+    parts = [p for p in clean.split("/") if p not in ("", ".")]
+    if (clean.startswith("/") or not parts or ".." in parts or len(clean) > 200 or ":" in parts[0]
+            or not parts[-1].lower().endswith((".c", ".h"))):
+        raise ValueError("file names must be relative paths ending in .c or .h")
+    target = (project.root / "/".join(parts)).resolve()
+    if project.root not in target.parents:
+        raise ValueError("file not in project")
+    return target
+
+
+def write_project_file(session: dict, project_id: str, rel: str, text: str) -> dict:
+    project = project_for(session, project_id)
+    target = project_member(project, rel)
+    if len(text.encode()) > 2_000_000:
+        raise ValueError("file is too large")
+    relative = str(target.relative_to(project.root))
+    is_new = not target.exists()
+    if is_new and len(project.c_files) + len(project.h_files) >= MAX_PROJECT_FILES:
+        raise ValueError("project has too many files")
+    target.parent.mkdir(parents=True, exist_ok=True)
+    target.write_text(text)
+    if is_new:
+        (project.c_files if relative.lower().endswith(".c") else project.h_files).append(relative)
+    return {"saved": True, "new": is_new, "project": project.describe()}
+
+
+def project_zip(session: dict, project_id: str) -> bytes:
+    project = project_for(session, project_id)
+    buffer = io.BytesIO()
+    with zipfile.ZipFile(buffer, "w", zipfile.ZIP_DEFLATED) as archive:
+        for rel in sorted(project.c_files + project.h_files):
+            archive.write(project.root / rel, rel)
+        if project.deviations.strip():
+            archive.writestr(DEVIATION_FILE, project.deviations)
+    return buffer.getvalue()
+
+
 def read_project_file(session: dict, project_id: str, rel: str) -> str:
     project = project_for(session, project_id)
     target = (project.root / rel).resolve()
@@ -494,6 +535,12 @@ class Handler(BaseHTTPRequestHandler):
             if url.path == "/api/file":
                 return self._json(200, {"source": read_project_file(
                     session, (query.get("project") or [""])[0], (query.get("path") or [""])[0])})
+            if url.path == "/api/project-zip":
+                pid = (query.get("project") or [""])[0]
+                data = project_zip(session, pid)
+                name = re.sub(r"[^A-Za-z0-9_.-]", "_", State.projects[pid].name.rsplit(".", 1)[0]) + "-edited.zip"
+                return self._send(200, data, "application/zip",
+                                  {"Content-Disposition": f'attachment; filename="{name}"'})
             if url.path == "/api/samples":
                 samples = [{"name": name, "rule": rule, "kind": kind,
                             "code": srcs[0].read_text(errors="replace")}
@@ -526,6 +573,10 @@ class Handler(BaseHTTPRequestHandler):
         if raw is None:
             return None
         try:
+            if url.path == "/api/file":
+                q = parse_qs(url.query)
+                return self._json(200, write_project_file(session, (q.get("project") or [""])[0],
+                                                          (q.get("path") or [""])[0], raw.decode("utf-8", "replace")))
             if url.path == "/api/project":
                 name = (parse_qs(url.query).get("name") or ["project.zip"])[0][:100]
                 project = create_project(session["user"], name, raw)

@@ -262,7 +262,10 @@ tr.dev td { opacity:.62; } tr.dev td:first-child { opacity:1; }
         </div>
         <div class="projbar" id="projbar" hidden>
           <div class="projhead"><b id="pj-name"></b><span class="sub" id="pj-meta"></span>
-            <button class="btn small" id="pj-close" style="margin-left:auto">Remove project</button></div>
+            <span class="sub" id="pj-save"></span>
+            <button class="btn small" id="pj-new" style="margin-left:auto" title="Add a new .c or .h file to the project">New file</button>
+            <a class="btn small" id="pj-download" title="Download the project with your edits">Download</a>
+            <button class="btn small" id="pj-close">Remove project</button></div>
           <div class="projopts">
             <input type="text" id="pj-defs" placeholder="Defines, e.g. STM32F4 DEBUG=1" aria-label="Preprocessor defines">
             <input type="text" id="pj-incs" placeholder="Extra include dirs (relative, comma separated)" aria-label="Extra include directories">
@@ -413,10 +416,11 @@ function queueEditorRender() {
   requestAnimationFrame(() => { renderQueued = false; renderEditorLines(); });
 }
 function worstSeverity(list) { return SEVS.find((s) => list.some((f) => f.category === s)); }
+function currentFileName() { return project ? viewPath : files[active].name; }
 function renderEditorLines() {
   const code = $("code").value, count = code.split("\n").length;
   const byLine = new Map();
-  findingsFor(files[active].name).forEach((f) => {
+  findingsFor(currentFileName()).forEach((f) => {
     if (!byLine.has(f.line)) byLine.set(f.line, []);
     byLine.get(f.line).push(f);
   });
@@ -443,7 +447,8 @@ function syncScroll() {
 }
 $("code").addEventListener("scroll", syncScroll);
 $("code").addEventListener("input", () => {
-  files[active].code = $("code").value; saveFiles();
+  if (project) { scheduleProjectSave(); }
+  else { files[active].code = $("code").value; saveFiles(); }
   if (lastRes) { stale = true; markStale(); }
   queueEditorRender();
 });
@@ -759,7 +764,7 @@ $("devfile").addEventListener("change", async (e) => {
 function setProjectUi(on) {
   $("projbar").hidden = !on;
   $("filetabs").hidden = on;
-  $("code").readOnly = on;
+  $("code").readOnly = false;
   $("run-label").textContent = on ? "Analyze project" : "Analyze";
 }
 function renderProjectFiles() {
@@ -778,7 +783,48 @@ function renderProjectFiles() {
       box.append(row);
     });
 }
+// ---- editing project files: autosave to the server, flushed before opening another file or analysing
+let saveTimer = null, savePath = null, saveInFlight = Promise.resolve();
+function scheduleProjectSave() {
+  savePath = viewPath;
+  $("pj-save").textContent = "Unsaved changes…";
+  clearTimeout(saveTimer);
+  saveTimer = setTimeout(flushProjectSave, 700);
+}
+function flushProjectSave() {
+  clearTimeout(saveTimer); saveTimer = null;
+  if (!project || savePath === null) return saveInFlight;
+  const path = savePath, text = $("code").value, id = project.id;
+  savePath = null;
+  $("pj-save").textContent = "Saving…";
+  saveInFlight = saveInFlight.then(() => api(`/api/file?project=${encodeURIComponent(id)}&path=${encodeURIComponent(path)}`,
+    { method: "POST", body: text, headers: { "Content-Type": "text/plain" } }))
+    .then(() => { $("pj-save").textContent = "Saved"; })
+    .catch((e) => { $("pj-save").textContent = "Not saved"; toast("Could not save " + path + ": " + e.message); });
+  return saveInFlight;
+}
+$("pj-new").addEventListener("click", async () => {
+  const name = (prompt("New file path inside the project (for example src/util.c or inc/util.h)", "src/new_file.c") || "").trim();
+  if (!name) return;
+  try {
+    await flushProjectSave();
+    const data = await api(`/api/file?project=${encodeURIComponent(project.id)}&path=${encodeURIComponent(name)}`,
+      { method: "POST", body: "", headers: { "Content-Type": "text/plain" } });
+    project = { ...project, ...data.project };
+    renderProjectFiles();
+    await openProjectFile(name);
+    toast("File created");
+  } catch (e) { toast(e.message); }
+});
+$("pj-download").addEventListener("click", async (e) => {
+  e.preventDefault();
+  await flushProjectSave();
+  const a = el("a", { href: `/api/project-zip?project=${encodeURIComponent(project.id)}` });
+  document.body.append(a); a.click(); a.remove();
+});
+
 async function openProjectFile(path) {
+  await flushProjectSave();
   try {
     const data = await api(`/api/file?project=${encodeURIComponent(project.id)}&path=${encodeURIComponent(path)}`);
     viewPath = path;
@@ -813,6 +859,7 @@ $("zip").addEventListener("change", async (e) => {
 async function runProject() {
   const incs = $("pj-incs").value.split(/[,\n]+/).map((x) => x.trim()).filter(Boolean).join("\n");
   const prev = project;
+  await flushProjectSave();
   await analyze({ project: prev.id, std: $("std").value, defines: $("pj-defs").value, includes: incs, deviations: deviationsText, ...compilerChoice() }, null);
   if (project) renderProjectFiles();
 }

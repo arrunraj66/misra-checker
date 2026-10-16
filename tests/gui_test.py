@@ -230,6 +230,30 @@ with tempfile.TemporaryDirectory() as data_dir:
         check("missing header reported", status == 200 and res["missing_headers"] == ["no_such_header.h"], res.get("missing_headers"))
         check("no Rule 17.4 after a missing header", not any(f["rule"] == "17.4" for f in res["findings"]), res["findings"])
 
+        # ---- editing a project inside the GUI
+        def put(client, project_id, path, text):
+            return client.call("POST", f"/api/file?project={project_id}&path={path}", text.encode(), raw=True,
+                               headers={"Content-Type": "text/plain"})
+        status, saved, _ = put(bob, proj["id"], "src/m.c", "int edited = 1;\n")
+        check("owner can save a file", status == 200 and saved["saved"] and not saved["new"], saved)
+        status, content, _ = bob.call("GET", f"/api/file?project={proj['id']}&path=src/m.c")
+        check("saved text is read back", content.get("source") == "int edited = 1;\n", content)
+        status, saved, _ = put(bob, proj["id"], "inc/new.h", "#define NEW 1\n")
+        check("new file is created and listed", status == 200 and saved["new"]
+              and "inc/new.h" in [f["path"] for f in saved["project"]["files"]], saved)
+        for bad_path in ("../escape.c", "/etc/cron.d/x.c", "a/../../b.c", "notes.txt", "src/m.c%00.txt"):
+            status, res, _ = put(bob, proj["id"], bad_path, "x")
+            check(f"unsafe path rejected: {bad_path}", status == 400, (status, res))
+        check("other analyst cannot save into a foreign project", put(erin, proj["id"], "src/m.c", "x")[0] == 400)
+        check("viewer cannot save", put(carol, proj["id"], "src/m.c", "x")[0] == 403)
+        status, res, _ = bob.call("POST", "/api/analyze", {"project": proj["id"]})
+        check("analysis sees the edited file", status == 200 and not any(f["rule"] == "7.1" for f in res["findings"]), res["findings"][:3])
+        status, zdata, _ = bob.call("GET", f"/api/project-zip?project={proj['id']}")
+        check("edited project downloads as a zip", status == 200 and isinstance(zdata, bytes) and zdata[:2] == b"PK")
+        with zipfile.ZipFile(io.BytesIO(zdata)) as z:
+            check("zip holds the edits", z.read("src/m.c") == b"int edited = 1;\n" and "inc/new.h" in z.namelist(), z.namelist())
+        check("zip is private to the owner", erin.call("GET", f"/api/project-zip?project={proj['id']}")[0] == 400)
+
         # ---- cppcheck cross-verification
         status, me2, _ = bob.call("GET", "/api/me")
         has_cppcheck = me2["tools"]["cppcheck"]["available"]
