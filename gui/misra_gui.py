@@ -42,6 +42,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 import auth  # noqa: E402
 import compiler_profiles as cp  # noqa: E402
 import cppcheck_cross as cx  # noqa: E402
+import triage as tg  # noqa: E402
+import triage_runner as tr  # noqa: E402
 import validate_rules as vr  # noqa: E402
 
 INDEX = Path(__file__).resolve().parent / "index.html"
@@ -70,6 +72,9 @@ ROUTE_ROLE = {
     ("GET", "/api/file"): "analyst", ("POST", "/api/analyze"): "analyst",
     ("POST", "/api/project"): "analyst", ("POST", "/api/file"): "analyst",
     ("GET", "/api/project-zip"): "analyst",
+    ("GET", "/api/triage"): "analyst", ("GET", "/api/triage-export"): "analyst",
+    ("POST", "/api/triage"): "analyst", ("POST", "/api/triage/delete"): "analyst",
+    ("POST", "/api/triage/run"): "analyst", ("POST", "/api/triage/promote"): "admin",
 }
 
 
@@ -79,6 +84,8 @@ class State:
     compiler: str
     compilers: dict = {}
     tools: dict = {}
+    triage: tg.TriageStore
+    promote_dir: Path = ROOT / "tests" / "triage"
     cases: dict
     users: auth.UserStore
     sessions = auth.Sessions()
@@ -425,6 +432,92 @@ def read_project_file(session: dict, project_id: str, rel: str) -> str:
     return target.read_text(errors="replace")[:2_000_000]
 
 
+def project_snapshot(project: Project, wanted: str) -> tuple[dict[str, str], bool]:
+    """The project's sources for a case: the file concerned first, then the rest while they fit."""
+    members = sorted(project.c_files + project.h_files)
+    if wanted not in members:
+        raise ValueError("the file is not part of the project")
+    files, used, complete = {}, 0, True
+    for rel in [wanted] + [m for m in members if m != wanted]:
+        text = (project.root / rel).read_text(errors="replace")
+        if used + len(text) > tg.SNAPSHOT_LIMIT and rel != wanted:
+            complete = False
+            continue
+        files[rel] = text
+        used += len(text)
+    return files, complete
+
+
+def create_triage(session: dict, body: dict) -> dict:
+    std = str(body.get("std", "c99"))
+    if std not in STANDARDS:
+        raise ValueError("unsupported language standard")
+    profile_flags, label = compile_profile(str(body.get("compiler", "default")), str(body.get("flags", "")))
+    macros = [d for d in re.split(r"[\s,]+", str(body.get("defines", "")).strip()) if d]
+    if any(not DEFINE_RE.match(d) for d in macros):
+        raise ValueError("defines must look like NAME or NAME=value")
+    file = str(body.get("file", ""))
+    if body.get("project"):
+        project = project_for(session, str(body["project"]))
+        files, complete = project_snapshot(project, file)
+        dirs = {str(Path(r).parent) if str(Path(r).parent) != "." else "" for r in files} | {""}
+        for line in str(body.get("includes", "")).splitlines():
+            line = line.strip().strip("/")
+            if line:
+                resolved = (project.root / line).resolve()
+                if project.root not in resolved.parents or not resolved.is_dir():
+                    raise ValueError(f"include directory not in project: {line}")
+                dirs.add(str(resolved.relative_to(project.root)))
+        mode, include_dirs = "project", sorted(dirs)
+    else:
+        listed = body.get("files") or []
+        names = [str(f.get("name", "")) for f in listed]
+        if (not listed or len(listed) > 50 or any(not SAFE_NAME.match(n) for n in names)
+                or len(set(names)) != len(names)):
+            raise ValueError("provide the analysed files")
+        files = {str(f["name"]): str(f.get("code", "")) for f in listed}
+        complete, mode, include_dirs = True, "files", [""]
+    build = {"std": std, "clang_flags": profile_flags, "defines": macros, "include_dirs": include_dirs,
+             "complete_snapshot": complete}
+    version = subprocess.run([str(State.checker), "--version"], capture_output=True, text=True).stdout.strip()
+    case = tg.make_case(user=session["user"], kind=str(body.get("kind", "")), rule=str(body.get("rule", "")),
+                        file=file, line=int(body.get("line", 0)), note=str(body.get("note", "")),
+                        files=files, build=build, tool_version=version, compiler=label, mode=mode)
+    return tg.public(State.triage.save(case))
+
+
+def handle_triage(session: dict, path: str, body: dict) -> dict:
+    user, role = session["user"], session["role"]
+    if path == "/api/triage":
+        return {"case": create_triage(session, body)}
+    if path == "/api/triage/delete":
+        return {"deleted": State.triage.delete(str(body.get("id", "")), user, role)}
+    ids = {str(i) for i in body.get("ids", [])}
+    cases = [c for c in State.triage.visible(user, role) if not ids or c["id"] in ids][:60]
+    if path == "/api/triage/run":
+        results = []
+        for case in cases:
+            result = tr.run_case(str(State.checker), State.compiler, case)
+            if result["state"] != "skipped":
+                State.triage.update_state(case["id"], result["state"])
+            results.append({"id": case["id"], **result})
+        return {"results": results}
+    if path == "/api/triage/promote":
+        target = State.promote_dir
+        target.mkdir(parents=True, exist_ok=True)
+        written = []
+        for case in cases:
+            result = tr.run_case(str(State.checker), State.compiler, case)
+            prefix = {"false-positive": "fp", "false-negative": "fn", "true-positive": "tp"}[case["kind"]]
+            name = f"{prefix}-{case['rule'].replace('.', '-')}-{case['id'][:6]}"
+            promoted = {k: v for k, v in case.items() if k not in ("user", "fingerprint", "_path", "line_text")}
+            promoted.update(id=name, state="fixed" if result["ok"] else "open")
+            (target / f"{name}.json").write_text(json.dumps(promoted, indent=1) + "\n")
+            written.append({"id": name, "state": promoted["state"]})
+        return {"written": written, "directory": str(target)}
+    raise ValueError("unknown triage request")
+
+
 class Handler(BaseHTTPRequestHandler):
     server_version = "misra-gui"
     timeout = 120  # drop stalled connections
@@ -535,6 +628,12 @@ class Handler(BaseHTTPRequestHandler):
             if url.path == "/api/file":
                 return self._json(200, {"source": read_project_file(
                     session, (query.get("project") or [""])[0], (query.get("path") or [""])[0])})
+            if url.path == "/api/triage":
+                cases = State.triage.visible(session["user"], session["role"])
+                return self._json(200, {"cases": [tg.public(c) for c in cases], "summary": tg.summarize(cases)})
+            if url.path == "/api/triage-export":
+                return self._send(200, State.triage.export_zip(session["user"], session["role"]), "application/zip",
+                                  {"Content-Disposition": 'attachment; filename="triage-cases.zip"'})
             if url.path == "/api/project-zip":
                 pid = (query.get("project") or [""])[0]
                 data = project_zip(session, pid)
@@ -573,6 +672,8 @@ class Handler(BaseHTTPRequestHandler):
         if raw is None:
             return None
         try:
+            if url.path.startswith("/api/triage"):
+                return self._json(200, handle_triage(session, url.path, json.loads(raw or b"{}")))
             if url.path == "/api/file":
                 q = parse_qs(url.query)
                 return self._json(200, write_project_file(session, (q.get("project") or [""])[0],
@@ -677,6 +778,8 @@ def main() -> int:
     parser.add_argument("--compiler", action="append", default=[], metavar="ID=PATH",
                         help="make a project compiler selectable (repeatable; env MISRA_GUI_COMPILERS=id=path;id=path). "
                              "Compilers found on PATH (gcc, arm-none-eabi-gcc, ...) are offered automatically.")
+    parser.add_argument("--promote-dir", type=Path, default=ROOT / "tests" / "triage",
+                        help="where admins promote triage cases to become regression tests")
     parser.add_argument("--tls-cert", type=Path)
     parser.add_argument("--tls-key", type=Path)
     parser.add_argument("--add-user", metavar="NAME")
@@ -685,6 +788,8 @@ def main() -> int:
     parser.add_argument("--list-users", action="store_true")
     args = parser.parse_args()
 
+    State.triage = tg.TriageStore(args.data_dir / "triage")
+    State.promote_dir = args.promote_dir
     State.users = auth.UserStore(args.data_dir / "users.json")
     State.audit = auth.AuditLog(args.data_dir / "audit.log")
     if args.add_user or args.remove_user or args.list_users:

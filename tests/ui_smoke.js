@@ -85,7 +85,7 @@ const api = new Function(source + `
 ;return { getMe: () => me, csrf: () => csrf, runCode, files: () => files, visibleFindings,
   setLast: (r) => { lastRes = r; }, crossOffAdd: (k) => crossOff.add(k), renderResult, showLogin, project: () => project, devOffSet: (v) => { devOff.v = v; },
   exportCsv, exportJson, exportReport, setDeviations: (t, n) => { deviationsText = t; deviationCount = n; },
-  renderCompare, showCompareDetail, setCmpKey: (k) => { cmpKey = k; }, renderEditorLines, setViewPath: (v) => { viewPath = v; }, analyze, runProject, setProject: (p) => { project = p; }, openProjectFile, leaveProject };`)();
+  loadTriage, openTriage, verdictsFor, fieldText, renderCompare, showCompareDetail, setCmpKey: (k) => { cmpKey = k; }, renderEditorLines, setViewPath: (v) => { viewPath = v; }, analyze, runProject, setProject: (p) => { project = p; }, openProjectFile, leaveProject };`)();
 
 const tick = () => new Promise((resolve) => GLib.timeout_add(GLib.PRIORITY_DEFAULT, 30, () => { resolve(); return false; }));
 const loop = new GLib.MainLoop(null, false);
@@ -120,6 +120,22 @@ const loop = new GLib.MainLoop(null, false);
   api.devOffSet(false);
   api.crossOffAdd("cppcheck-only");
   expect("cppcheck-only rows can be hidden", !api.visibleFindings().some((r) => r.cross === "cppcheck-only"));
+
+  // triage: verdicts shown next to findings, and saved with the analysed sources
+  responses["/api/triage"] = { status: 200, body: { cases: [{ id: "abc", kind: "false-positive", rule: "7.1", file: "a.c", line: 1, note: "n", state: "open" }],
+    summary: { "7.1": { true_positive: 0, false_positive: 1, false_negative: 0, precision: 0 } }, case: {} } };
+  await api.loadTriage();
+  expect("a saved verdict is matched to its finding", api.verdictsFor({ file: "a.c", rule: "7.1", line: 1 }).length === 1);
+  expect("a different line has no verdict", api.verdictsFor({ file: "a.c", rule: "7.1", line: 2 }).length === 0);
+  expect("rule summary text", api.fieldText("7.1") === "1 FP" && api.fieldText("9.9") === "—", api.fieldText("7.1"));
+  api.openTriage({ kind: "false-positive", rule: "15.1", file: "a.c", line: 3, note: "wrong" });
+  expect("the dialog opens prefilled", document.getElementById("tri-dialog").hidden === false && document.getElementById("tri-line").value === 3);
+  await document.getElementById("tri-form").handlers.submit({ preventDefault() {} });
+  const saved = calls.filter((c) => c.path === "/api/triage" && c.method === "POST").pop();
+  const savedBody = saved ? JSON.parse(saved.body) : {};
+  expect("the verdict is posted with the analysed sources", savedBody.kind === "false-positive" && savedBody.rule === "15.1"
+    && savedBody.line === 3 && Array.isArray(savedBody.files) && savedBody.files.length > 0, saved && saved.body);
+  expect("the dialog closes after saving", document.getElementById("tri-dialog").hidden === true);
 
   // compare view: three panes side by side
   api.renderCompare();

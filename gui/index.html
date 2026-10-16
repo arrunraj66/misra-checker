@@ -212,6 +212,12 @@ td.loc { font:12.5px var(--mono); color:var(--muted); white-space:nowrap; }
 tr.dev td { opacity:.62; } tr.dev td:first-child { opacity:1; }
 .xtag { display:inline-block; font:600 11px system-ui,sans-serif; padding:1px 8px; border-radius:999px; border:1px solid currentColor; white-space:nowrap; }
 .xtag.both { color:var(--pass); } .xtag.ours-only { color:var(--muted); } .xtag.cppcheck-only { color:var(--warn); }
+.vbtn { background:none; border:1px solid var(--line); border-radius:6px; cursor:pointer; padding:0 6px; font-size:12px; color:var(--muted); }
+.vbtn:hover { color:var(--text); background:var(--surface-2); }
+.vtag { font:600 10px system-ui,sans-serif; text-transform:uppercase; padding:0 6px; border-radius:6px; border:1px solid currentColor; margin-right:4px; }
+.vtag.false-positive { color:var(--fail); } .vtag.true-positive { color:var(--pass); } .vtag.false-negative { color:var(--warn); }
+.login-card textarea, .login-card select { padding:8px 10px; border-radius:8px; border:1px solid var(--line); background:var(--surface); color:var(--text); font:inherit; }
+.modal { z-index:30; }
 .cmp-grid { flex:1; min-height:0; display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:12px; }
 @media (max-width:1100px) { .cmp-grid { grid-template-columns:1fr; } }
 .cmp-grid .pane { min-height:260px; }
@@ -245,6 +251,7 @@ tr.dev td { opacity:.62; } tr.dev td:first-child { opacity:1; }
   <nav class="nav" role="tablist">
     <button role="tab" id="nav-analyze" aria-selected="true" data-view="analyze">Analyze</button>
     <button role="tab" id="nav-compare" aria-selected="false" data-view="compare">Compare</button>
+    <button role="tab" id="nav-triage" aria-selected="false" data-view="triage">Triage</button>
     <button role="tab" id="nav-rules" aria-selected="false" data-view="rules">Rules &amp; validation</button>
   </nav>
   <span class="spacer"></span>
@@ -265,12 +272,29 @@ tr.dev td { opacity:.62; } tr.dev td:first-child { opacity:1; }
   </form>
 </div>
 
+<div class="login-screen modal" id="tri-dialog" hidden>
+  <form class="login-card" id="tri-form">
+    <h1 id="tri-title">Triage</h1>
+    <label>Verdict<select id="tri-kind"><option value="false-positive">False positive: the checker is wrong here</option><option value="true-positive">True positive: the violation is real</option><option value="false-negative">Missed violation: the checker should report this</option></select></label>
+    <label>Rule<input id="tri-rule" list="tri-rules-list" required pattern="[0-9]+\.[0-9]+" placeholder="e.g. 17.4"></label>
+    <datalist id="tri-rules-list"></datalist>
+    <label>File<input id="tri-file" readonly></label>
+    <label>Line<input id="tri-line" type="number" min="1" required></label>
+    <label>Why? (optional)<textarea id="tri-note" rows="3" maxlength="2000" placeholder="What is wrong, or what rule text decides it?"></textarea></label>
+    <div class="banner err" id="tri-error" hidden style="margin:0"></div>
+    <div style="display:flex;gap:8px"><button class="btn primary" type="submit" style="flex:1;justify-content:center">Save</button>
+      <button class="btn" type="button" id="tri-cancel">Cancel</button></div>
+    <span class="sub">The code, compiler settings and your verdict are saved so the case can be replayed against the checker later.</span>
+  </form>
+</div>
+
 <main>
   <section class="view" id="view-analyze">
     <div class="split">
       <div class="pane">
         <div class="pane-head">
           <span class="pane-title">Source</span>
+          <button class="btn small" id="miss-btn" title="Report a violation the checker did not find (false negative)">+ Missed violation</button>
           <select id="sample" aria-label="Load sample"><option value="">Samples…</option></select>
           <label class="btn" title="Add .c / .h files">Add files<input type="file" id="file" accept=".c,.h,text/plain" multiple hidden></label>
           <label class="btn" title="Upload a whole project as a .zip (sources, headers, libraries)">Upload project (.zip)<input type="file" id="zip" accept=".zip,application/zip" hidden></label>
@@ -342,6 +366,29 @@ tr.dev td { opacity:.62; } tr.dev td:first-child { opacity:1; }
     <div class="pane cmp-detail" id="cmp-detail" hidden></div>
   </section>
 
+  <section class="view" id="view-triage" hidden>
+    <div class="split" style="grid-template-columns:minmax(0,1.6fr) minmax(0,1fr)">
+      <div class="pane">
+        <div class="pane-head">
+          <span class="pane-title">Triage cases</span>
+          <select id="tri-filter-kind" aria-label="Verdict"><option value="">All verdicts</option><option value="false-positive">False positives</option><option value="false-negative">Missed violations</option><option value="true-positive">True positives</option></select>
+          <button class="btn" id="tri-run" title="Replay every case against the current checker">Re-run all</button>
+          <button class="btn" id="tri-export">Export</button>
+          <button class="btn primary" id="tri-promote" hidden title="Copy the cases into the repository's tests/triage as regression tests">Promote to tests</button>
+        </div>
+        <div class="pane-body"><table>
+          <thead><tr><th>Verdict</th><th>Rule</th><th>Where</th><th>Note</th><th>Now</th><th></th></tr></thead>
+          <tbody id="tri-body"></tbody></table><div id="tri-empty"></div></div>
+      </div>
+      <div class="pane">
+        <div class="pane-head"><span class="pane-title">Per rule</span><span class="sub">what your verdicts say about each rule</span></div>
+        <div class="pane-body"><table>
+          <thead><tr><th>Rule</th><th>True</th><th>False pos.</th><th>Missed</th><th>Precision</th></tr></thead>
+          <tbody id="tri-rules"></tbody></table></div>
+      </div>
+    </div>
+  </section>
+
   <section class="view" id="view-rules" hidden>
     <div class="split" style="grid-template-columns:minmax(0,1.1fr) minmax(0,1fr)">
       <div class="pane">
@@ -355,7 +402,7 @@ tr.dev td { opacity:.62; } tr.dev td:first-child { opacity:1; }
         <div class="cards" id="vsummary"></div>
         <div class="bar" id="vbar"></div>
         <div class="pane-body"><table>
-          <thead><tr><th>Rule</th><th>Category</th><th>Topic</th><th>Fixtures</th><th></th></tr></thead>
+          <thead><tr><th>Rule</th><th>Category</th><th>Topic</th><th>Fixtures</th><th>Your verdicts</th><th></th></tr></thead>
           <tbody id="rulebody"></tbody></table></div>
       </div>
       <div class="pane">
@@ -415,13 +462,14 @@ $("theme").addEventListener("click", () => {
 });
 
 // ---- views
-const VIEWS = ["analyze", "compare", "rules"];
+const VIEWS = ["analyze", "compare", "triage", "rules"];
 function showView(name) {
   for (const v of VIEWS) {
     $("view-" + v).hidden = v !== name;
     $("nav-" + v).setAttribute("aria-selected", String(v === name));
   }
   if (name === "compare") renderCompare();
+  if (name === "triage") loadTriage();
 }
 document.querySelectorAll(".nav button").forEach((b) => b.addEventListener("click", () => showView(b.dataset.view)));
 
@@ -708,7 +756,8 @@ function renderTable() {
         ? el("span", { className: "xtag " + x.cross, title: x.cross === "both" ? "cppcheck reports the same rule on this line" : x.cross === "ours-only" ? "cppcheck does not report it" : "cppcheck reports it, misra-checker does not" },
           x.cross === "both" ? "✓ cppcheck" : x.cross === "ours-only" ? "only here" : "only cppcheck")
         : el("span", { className: "sub" }, "—"))] : []),
-      el("td", { className: "loc", title: x.file }, `${project ? x.file : base}:${x.line}${x.col ? ":" + x.col : ""}`));
+      el("td", { className: "loc", title: x.file }, `${project ? x.file : base}:${x.line}${x.col ? ":" + x.col : ""}`),
+      verdictCell(x));
     tr.addEventListener("click", () => {
       selectedFinding = x;
       if (project) {
@@ -721,7 +770,7 @@ function renderTable() {
     });
     body.append(tr);
   });
-  const t = el("table", {}, el("thead", {}, el("tr", {}, th("Severity", "sev"), th("Rule", "rule"), el("th", {}, "Check"), ...(lastRes.cross ? [el("th", {}, "cppcheck")] : []), th("Location", "loc"))), body);
+  const t = el("table", {}, el("thead", {}, el("tr", {}, th("Severity", "sev"), th("Rule", "rule"), el("th", {}, "Check"), ...(lastRes.cross ? [el("th", {}, "cppcheck")] : []), th("Location", "loc"), el("th", {}, "Verdict"))), body);
   $("ftable").replaceChildren(t, ...(rows.length ? [] : [el("div", { className: "empty" }, "No findings match the current filter.")]));
 }
 
@@ -928,6 +977,7 @@ function renderRules() {
       el("td", {}, sevTag(r.category.toLowerCase())),
       el("td", {}, r.topic),
       el("td", {}, badge(status)),
+      el("td", { className: "sub" }, fieldText(r.id)),
       el("td", {}, btn));
     tr.addEventListener("click", () => { selected = r.id; showDetail(r.id); renderRules(); });
     body.append(tr);
@@ -995,6 +1045,112 @@ $("valall").addEventListener("click", async () => {
   b.disabled = false; b.textContent = "Validate all";
 });
 ["filter", "fcat", "fstat"].forEach((i) => $(i).addEventListener("input", renderRules));
+
+// ---- triage: verdicts on findings and missed violations
+let triageCases = [], triageSummary = {};
+const KIND_LABEL = { "false-positive": "FP", "true-positive": "TP", "false-negative": "missed" };
+function fieldText(rule) {
+  const r = triageSummary[rule];
+  if (!r) return "—";
+  return [r.true_positive && `${r.true_positive} TP`, r.false_positive && `${r.false_positive} FP`, r.false_negative && `${r.false_negative} missed`].filter(Boolean).join(" · ");
+}
+async function loadTriage() {
+  try {
+    const data = await api("/api/triage");
+    triageCases = data.cases; triageSummary = data.summary;
+  } catch { triageCases = []; triageSummary = {}; }
+  renderTriage();
+  if (typeof renderRules === "function") renderRules();
+  if (lastRes && $("ftable")) renderTable();
+}
+function verdictsFor(x) { return triageCases.filter((c) => c.file === x.file && c.rule === x.rule && c.line === x.line); }
+function verdictCell(x) {
+  const td = el("td", {});
+  if (x.cross === "cppcheck-only") {
+    const b = el("button", { className: "vbtn", title: "cppcheck reports this and misra-checker does not: record it as a missed violation" }, "+ missed");
+    b.addEventListener("click", (ev) => { ev.stopPropagation(); openTriage({ kind: "false-negative", rule: x.rule, file: x.file, line: x.line, note: "Also reported by cppcheck." }); });
+    td.append(b);
+    return td;
+  }
+  verdictsFor(x).forEach((c) => td.append(el("span", { className: "vtag " + c.kind, title: c.note || "" }, KIND_LABEL[c.kind])));
+  for (const [kind, label, tip] of [["true-positive", "✓", "True positive: the violation is real"], ["false-positive", "✗", "False positive: the checker is wrong"]]) {
+    const b = el("button", { className: "vbtn", title: tip }, label);
+    b.addEventListener("click", (ev) => { ev.stopPropagation(); openTriage({ kind, rule: x.rule, file: x.file, line: x.line }); });
+    td.append(b);
+  }
+  return td;
+}
+function cursorLine() { const ta = $("code"); return ta.value.slice(0, ta.selectionStart).split("\n").length; }
+function openTriage(v) {
+  $("tri-title").textContent = v.kind === "false-negative" ? "Report a missed violation" : "Record a verdict";
+  $("tri-kind").value = v.kind; $("tri-rule").value = v.rule || ""; $("tri-file").value = v.file;
+  $("tri-line").value = v.line; $("tri-note").value = v.note || "";
+  $("tri-error").hidden = true;
+  $("tri-dialog").hidden = false;
+  (v.rule ? $("tri-note") : $("tri-rule")).focus();
+}
+function triageSources() {
+  if (project) return { project: project.id, defines: $("pj-defs").value, includes: $("pj-incs").value.split(/[,\n]+/).map((x) => x.trim()).filter(Boolean).join("\n") };
+  const used = (lastRes && lastRes.sources) || files.filter((f) => f.code.trim()).map((f) => ({ name: f.name, code: f.code }));
+  return { files: used.map((f) => ({ name: f.name, code: f.code })) };
+}
+$("miss-btn").addEventListener("click", () => {
+  const name = currentFileName();
+  if (!name) { toast("Open a file first"); return; }
+  openTriage({ kind: "false-negative", rule: "", file: name, line: cursorLine() });
+});
+$("tri-cancel").addEventListener("click", () => { $("tri-dialog").hidden = true; });
+$("tri-form").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  try {
+    if (project) await flushProjectSave();
+    const body = { kind: $("tri-kind").value, rule: $("tri-rule").value.trim(), file: $("tri-file").value, line: Number($("tri-line").value),
+      note: $("tri-note").value, std: $("std").value, compiler: $("compiler").value, flags: $("cflags").value, ...triageSources() };
+    await api("/api/triage", { method: "POST", body: JSON.stringify(body) });
+    $("tri-dialog").hidden = true;
+    toast(body.kind === "false-negative" ? "Missed violation recorded" : "Verdict recorded");
+    await loadTriage();
+  } catch (err) { $("tri-error").hidden = false; $("tri-error").textContent = err.message; }
+});
+function renderTriage() {
+  const kind = $("tri-filter-kind").value, body = $("tri-body");
+  body.replaceChildren();
+  triageCases.filter((c) => !kind || c.kind === kind).forEach((c) => {
+    const del = el("button", { className: "vbtn", title: "Delete this case" }, "✕");
+    del.addEventListener("click", async () => { await api("/api/triage/delete", { method: "POST", body: JSON.stringify({ id: c.id }) }); loadTriage(); });
+    body.append(el("tr", {},
+      el("td", {}, el("span", { className: "vtag " + c.kind }, KIND_LABEL[c.kind])),
+      el("td", {}, el("span", { className: "rulecode" }, c.rule)),
+      el("td", { className: "loc", title: c.file }, `${c.file.split("/").pop()}:${c.line}`),
+      el("td", { className: "sub", title: c.note }, (c.note || c.line_text || "").slice(0, 90)),
+      el("td", {}, el("span", { className: "badge " + (c.state === "fixed" ? "PASS" : "PARTIAL"), title: c.state === "fixed" ? "The checker now behaves as you labelled" : "The checker still behaves differently from your label: a defect or gap to fix" }, c.state === "fixed" ? "as labelled" : "open")),
+      el("td", {}, del)));
+  });
+  $("tri-empty").replaceChildren(...(triageCases.length ? [] : [el("div", { className: "empty" }, el("b", {}, "No cases yet"),
+    "Use ✓ / ✗ next to a finding, or “+ Missed violation” above the editor.")]));
+  const rulesBody = $("tri-rules");
+  rulesBody.replaceChildren(...Object.entries(triageSummary).map(([rule, r]) => el("tr", {},
+    el("td", {}, el("span", { className: "rulecode" }, rule)), el("td", {}, String(r.true_positive)), el("td", {}, String(r.false_positive)),
+    el("td", {}, String(r.false_negative)), el("td", {}, r.precision === null ? "—" : `${Math.round(r.precision * 100)}%`))));
+  $("tri-promote").hidden = !(me && me.role === "admin");
+}
+$("tri-filter-kind").addEventListener("input", renderTriage);
+$("tri-run").addEventListener("click", async () => {
+  const b = $("tri-run"); b.disabled = true; b.textContent = "Running…";
+  try {
+    const res = await api("/api/triage/run", { method: "POST", body: "{}" });
+    const fixed = res.results.filter((r) => r.state === "fixed").length, open = res.results.filter((r) => r.state === "open").length;
+    toast(`${fixed} behave as labelled, ${open} still open`);
+    await loadTriage();
+  } catch (e) { toast(e.message); }
+  b.disabled = false; b.textContent = "Re-run all";
+});
+$("tri-export").addEventListener("click", () => { const a = el("a", { href: "/api/triage-export" }); document.body.append(a); a.click(); a.remove(); });
+$("tri-promote").addEventListener("click", async () => {
+  if (!confirm("Copy all cases into the repository's tests/triage folder as regression tests?")) return;
+  try { const r = await api("/api/triage/promote", { method: "POST", body: "{}" }); toast(`${r.written.length} case(s) written to ${r.directory}`); await loadTriage(); }
+  catch (e) { toast(e.message); }
+});
 
 // ---- compare view: misra-checker | cppcheck MISRA add-on | cppcheck own checks
 let cmpKey = null;
@@ -1158,7 +1314,9 @@ async function startApp() {
   try {
     const data = await api("/api/rules");
     rules = data.rules; $("ver").textContent = data.version;
+    $("tri-rules-list").replaceChildren(...rules.map((r) => el("option", { value: r.id }, r.topic)));
     renderRules();
+    loadTriage();
     samples = (await api("/api/samples")).samples;
     const sel = $("sample");
     samples.forEach((s, i) => sel.append(el("option", { value: String(i) }, `Rule ${s.rule} · ${s.name}`)));

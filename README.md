@@ -159,6 +159,12 @@ Each project can be analysed as its own compiler (GCC, `arm-none-eabi-gcc`, ...)
 target, system headers and version macros. Pick it in the GUI or use
 `scripts/make_compile_db.py --compiler ...`; see [docs/compilers.md](docs/compilers.md).
 
+## Edit, compare, label, improve
+
+Project files can be edited in the GUI, checked again, compared side by side with cppcheck, and each
+finding labelled true or false positive; violations the checker missed can be reported too. The cases
+replay against the checker and can become regression tests. See [docs/triage.md](docs/triage.md).
+
 ## Cross-check with cppcheck
 
 The GUI can run cppcheck's MISRA add-on on the same files and mark each finding as confirmed

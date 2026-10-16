@@ -104,7 +104,8 @@ with tempfile.TemporaryDirectory() as data_dir:
     outside = tempfile.mkdtemp()
     server = subprocess.Popen([sys.executable, str(SERVER), "--data-dir", data_dir, "--port", str(port),
                                "--no-browser", "--checker", CHECKER, "--db-root", outside,
-                               "--compiler", f"arm-fake={fake_cc}"],
+                               "--compiler", f"arm-fake={fake_cc}",
+                               "--promote-dir", str(Path(data_dir) / "promoted")],
                               stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
     try:
         for _ in range(100):
@@ -253,6 +254,49 @@ with tempfile.TemporaryDirectory() as data_dir:
         with zipfile.ZipFile(io.BytesIO(zdata)) as z:
             check("zip holds the edits", z.read("src/m.c") == b"int edited = 1;\n" and "inc/new.h" in z.namelist(), z.namelist())
         check("zip is private to the owner", erin.call("GET", f"/api/project-zip?project={proj['id']}")[0] == 400)
+
+        # ---- triage: false positives, missed violations and replay
+        tcode = "int f(void)\n{\n    int x = 010;\n    return x;\n}\n"
+        def triage(client, **body):
+            return client.call("POST", "/api/triage", {"files": [{"name": "t.c", "code": tcode}], "std": "c99", **body})
+        status, made, _ = triage(bob, kind="true-positive", rule="7.1", file="t.c", line=3, note="octal")
+        check("true positive saved", status == 200 and made["case"]["kind"] == "true-positive" and "files" not in made["case"], made)
+        status, fp, _ = triage(bob, kind="false-positive", rule="7.1", file="t.c", line=3, note="really a decimal value")
+        fp_id = fp["case"]["id"]
+        status, fn, _ = triage(bob, kind="false-negative", rule="15.5", file="t.c", line=4, note="early return")
+        status, again, _ = triage(bob, kind="false-positive", rule="7.1", file="t.c", line=3, note="updated note")
+        check("same verdict is updated, not duplicated", again["case"]["id"] == fp_id, again)
+        status, listing, _ = bob.call("GET", "/api/triage")
+        check("cases are listed with per-rule totals", status == 200 and len(listing["cases"]) == 3
+              and listing["summary"]["7.1"]["false_positive"] == 1 and listing["summary"]["7.1"]["true_positive"] == 1
+              and listing["summary"]["15.5"]["false_negative"] == 1, listing)
+        check("precision follows the verdicts", listing["summary"]["7.1"]["precision"] == 0.5, listing["summary"])
+        for bad in (dict(kind="maybe", rule="7.1", file="t.c", line=3), dict(kind="false-positive", rule="x", file="t.c", line=3),
+                    dict(kind="false-positive", rule="7.1", file="other.c", line=3),
+                    dict(kind="false-positive", rule="7.1", file="t.c", line=99)):
+            status, res, _ = triage(bob, **bad)
+            check(f"bad triage request rejected: {bad}", status == 400, (status, res))
+        check("viewer cannot triage", triage(carol, kind="true-positive", rule="7.1", file="t.c", line=3)[0] == 403)
+        status, theirs, _ = erin.call("GET", "/api/triage")
+        check("cases are private to their author", status == 200 and theirs["cases"] == [], theirs)
+        status, replay, _ = bob.call("POST", "/api/triage/run", {})
+        by_id = {r["id"]: r for r in replay["results"]}
+        check("replay: the false positive is still reported (open)", by_id[fp_id]["state"] == "open", replay)
+        check("replay: the true positive holds (fixed)", any(r["state"] == "fixed" for r in replay["results"]), replay)
+        status, listing, _ = bob.call("GET", "/api/triage")
+        check("replay stores the state", {c["id"]: c["state"] for c in listing["cases"]}[fp_id] == "open", listing)
+        status, exp, _ = bob.call("GET", "/api/triage-export")
+        check("cases export as a zip", status == 200 and isinstance(exp, bytes) and exp[:2] == b"PK")
+        check("analyst cannot promote", bob.call("POST", "/api/triage/promote", {})[0] == 403)
+        status, promo, _ = alice.call("POST", "/api/triage/promote", {})
+        promoted_files = sorted(p.name for p in (Path(data_dir) / "promoted").glob("*.json")) if status == 200 else []
+        check("admin promotes cases into a test directory", status == 200 and len(promoted_files) >= 3
+              and all(n[:3] in ("fp-", "fn-", "tp-") for n in promoted_files), (status, promo, promoted_files))
+        promoted = json.loads((Path(data_dir) / "promoted" / promoted_files[0]).read_text())
+        check("promoted cases carry no user name", "user" not in promoted and promoted["files"], list(promoted))
+        status, gone, _ = bob.call("POST", "/api/triage/delete", {"id": fp_id})
+        check("author can delete a case", status == 200 and gone["deleted"] is True, gone)
+        check("a deleted case is gone", fp_id not in [c["id"] for c in bob.call("GET", "/api/triage")[1]["cases"]])
 
         # ---- cppcheck cross-verification
         status, me2, _ = bob.call("GET", "/api/me")

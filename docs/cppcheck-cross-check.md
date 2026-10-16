@@ -37,7 +37,10 @@ whole project) or `scripts/cppcheck_cross.py` as a library.
 - **Nothing is written to your folders**: cppcheck runs on symbolic links inside a temporary
   directory.
 
-## Candidate gaps this has already shown
+## Gaps this has already shown
 
-- Octal constants inside `#define` lines (Rule 7.1): cppcheck reports them, misra-checker
-  only reports octal constants in code it parses.
+- Octal constants inside `#define` lines (Rule 7.1) were reported by cppcheck and missed here. It was
+  recorded as a missed-violation case and fixed (`tests/triage/fn-7-1-octal-in-define.json`).
+
+Use the **Compare** tab for a side-by-side view and the triage buttons to record what you find
+(see `docs/triage.md`).

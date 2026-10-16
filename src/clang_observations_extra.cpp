@@ -1605,6 +1605,18 @@ class ExtraMacroObserver final : public clang::PPCallbacks {
       return;
     }
     const clang::MacroInfo* info = directive->getMacroInfo();
+    // Rule 7.1 also covers an octal constant written in a macro body that is never expanded; one
+    // that is expanded is reported by the AST at the same spelling location and merged with this.
+    for (const clang::Token& token : info->tokens()) {
+      if ((token.getKind() != clang::tok::numeric_constant) || (token.getLiteralData() == nullptr)) {
+        continue;
+      }
+      const std::string text(token.getLiteralData(), token.getLength());
+      if ((text.size() > 1U) && (text[0] == '0') && (std::isdigit(static_cast<unsigned char>(text[1])) != 0) &&
+          (text.find_first_of(".eE") == std::string::npos)) {
+        recorder_.add("octal-constant", token.getLocation(), {}, true);
+      }
+    }
     defined_[name] = name_token.getLocation();
     if (identifier->isKeyword(language_)) {
       recorder_.add("macro-named-keyword", name_token.getLocation(), name);

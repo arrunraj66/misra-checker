@@ -256,6 +256,13 @@ if(BUILD_TESTING)
     )
   endif()
   add_test(
+    NAME triage_cases
+    COMMAND
+      "${Python3_EXECUTABLE}" -I "${CMAKE_CURRENT_SOURCE_DIR}/scripts/validate_triage.py" --check
+      --checker "$<TARGET_FILE:misra-checker>" --clang "${CLANG_EXECUTABLE}"
+      "${CMAKE_CURRENT_SOURCE_DIR}/tests/triage"
+  )
+  add_test(
     NAME cppcheck_cross
     COMMAND "${Python3_EXECUTABLE}" -I "${CMAKE_CURRENT_SOURCE_DIR}/tests/cppcheck_cross_test.py"
   )
