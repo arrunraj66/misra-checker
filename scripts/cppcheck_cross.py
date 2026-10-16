@@ -24,6 +24,11 @@ from pathlib import Path
 
 ADDON_DIRS = ["/usr/lib/x86_64-linux-gnu/cppcheck/addons", "/usr/share/cppcheck/addons",
               "/usr/lib/cppcheck/addons", "/opt/homebrew/share/cppcheck/addons"]
+NATIVE = re.compile(r"^(?P<file>[^|]+)\|(?P<line>\d+)\|(?P<severity>\w+)\|(?P<id>[\w.-]+)\|(?P<message>.*)$")
+# Diagnostics about cppcheck's own configuration, not about the code.
+NATIVE_IGNORED = {"missingInclude", "missingIncludeSystem", "toomanyconfigs", "unmatchedSuppression",
+                  "normalCheckLevelMaxBranches", "checkersReport", "noValidConfiguration"}
+MAX_NATIVE = 500
 THEIRS = re.compile(r"\[(?P<file>[^\]:]+):(?P<line>\d+)\](?P<text>.*)\[misra-c2012-(?P<rule>\d+\.\d+)\]")
 STD_MAP = {"c90": "c89", "gnu90": "c89", "c99": "c99", "gnu99": "c99",
            "c11": "c11", "gnu11": "c11", "c17": "c11", "gnu17": "c11"}
@@ -85,8 +90,22 @@ def flags_from(arguments: list[str]) -> list[str]:
     return flags
 
 
-def run_unit(index: int, entry: dict, exe: str, misra: str, work: Path, deadline: float) -> tuple[list[dict], str]:
-    """cppcheck + add-on for one translation unit. Returns (findings, error)."""
+def parse_native(line: str, unit_dir: str, source: Path, directory: str) -> dict | None:
+    m = NATIVE.match(line.strip())
+    if not m or m["id"] in NATIVE_IGNORED or m["severity"] == "information":
+        return None
+    path = m["file"]
+    if path.startswith(unit_dir):
+        path = str(source)
+    elif not os.path.isabs(path):
+        path = str(Path(directory or ".") / path)
+    return {"file": path, "line": int(m["line"]), "severity": m["severity"], "id": m["id"],
+            "message": m["message"].strip()}
+
+
+def run_unit(index: int, entry: dict, exe: str, misra: str, work: Path,
+             deadline: float) -> tuple[list[dict], list[dict], str]:
+    """cppcheck + add-on for one translation unit. Returns (misra findings, native findings, error)."""
     source = Path(entry["file"])
     unit_dir = work / str(index)
     unit_dir.mkdir()
@@ -95,18 +114,21 @@ def run_unit(index: int, entry: dict, exe: str, misra: str, work: Path, deadline
         link.symlink_to(source)
         arguments = entry.get("arguments") or entry["command"].split()
         proc = subprocess.run(
-            [exe, "--dump", "-q", "--max-configs=1", "--language=c", *flags_from(arguments), str(link)],
+            [exe, "--dump", "-q", "--max-configs=1", "--language=c", "--enable=warning,style,performance,portability",
+             "--template={file}|{line}|{severity}|{id}|{message}", *flags_from(arguments), str(link)],
             capture_output=True, text=True, cwd=entry.get("directory") or str(unit_dir),
             timeout=max(5, min(PER_FILE_TIMEOUT, deadline)))
         dump = Path(str(link) + ".dump")
         if not dump.is_file():
-            return [], f"{source.name}: cppcheck produced no result ({proc.stderr.strip()[:120]})"
+            return [], [], f"{source.name}: cppcheck produced no result ({proc.stderr.strip()[:120]})"
         result = subprocess.run([sys.executable, misra, str(dump)], capture_output=True, text=True,
                                 timeout=max(5, min(PER_FILE_TIMEOUT, deadline)))
     except subprocess.TimeoutExpired:
-        return [], f"{source.name}: cppcheck timed out"
+        return [], [], f"{source.name}: cppcheck timed out"
     except OSError as exc:
-        return [], f"{source.name}: {exc}"
+        return [], [], f"{source.name}: {exc}"
+    native = [n for n in (parse_native(l, str(unit_dir), source, entry.get("directory") or "")
+                          for l in proc.stderr.splitlines()) if n]
     findings = []
     for line in (result.stdout + result.stderr).splitlines():
         m = THEIRS.search(line)
@@ -119,11 +141,11 @@ def run_unit(index: int, entry: dict, exe: str, misra: str, work: Path, deadline
             path = str(Path(entry.get("directory") or ".") / path)
         findings.append({"file": path, "line": int(m["line"]), "rule": m["rule"],
                          "text": m["text"].strip(" ()")})
-    return findings, ""
+    return findings, native, ""
 
 
-def run(db_entries: list[dict]) -> tuple[list[dict], list[str], dict]:
-    """Run cppcheck over a compile database. Returns (findings, notes, tool status)."""
+def run(db_entries: list[dict]) -> tuple[list[dict], list[dict], list[str], dict]:
+    """Run cppcheck over a compile database. Returns (misra findings, native findings, notes, status)."""
     info = status()
     if not info["available"]:
         raise ValueError(info["reason"])
@@ -133,6 +155,7 @@ def run(db_entries: list[dict]) -> tuple[list[dict], list[str], dict]:
     if len(db_entries) > MAX_UNITS:
         notes.append(f"cppcheck was run on the first {MAX_UNITS} of {len(db_entries)} files")
     findings: list[dict] = []
+    native: list[dict] = []
     import time
     started = time.monotonic()
     with tempfile.TemporaryDirectory(prefix="misra-cppcheck-") as tmp:
@@ -141,11 +164,15 @@ def run(db_entries: list[dict]) -> tuple[list[dict], list[str], dict]:
             futures = [pool.submit(run_unit, i, e, exe, misra, work, TOTAL_TIMEOUT - (time.monotonic() - started))
                        for i, e in enumerate(entries)]
             for future in futures:
-                got, error = future.result()
+                got, got_native, error = future.result()
                 findings += got
+                native += got_native
                 if error:
                     notes.append(error)
-    return findings, notes, info
+    if len(native) > MAX_NATIVE:
+        notes.append(f"cppcheck's own checks: showing the first {MAX_NATIVE} of {len(native)}")
+        native = native[:MAX_NATIVE]
+    return findings, native, notes, info
 
 
 def compare(ours: list[dict], theirs: list[dict], supported: set[str], prefix: str = "") -> dict:
@@ -193,8 +220,21 @@ def compare(ours: list[dict], theirs: list[dict], supported: set[str], prefix: s
 
 def cross_check(db_entries: list[dict], ours: list[dict], prefix: str = "") -> dict:
     """Run cppcheck on the same files and compare with `ours` (annotated in place)."""
-    theirs, notes, info = run(db_entries)
+    theirs, native, notes, info = run(db_entries)
     result = compare(ours, theirs, supported_rules(find_misra()), prefix)
+    relative = lambda path: path[len(prefix):] if prefix and path.startswith(prefix) else path  # noqa: E731
+    our_keys = {(f["file"], f["line"], f["rule"]) for f in ours}
+    seen = set()
+    result["cppcheck_misra"] = []
+    for t in sorted(theirs, key=lambda t: (relative(t["file"]), t["line"], t["rule"])):
+        key = (relative(t["file"]), t["line"], t["rule"])
+        if key in seen:
+            continue
+        seen.add(key)
+        result["cppcheck_misra"].append({"file": key[0], "line": key[1], "rule": key[2], "message": t["text"],
+                                         "also_ours": key in our_keys})
+    result["native"] = [{**n, "file": relative(n["file"])} for n in
+                        sorted(native, key=lambda n: (relative(n["file"]), n["line"], n["id"]))]
     result["tool"] = info["version"]
     result["notes"] = notes
     return result

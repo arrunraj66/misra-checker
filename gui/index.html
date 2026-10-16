@@ -212,6 +212,23 @@ td.loc { font:12.5px var(--mono); color:var(--muted); white-space:nowrap; }
 tr.dev td { opacity:.62; } tr.dev td:first-child { opacity:1; }
 .xtag { display:inline-block; font:600 11px system-ui,sans-serif; padding:1px 8px; border-radius:999px; border:1px solid currentColor; white-space:nowrap; }
 .xtag.both { color:var(--pass); } .xtag.ours-only { color:var(--muted); } .xtag.cppcheck-only { color:var(--warn); }
+.cmp-grid { flex:1; min-height:0; display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:12px; }
+@media (max-width:1100px) { .cmp-grid { grid-template-columns:1fr; } }
+.cmp-grid .pane { min-height:260px; }
+.crow { display:grid; grid-template-columns:auto 1fr auto; gap:8px; align-items:baseline; padding:5px 12px; border-top:1px solid var(--line);
+  cursor:pointer; font-size:13px; }
+.crow:hover { background:var(--surface-2); }
+.crow.hl { background:var(--accent-soft); box-shadow:inset 3px 0 0 var(--accent); }
+.crow .where { font:12px var(--mono); color:var(--muted); white-space:nowrap; }
+.crow .what { overflow:hidden; text-overflow:ellipsis; }
+.crow.diff .where { color:var(--warn); }
+.cmp-toolbar { display:flex; gap:10px; align-items:center; flex-wrap:wrap; margin-bottom:10px; }
+.cmp-detail { margin-top:12px; flex:none; max-height:42vh; }
+.excerpt { margin:0; font:12.5px/1.5 var(--mono); background:var(--editor-bg); overflow:auto; padding:6px 0; }
+.excerpt .ln { display:block; white-space:pre; padding:0 12px; }
+.excerpt .ln::before { content:attr(data-n); display:inline-block; width:3.2em; text-align:right; margin-right:12px; color:var(--muted); }
+.excerpt .ln.target { background:var(--hit-required); }
+.sevc-error { color:var(--fail); } .sevc-warning { color:var(--warn); } .sevc-style, .sevc-performance, .sevc-portability { color:var(--muted); }
 .xnote { padding:0 12px 10px; color:var(--muted); font-size:12.5px; }
 .chip.x-both i, .chip.x-ours-only i, .chip.x-cppcheck-only i { background:currentColor; }
 .chip.x-both { color:var(--pass); } .chip.x-cppcheck-only { color:var(--warn); }
@@ -227,6 +244,7 @@ tr.dev td { opacity:.62; } tr.dev td:first-child { opacity:1; }
   <div class="brand"><span class="logo">M</span><span>MISRA Checker <small id="ver"></small></span></div>
   <nav class="nav" role="tablist">
     <button role="tab" id="nav-analyze" aria-selected="true" data-view="analyze">Analyze</button>
+    <button role="tab" id="nav-compare" aria-selected="false" data-view="compare">Compare</button>
     <button role="tab" id="nav-rules" aria-selected="false" data-view="rules">Rules &amp; validation</button>
   </nav>
   <span class="spacer"></span>
@@ -309,6 +327,21 @@ tr.dev td { opacity:.62; } tr.dev td:first-child { opacity:1; }
     </div>
   </section>
 
+  <section class="view" id="view-compare" hidden>
+    <div class="cmp-toolbar">
+      <button class="btn primary" id="cmp-run">Analyze with all three</button>
+      <label class="chip"><input type="checkbox" id="cmp-diff"> Only differences</label>
+      <span class="sub" id="cmp-note">Runs misra-checker, cppcheck's MISRA add-on and cppcheck's own checks on the current source and puts them side by side.</span>
+    </div>
+    <div class="cards" id="cmp-cards" style="padding:0 0 10px"></div>
+    <div class="cmp-grid">
+      <div class="pane"><div class="pane-head"><span class="pane-title">misra-checker</span><span class="sub" id="cmp-n1"></span></div><div class="pane-body" id="cmp-ours"></div></div>
+      <div class="pane"><div class="pane-head"><span class="pane-title">cppcheck · MISRA add-on</span><span class="sub" id="cmp-n2"></span></div><div class="pane-body" id="cmp-misra"></div></div>
+      <div class="pane"><div class="pane-head"><span class="pane-title">cppcheck · own checks</span><span class="sub" id="cmp-n3"></span></div><div class="pane-body" id="cmp-native"></div></div>
+    </div>
+    <div class="pane cmp-detail" id="cmp-detail" hidden></div>
+  </section>
+
   <section class="view" id="view-rules" hidden>
     <div class="split" style="grid-template-columns:minmax(0,1.1fr) minmax(0,1fr)">
       <div class="pane">
@@ -382,11 +415,13 @@ $("theme").addEventListener("click", () => {
 });
 
 // ---- views
+const VIEWS = ["analyze", "compare", "rules"];
 function showView(name) {
-  for (const v of ["analyze", "rules"]) {
+  for (const v of VIEWS) {
     $("view-" + v).hidden = v !== name;
     $("nav-" + v).setAttribute("aria-selected", String(v === name));
   }
+  if (name === "compare") renderCompare();
 }
 document.querySelectorAll(".nav button").forEach((b) => b.addEventListener("click", () => showView(b.dataset.view)));
 
@@ -706,6 +741,7 @@ async function analyze(payload, sources) {
   } finally { btns.forEach((b) => (b.disabled = false)); }
   renderResult(); renderTabs(); renderEditorLines();
   if (project) renderProjectFiles();
+  if (!$("view-compare").hidden) renderCompare();
 }
 function runCode() {
   if (project) { runProject(); return; }
@@ -959,6 +995,88 @@ $("valall").addEventListener("click", async () => {
   b.disabled = false; b.textContent = "Validate all";
 });
 ["filter", "fcat", "fstat"].forEach((i) => $(i).addEventListener("input", renderRules));
+
+// ---- compare view: misra-checker | cppcheck MISRA add-on | cppcheck own checks
+let cmpKey = null;
+const sourceCache = new Map();
+async function sourceOf(file) {
+  if (project) {
+    const k = project.id + ":" + file;
+    if (!sourceCache.has(k)) sourceCache.set(k, (await api(`/api/file?project=${encodeURIComponent(project.id)}&path=${encodeURIComponent(file)}`)).source);
+    return sourceCache.get(k);
+  }
+  const f = (lastRes && lastRes.sources || []).find((x) => x.name === file) || files.find((x) => x.name === file);
+  return f ? f.code : "";
+}
+const keyOf = (x) => `${x.file}:${x.line}`;
+function crow(x, extra) {
+  const row = el("div", { className: "crow" + (cmpKey === keyOf(x) ? " hl" : "") + (extra.diff ? " diff" : "") },
+    extra.left, el("span", { className: "what", title: extra.what }, extra.what),
+    el("span", { className: "where" }, `${x.file.split("/").pop()}:${x.line}`));
+  row.dataset.key = keyOf(x);
+  row.addEventListener("click", () => { cmpKey = keyOf(x); renderCompare(); });
+  return row;
+}
+function renderCompare() {
+  const res = lastRes, cross = res && res.cross;
+  const cards = $("cmp-cards");
+  ["cmp-ours", "cmp-misra", "cmp-native"].forEach((id) => $(id).replaceChildren());
+  $("cmp-detail").hidden = true;
+  if (!res || !cross) {
+    cards.replaceChildren();
+    ["cmp-n1", "cmp-n2", "cmp-n3"].forEach((id) => { $(id).textContent = ""; });
+    $("cmp-ours").append(el("div", { className: "empty" }, el("b", {}, res ? "No cppcheck data for this run" : "Nothing analysed yet"),
+      "Press “Analyze with all three”. Edit the source in the Analyze tab first if you like."));
+    return;
+  }
+  const onlyDiff = $("cmp-diff").checked;
+  const ours = res.findings.concat(res.deviated || []).filter((f) => !onlyDiff || f.cross === "ours-only");
+  const misra = cross.cppcheck_misra.filter((m) => !onlyDiff || !m.also_ours);
+  const native = cross.native;
+  cards.replaceChildren(card(cross.agree, "agree", "pass"), card(cross.ours_only, "only misra-checker"), card(cross.cppcheck_only, "only cppcheck MISRA"),
+    card(cross.not_comparable, "no counterpart"), card(native.length, "cppcheck own checks"));
+  $("cmp-n1").textContent = `${ours.length}`; $("cmp-n2").textContent = `${misra.length}`; $("cmp-n3").textContent = `${native.length}`;
+  ours.forEach((f) => $("cmp-ours").append(crow(f, { diff: f.cross === "ours-only", left: sevTag(f.category),
+    what: `${f.rule}  ${f.message}${f.cross === "both" ? "  ✓" : ""}` })));
+  misra.forEach((m) => $("cmp-misra").append(crow(m, { diff: !m.also_ours, left: sevTag(ruleCategory(m.rule)),
+    what: `${m.rule}  ${topicOf(m.rule)}${m.also_ours ? "  ✓" : ""}` })));
+  native.forEach((n) => $("cmp-native").append(crow(n, { diff: false, left: el("span", { className: "sev sevc-" + n.severity }, n.severity),
+    what: `${n.id}: ${n.message}` })));
+  ["cmp-ours", "cmp-misra", "cmp-native"].forEach((id) => {
+    if (!$(id).children.length) $(id).append(el("div", { className: "empty" }, "Nothing reported."));
+  });
+  if (cmpKey) showCompareDetail();
+}
+async function showCompareDetail() {
+  const [file, lineText] = [cmpKey.slice(0, cmpKey.lastIndexOf(":")), cmpKey.slice(cmpKey.lastIndexOf(":") + 1)];
+  const line = Number(lineText), res = lastRes, cross = res.cross;
+  const box = $("cmp-detail");
+  box.hidden = false;
+  const at = (x) => x.file === file && x.line === line;
+  const lists = [
+    ["misra-checker", res.findings.concat(res.deviated || []).filter(at).map((f) => `${f.rule}  ${f.message}`)],
+    ["cppcheck · MISRA add-on", cross.cppcheck_misra.filter(at).map((m) => `${m.rule}  ${topicOf(m.rule)}`)],
+    ["cppcheck · own checks", cross.native.filter(at).map((n) => `${n.severity} ${n.id}: ${n.message}`)],
+  ];
+  let text = "";
+  try { text = await sourceOf(file); } catch { /* source not available */ }
+  const all = text.split("\n"), from = Math.max(1, line - 4), to = Math.min(all.length, line + 4);
+  const pre = el("pre", { className: "excerpt" });
+  for (let n = from; n <= to; n++) { const l = el("span", { className: "ln" + (n === line ? " target" : "") }, all[n - 1] || " "); l.dataset.n = String(n); pre.append(l); }
+  box.replaceChildren(el("div", { className: "pane-head" }, el("span", { className: "pane-title" }, `${file}:${line}`),
+    el("button", { className: "btn small", onclick: () => { cmpKey = null; renderCompare(); } }, "Close")),
+    pre,
+    el("div", { style: "display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px;padding:8px 12px" },
+      ...lists.map(([title, items]) => el("div", {}, el("b", {}, title), ...(items.length ? items.map((t) => el("div", { className: "sub" }, t)) : [el("div", { className: "sub" }, "—")])))));
+  document.querySelectorAll(`.crow[data-key="${cmpKey}"]`).forEach((r) => r.classList.add("hl"));
+}
+$("cmp-diff").addEventListener("change", renderCompare);
+$("cmp-run").addEventListener("click", async () => {
+  const box = $("xcheck");
+  if (box.disabled) { toast("cppcheck is not installed on the server"); return; }
+  box.checked = true; store.set("xcheck", true);
+  if (project) await runProject(); else runCode();
+});
 
 // ---- project compiler
 function compilerChoice() {

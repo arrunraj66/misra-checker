@@ -43,7 +43,9 @@ const analysis = {
   exit_code: 1, summary: "Analyzed 1 translation unit(s)", elapsed_ms: 12, compile_errors: false, error: "",
   compiler_output: "", sarif: "{\"version\":\"2.1.0\"}", deviation_notes: ["Deviation D9 matched no finding."],
   cross: { tool: "Cppcheck 2.7", rules_covered: 130, agree: 1, ours_only: 1, not_comparable: 0, cppcheck_only: 1, notes: [],
-    cppcheck_only_findings: [{ file: "a.c", line: 9, rule: "17.7", message: "Return value not used", cross: "cppcheck-only" }] },
+    cppcheck_only_findings: [{ file: "a.c", line: 9, rule: "17.7", message: "Return value not used", cross: "cppcheck-only" }],
+    cppcheck_misra: [{ file: "a.c", line: 1, rule: "7.1", message: "", also_ours: true }, { file: "a.c", line: 9, rule: "17.7", message: "", also_ours: false }],
+    native: [{ file: "a.c", line: 5, severity: "error", id: "arrayIndexOutOfBounds", message: "Array index out of bounds" }] },
   findings: [{ file: "a.c", line: 1, col: 1, category: "required", rule: "7.1", key: "k", message: "octal constant", cross: "both" },
              { file: "a.c", line: 3, col: 1, category: "advisory", rule: "15.1", key: "k", message: "goto", library: false, cross: "ours-only" }],
   deviated: [{ file: "a.c", line: 2, col: 1, category: "advisory", rule: "19.2", key: "k", message: "union declared", deviation: "D1" }],
@@ -83,7 +85,7 @@ const api = new Function(source + `
 ;return { getMe: () => me, csrf: () => csrf, runCode, files: () => files, visibleFindings,
   setLast: (r) => { lastRes = r; }, crossOffAdd: (k) => crossOff.add(k), renderResult, showLogin, project: () => project, devOffSet: (v) => { devOff.v = v; },
   exportCsv, exportJson, exportReport, setDeviations: (t, n) => { deviationsText = t; deviationCount = n; },
-  renderEditorLines, setViewPath: (v) => { viewPath = v; }, analyze, runProject, setProject: (p) => { project = p; }, openProjectFile, leaveProject };`)();
+  renderCompare, showCompareDetail, setCmpKey: (k) => { cmpKey = k; }, renderEditorLines, setViewPath: (v) => { viewPath = v; }, analyze, runProject, setProject: (p) => { project = p; }, openProjectFile, leaveProject };`)();
 
 const tick = () => new Promise((resolve) => GLib.timeout_add(GLib.PRIORITY_DEFAULT, 30, () => { resolve(); return false; }));
 const loop = new GLib.MainLoop(null, false);
@@ -118,6 +120,19 @@ const loop = new GLib.MainLoop(null, false);
   api.devOffSet(false);
   api.crossOffAdd("cppcheck-only");
   expect("cppcheck-only rows can be hidden", !api.visibleFindings().some((r) => r.cross === "cppcheck-only"));
+
+  // compare view: three panes side by side
+  api.renderCompare();
+  const paneSizes = ["cmp-ours", "cmp-misra", "cmp-native"].map((id) => document.getElementById(id).children.length);
+  expect("compare view fills the three panes", paneSizes.join() === "3,2,1", paneSizes.join());
+  document.getElementById("cmp-diff").checked = true;
+  api.renderCompare();
+  const diffSizes = ["cmp-ours", "cmp-misra", "cmp-native"].map((id) => document.getElementById(id).children.length);
+  expect("only-differences keeps just the disagreements", diffSizes.join() === "1,1,1", diffSizes.join());
+  document.getElementById("cmp-diff").checked = false;
+  api.setCmpKey("a.c:5");
+  await api.showCompareDetail();
+  expect("selecting a line opens the detail panel", document.getElementById("cmp-detail").hidden === false);
 
   // exports
   api.exportCsv(); api.exportJson(); api.exportReport();

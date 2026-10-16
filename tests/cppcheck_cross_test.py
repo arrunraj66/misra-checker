@@ -52,6 +52,16 @@ check("per-rule table", result["per_rule"]["8.4"]["both"] == 2 and result["per_r
       and "2.1" not in result["per_rule"], result["per_rule"])
 check("rules covered", result["rules_covered"] == 3)
 
+# ---- cppcheck's own diagnostics (template output)
+src = Path("/tmp/u/0/a.c")
+n = cx.parse_native("/tmp/u/0/a.c|12|warning|uninitvar|Uninitialized variable: x", "/tmp/u/0", Path("/p/src/a.c"), "/p")
+check("native finding parsed and mapped to the real file", n == {"file": "/p/src/a.c", "line": 12, "severity": "warning",
+      "id": "uninitvar", "message": "Uninitialized variable: x"}, n)
+check("message may contain a pipe", cx.parse_native("/p/h.h|3|style|x|a | b", "/tmp/u/0", Path("/p/a.c"), "/p")["message"] == "a | b")
+check("configuration noise is dropped", cx.parse_native("a.c|1|information|missingIncludeSystem|x", "/u", Path("/a.c"), "/") is None)
+check("information level is dropped", cx.parse_native("a.c|1|information|foo|x", "/u", Path("/a.c"), "/") is None)
+check("ordinary text is ignored", cx.parse_native("Checking a.c ...", "/u", Path("/a.c"), "/") is None)
+
 # nothing reported by either tool
 empty = cx.compare([], [], supported, "")
 check("empty comparison", empty["agree"] == empty["ours_only"] == empty["cppcheck_only"] == 0, empty)
