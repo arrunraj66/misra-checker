@@ -143,7 +143,7 @@ def run_case(checker: str, clang: str, rule: str, case: Case) -> dict:
         return {"status": "pass" if ok else "fail", "detail": "" if ok else f"reported at {sorted(reported)}", "reported": sorted(reported)}
     if kind == "bad":
         ok = (not missed) if want else bool(reported)
-        return {"status": "pass" if ok else "fail", "detail": "" if ok else (f"missed {missed}" if want else "nothing reported"), "reported": sorted(reported)}
+        return {"status": "pass" if ok else "fail", "detail": "" if ok else (f"missed {missed}, reported at {sorted(reported)}" if want else "nothing reported"), "reported": sorted(reported)}
     if kind == "gap":
         holds = bool(missed) if want else not reported
         return {"status": "open" if holds else "fixed", "detail": "" if holds else "now reported: promote to bad", "reported": sorted(reported)}

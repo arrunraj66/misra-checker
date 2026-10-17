@@ -1,0 +1,691 @@
+##### rule 20.1
+summary: Reports an include directive that is preceded by anything other than preprocessor directives or comments.
+limits: Directives in inactive conditional groups are not treated as code or as includes.
+
+--- ok: includes first, after comments and directives
+/* header comment */
+#define LOCAL 1
+#include <stddef.h>
+#include <string.h>
+int a;
+
+--- ok: an include in an inactive group
+#ifdef NEVER_DEFINED_FOR_THIS_TEST
+    #include "missing_header.h"
+#endif
+int a;
+
+--- bad: an include after a declaration
+int a;
+#include <stddef.h> /*@V*/
+
+--- bad: an include after a function
+void f(void) { }
+#include <string.h> /*@V*/
+
+##### rule 20.2
+summary: Reports an include header name that contains a quote, a backslash, a comment marker, or (angle form) a double quote.
+limits: The check is textual, so the sequence is reported even when it sits in an inactive group.
+
+--- ok: ordinary header names
+#include <stddef.h>
+#include "local.h"
+
+--- bad: a quote inside the name
+#include "a'b.h" /*@V*/
+
+--- bad: a backslash inside the name
+#include "dir\file.h" /*@V*/
+
+--- bad: a comment marker inside the name
+#include <a/*b.h> /*@V*/
+
+##### rule 20.3
+summary: Reports an include whose operand is not written as a header name; the macro may still expand correctly, so the finding is only possible.
+limits: Reported as a possible finding.
+
+--- ok: written as header names
+#include <stddef.h>
+#include "stddef.h"
+
+--- bad: the operand is a macro
+#define HEADER <stddef.h>
+#include HEADER /*@V*/
+
+##### rule 20.4
+summary: Reports a macro whose name is a language keyword.
+limits: Placed last in the file in these cases, because redefining a keyword changes the code after it.
+
+--- ok: ordinary macro names
+#define LIMIT 10
+#define MY_INLINE static
+
+--- bad: a macro named like a keyword
+int a;
+#define inline /*@V*/
+
+--- bad: a macro named int
+int a;
+#define int long /*@V*/
+
+##### rule 20.5
+summary: Reports every #undef directive.
+limits: None; every #undef is reported.
+
+--- ok: no #undef
+#define LIMIT 10
+int a[LIMIT];
+
+--- bad: #undef of a macro
+#define LIMIT 10
+int a[LIMIT];
+#undef LIMIT /*@V*/
+
+--- bad: #undef of a name that was never defined
+#undef NEVER_DEFINED /*@V*/
+
+##### rule 20.6
+summary: Reports a preprocessing directive embedded in the arguments of a macro invocation (the compiler reports this as an extension warning).
+limits: Found through the compiler's diagnostic, so the location is the directive inside the arguments.
+
+--- ok: directives outside macro arguments
+#define F(x) (x)
+#ifdef A
+int a = F(1);
+#else
+int a = F(2);
+#endif
+
+--- bad: a conditional directive inside macro arguments
+#define F(x) (x)
+int v = F(
+#ifdef A
+    1
+#else
+    2
+#endif
+);
+
+##### rule 20.7
+summary: Reports a function-like macro that uses a parameter in the replacement list without parentheses around it or adjacent commas (operands of # and ## and member names are excluded).
+limits: Whether an expression is safely delimited is judged textually.
+
+--- ok: parenthesized parameters
+#define SQUARE(x) ((x) * (x))
+int a = SQUARE(3);
+
+--- ok: operands of # and member selection are excluded
+#define STR(x) #x
+#define MEMBER(s, m) ((s).m)
+struct p { int x; } pt;
+int b = MEMBER(pt, x);
+
+--- ok: a parameter between commas
+#define CALL(a, b) fn(a, b)
+int fn(int, int);
+int c = CALL(1, 2);
+
+--- bad: an unparenthesized parameter in an expression
+#define SQUARE(x) x * x /*@V*/
+int a = SQUARE(3);
+
+--- bad: a parameter next to an operator
+#define ADD_ONE(x) x + 1 /*@V*/
+int b = ADD_ONE(3);
+
+##### rule 20.8
+summary: Subset: reports an #if or #elif condition without identifiers that evaluates to a value other than 0 or 1.
+limits: Only identifier-free conditions are evaluated.
+
+--- ok: conditions that are 0 or 1
+#if 1
+int a;
+#endif
+#if 0
+int b;
+#endif
+#if (1 + 1) == 2
+int c;
+#endif
+
+--- bad: a condition that evaluates to 2
+#if 2 /*@V*/
+int a;
+#endif
+
+--- bad: a condition that evaluates to a larger value
+#if (3 * 4) /*@V*/
+int a;
+#endif
+
+##### rule 20.9
+summary: Reports an identifier in an #if or #elif condition that is not a defined macro at that point (operands of defined are fine).
+limits: Integer suffixes such as 1U are numbers, not identifiers.
+
+--- ok: defined macros and defined()
+#define LEVEL 2
+#if LEVEL > 1
+int a;
+#endif
+#if defined(UNDEFINED_OK)
+int b;
+#endif
+#ifdef ALSO_FINE
+int c;
+#endif
+
+--- ok: suffixed numbers
+#if 4U > 1UL
+int d;
+#endif
+
+--- bad: an identifier that is not defined
+#if UNDEFINED_SYMBOL > 0 /*@V*/
+int a;
+#endif
+
+--- bad: undefined in an elif
+#define A 1
+#if A
+int a;
+#elif B_UNDEFINED /*@V*/
+int b;
+#endif
+
+##### rule 20.10
+summary: Reports a macro definition that uses the # or ## operator.
+limits: Every use of either operator in a macro definition is reported.
+
+--- ok: macros without the operators
+#define LIMIT 10
+#define ADD(a, b) ((a) + (b))
+int x = ADD(LIMIT, 1);
+
+--- bad: stringizing
+#define STR(x) #x /*@V*/
+const char *s = STR(abc);
+
+--- bad: token pasting
+#define CAT(a, b) a##b /*@V*/
+int CAT(var, 1);
+
+##### rule 20.11
+summary: Reports a macro in which a # operand is immediately followed by ##.
+limits: The # then ## sequence is reported at the macro definition.
+
+--- ok: # alone and ## alone
+#define S(x) #x
+#define C(a, b) a##b
+const char *s = S(q);
+int C(v, 1);
+
+--- bad: stringizing then pasting
+#define BAD(x) #x ## _suffix /*@V*/
+const char *s = BAD(q);
+
+##### rule 20.12
+summary: Reports a macro parameter that is used both as an operand of # or ## and elsewhere in the replacement list.
+limits: Whether the second use is expanded is not analysed; the combined use is reported.
+
+--- ok: used only with the operator
+#define S(x) #x
+const char *s = S(abc);
+
+--- ok: used only without the operator
+#define ID(x) (x)
+int v = ID(1);
+
+--- bad: used with # and also on its own
+#define SHOW(x) puts(#x), x /*@V*/
+int puts(const char *);
+int v = (SHOW(1), 0);
+
+--- bad: used with ## and also on its own
+#define TWICE(x) x##_a + x /*@V*/
+int q_a = 1, q = 2;
+int v = TWICE(q);
+
+##### rule 20.13
+summary: Reports a line starting with # whose directive name is not a recognised preprocessing directive.
+limits: Checked textually, also in inactive groups.
+
+--- ok: valid directives
+#define A 1
+#if A
+#endif
+#pragma once
+
+--- ok: a null directive and a line marker are valid
+#
+int a;
+
+--- bad: an unknown directive
+#foo /*@V*/
+int a;
+
+--- bad: an unknown directive in an inactive group
+#if 0
+#bar /*@V*/
+#endif
+int a;
+
+##### rule 20.14
+summary: Reports a conditional directive that is not closed in the file where it was opened.
+limits: The compiler rejects these files; the finding comes from that diagnostic.
+
+--- ok: balanced conditionals
+#ifdef A
+int a;
+#else
+int b;
+#endif
+
+--- bad: an #if without #endif
+#if 1
+int a;
+
+--- bad: an #ifdef without #endif inside a function body file
+#ifdef A
+void f(void) { }
+
+##### rule 21.1
+summary: Reports #define or #undef of the name defined or of a reserved name (a name starting with underscore and a capital letter or a second underscore).
+limits: Names reserved for the standard library by their prefix are not covered.
+
+--- ok: ordinary macro names
+#define LIMIT 10
+#define my_macro(x) (x)
+
+--- bad: a name with a leading double underscore
+#define __INTERNAL 1 /*@V*/
+
+--- bad: underscore and a capital letter
+#define _Reserved 2 /*@V*/
+
+--- bad: #undef of a reserved name
+#undef __FILE__ /*@V*/
+
+##### rule 21.2
+summary: Reports a declaration that uses a reserved identifier (leading underscore forms) or defines a function that has the name of a standard library function.
+limits: Only the underscore forms and the standard function names listed in the checker are covered.
+
+--- ok: ordinary names
+int count;
+int my_strlen(const char *s) { int n = 0; while (s[n] != 0) { n++; } return n; }
+
+--- ok: a local name with a leading underscore and a lowercase letter is not reserved
+void f(void) { int _local = 1; (void)_local; }
+
+--- bad: file-scope names with leading underscores
+int __internal; /*@V*/
+int _Hidden; /*@V*/
+
+--- bad: defining a standard library function
+unsigned long strlen(const char *s) { return 0; } /*@V*/
+
+##### rule 21.3
+summary: Reports a call to malloc, calloc, realloc or free (matched by the callee's name).
+limits: Calls through function pointers and wrappers with other names are not found.
+
+--- ok: no dynamic allocation
+static char pool[64];
+char *get(void) { return pool; }
+
+--- ok: a function with a similar name
+void *malloc_pool(unsigned long n);
+void *use(void) { return malloc_pool(4); }
+
+--- bad: malloc and free
+#include <stdlib.h>
+void f(void)
+{
+    void *p = malloc(4); /*@V*/
+    free(p); /*@V*/
+}
+
+--- bad: calloc and realloc
+#include <stdlib.h>
+void g(void)
+{
+    void *p = calloc(2, 4); /*@V*/
+    p = realloc(p, 8); /*@V*/
+    (void)p;
+}
+
+##### rule 21.4
+summary: Reports a call to setjmp or longjmp (matched by the callee's name).
+limits: setjmp is a macro in some libraries; it is found when the compiler expands it to a call.
+
+--- ok: no jumps
+void f(void) { }
+
+--- bad: longjmp
+#include <setjmp.h>
+jmp_buf env;
+void f(void)
+{
+    longjmp(env, 1); /*@V*/
+}
+
+--- bad: setjmp
+#include <setjmp.h>
+jmp_buf env;
+int g(void)
+{
+    return setjmp(env); /*@V*/
+}
+
+##### rule 21.5
+summary: Reports a call to signal or raise (matched by the callee's name).
+limits: Other functions of the signal header are not covered.
+
+--- ok: no signal handling
+void f(void) { }
+
+--- bad: signal and raise
+#include <signal.h>
+void handler(int s) { (void)s; }
+void f(void)
+{
+    signal(2, handler); /*@V*/
+    raise(2); /*@V*/
+}
+
+##### rule 21.6
+summary: Reports a call to a standard input/output function (matched by the callee's name).
+limits: Only the listed stdio and wide-character I/O functions are covered.
+
+--- ok: no I/O
+int f(int x) { return x; }
+
+--- ok: a user function with a similar name
+int print_value(int v);
+void g(void) { (void)print_value(1); }
+
+--- bad: printf and puts
+#include <stdio.h>
+void f(void)
+{
+    (void)printf("x"); /*@V*/
+    (void)puts("y"); /*@V*/
+}
+
+--- bad: file functions
+#include <stdio.h>
+void g(void)
+{
+    FILE *f = fopen("a", "r"); /*@V*/
+    (void)fclose(f); /*@V*/
+}
+
+##### rule 21.7
+summary: Reports a call to atof, atoi, atol or atoll (matched by the callee's name).
+limits: strtol and friends are not reported.
+
+--- ok: strtol
+#include <stdlib.h>
+long f(const char *s) { return strtol(s, 0, 10); }
+
+--- bad: the ato family
+#include <stdlib.h>
+void f(const char *s)
+{
+    (void)atoi(s); /*@V*/
+    (void)atol(s); /*@V*/
+    (void)atof(s); /*@V*/
+}
+
+##### rule 21.8
+summary: Reports a call to abort, exit, getenv or system (matched by the callee's name).
+limits: _Exit and quick_exit are not covered.
+
+--- ok: no calls
+int f(void) { return 0; }
+
+--- bad: exit and abort
+#include <stdlib.h>
+void f(void)
+{
+    abort(); /*@V*/
+}
+void g(void)
+{
+    exit(1); /*@V*/
+}
+
+--- bad: getenv and system
+#include <stdlib.h>
+void h(void)
+{
+    (void)getenv("A"); /*@V*/
+    (void)system("ls"); /*@V*/
+}
+
+##### rule 21.9
+summary: Reports a call to bsearch or qsort (matched by the callee's name).
+limits: Only the two functions of stdlib.h are covered.
+
+--- ok: a hand written search
+int find(const int *a, int n, int key) { int i; for (i = 0; i < n; i++) { if (a[i] == key) { return i; } } return -1; }
+
+--- bad: qsort and bsearch
+#include <stdlib.h>
+int cmp(const void *a, const void *b) { (void)a; (void)b; return 0; }
+void f(int *a)
+{
+    qsort(a, 4, sizeof(int), cmp); /*@V*/
+    (void)bsearch(a, a, 4, sizeof(int), cmp); /*@V*/
+}
+
+##### rule 21.10
+summary: Reports a call to a standard time and date function (matched by the callee's name).
+limits: Only the functions of time.h that read or format the time are covered.
+
+--- ok: no time functions
+int f(int x) { return x; }
+
+--- bad: time, clock and strftime
+#include <time.h>
+void f(char *buf)
+{
+    time_t t = time(0); /*@V*/
+    (void)clock(); /*@V*/
+    (void)strftime(buf, 8, "%H", localtime(&t)); /*@V*/
+}
+
+##### rule 21.11
+summary: Reports an include of the tgmath header.
+limits: Only the include directive is examined.
+
+--- ok: math.h
+#include <math.h>
+double f(double x) { return sqrt(x); }
+
+--- bad: tgmath.h
+#include <tgmath.h> /*@V*/
+double f(double x) { return x; }
+
+##### rule 21.12
+summary: Reports a call to a floating-point exception handling function from fenv.h (matched by the callee's name).
+limits: The exception macros are not examined.
+
+--- ok: no fenv use
+double f(double x) { return x * 2.0; }
+
+--- bad: clearing and testing exceptions
+#include <fenv.h>
+void f(void)
+{
+    (void)feclearexcept(FE_ALL_EXCEPT); /*@V*/
+    (void)fetestexcept(FE_ALL_EXCEPT); /*@V*/
+}
+
+##### rule 22.1
+summary: Subset: reports a local object that holds an allocation or an open stream and is neither released nor handed on in the function.
+limits: Only the owner within one function is tracked; passing the object to any function counts as handing it on.
+
+--- ok: allocation that is freed
+#include <stdlib.h>
+void f(void) { char *p = malloc(4); free(p); }
+
+--- ok: ownership returned to the caller
+#include <stdlib.h>
+char *g(void) { char *p = malloc(4); return p; }
+
+--- ok: a stream that is closed
+#include <stdio.h>
+void h(void) { FILE *f = fopen("a", "r"); if (f != 0) { (void)fclose(f); } }
+
+--- ok: handed on to another function
+#include <stdlib.h>
+void keep(char *p);
+void k(void) { char *p = malloc(4); keep(p); }
+
+--- bad: allocation that is never released
+#include <stdlib.h>
+void f(void)
+{
+    char *p = malloc(4); /*@V*/
+    (void)p;
+}
+
+--- bad: a stream that is never closed
+#include <stdio.h>
+void g(void)
+{
+    FILE *f = fopen("a", "r"); /*@V*/
+    (void)f;
+}
+
+##### rule 22.2
+summary: Subset: reports freeing the address of an object, an array or a string literal, and a straight-line double free.
+limits: Only the stated forms in one function are found; frees on different paths are not matched.
+
+--- ok: one free of an allocation
+#include <stdlib.h>
+void f(void) { char *p = malloc(4); free(p); }
+
+--- bad: freeing the address of an object
+#include <stdlib.h>
+void f(void)
+{
+    int x;
+    free(&x); /*@V*/
+}
+
+--- bad: freeing an array
+#include <stdlib.h>
+void g(void)
+{
+    char buf[4];
+    free(buf); /*@V*/
+}
+
+--- bad: freeing a string literal
+#include <stdlib.h>
+void h(void) { free("text"); } /*@V*/
+
+--- bad: freeing twice in a row
+#include <stdlib.h>
+void k(void)
+{
+    char *p = malloc(4);
+    free(p);
+    free(p); /*@V*/
+}
+
+##### rule 22.3
+summary: Subset: reports a file opened twice in one function with at least one of the two openings in a write mode.
+limits: Only file names written as literals in one function are compared.
+
+--- ok: the same file opened twice for reading
+#include <stdio.h>
+void f(void)
+{
+    FILE *a = fopen("data", "r");
+    FILE *b = fopen("data", "r");
+    if (a != 0) { (void)fclose(a); }
+    if (b != 0) { (void)fclose(b); }
+}
+
+--- ok: different files
+#include <stdio.h>
+void g(void)
+{
+    FILE *a = fopen("one", "w");
+    FILE *b = fopen("two", "r");
+    if (a != 0) { (void)fclose(a); }
+    if (b != 0) { (void)fclose(b); }
+}
+
+--- bad: one file opened for writing and for reading
+#include <stdio.h>
+void f(void)
+{
+    FILE *a = fopen("data", "w");
+    FILE *b = fopen("data", "r"); /*@V*/
+    if (a != 0) { (void)fclose(a); }
+    if (b != 0) { (void)fclose(b); }
+}
+
+##### rule 22.4
+summary: Subset: reports a write to a stream that was opened only for reading in the same function.
+limits: Only streams opened with a literal mode in the same function are tracked.
+
+--- ok: writing to a stream opened for writing
+#include <stdio.h>
+void f(void) { FILE *o = fopen("a", "w"); if (o != 0) { (void)fputs("x", o); (void)fclose(o); } }
+
+--- bad: writing to a read-only stream
+#include <stdio.h>
+void f(void)
+{
+    FILE *i = fopen("a", "r");
+    if (i != 0)
+    {
+        (void)fputs("x", i); /*@V*/
+        (void)fclose(i);
+    }
+}
+
+##### rule 22.5
+summary: Reports a dereference of a FILE pointer or member access through it.
+limits: Passing the pointer to library functions is the intended use and is accepted.
+
+--- ok: only passing the pointer
+#include <stdio.h>
+void f(FILE *s) { (void)fputc('a', s); }
+
+--- bad: dereferencing the pointer to copy the object
+#include <stdio.h>
+void f(FILE *s)
+{
+    FILE copy = *s; /*@V*/
+    (void)copy;
+}
+
+##### rule 22.6
+summary: Subset: reports a stream used after fclose later in the same block without reassignment.
+limits: Only straight-line uses in the same block are found.
+
+--- ok: reassigned after the close
+#include <stdio.h>
+void f(void)
+{
+    FILE *s = fopen("a", "r");
+    if (s != 0) { (void)fclose(s); }
+    s = fopen("b", "r");
+    if (s != 0) { (void)fclose(s); }
+}
+
+--- bad: used after fclose
+#include <stdio.h>
+void f(void)
+{
+    FILE *s = fopen("a", "w");
+    if (s != 0)
+    {
+        (void)fclose(s);
+        (void)fputc('x', s); /*@V*/
+    }
+}

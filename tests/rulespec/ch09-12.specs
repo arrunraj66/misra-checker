@@ -1,0 +1,571 @@
+##### rule 9.1
+summary: Reports a read of an automatic object that the control-flow analysis finds uninitialized on every path (certain) or on some path (possible).
+limits: Only automatic scalar objects are tracked. Values written through a pointer, and elements of arrays, are not followed.
+
+--- ok: initialized at the declaration
+int f(void) { int x = 1; return x; }
+
+--- ok: assigned on every path before the read
+int f(int c)
+{
+    int x;
+    if (c) { x = 1; } else { x = 2; }
+    return x;
+}
+
+--- ok: initialized through its address
+void init(int *p);
+int f(void)
+{
+    int x;
+    init(&x);
+    return x;
+}
+
+--- bad: read of an object that was never written
+int f(void)
+{
+    int x;
+    return x; /*@V*/
+}
+
+--- bad: written on only one path
+int f(int c)
+{
+    int x;
+    if (c) { x = 1; }
+    return x; /*@V*/
+}
+
+--- bad: read in an expression before the assignment
+int f(void)
+{
+    int a;
+    int b = a + 1; /*@V*/
+    a = 2;
+    return b + a;
+}
+
+##### rule 9.2
+summary: Reports an aggregate initializer that omits the braces of a nested aggregate (the single {0} form is accepted).
+limits: Only initializer lists are examined.
+
+--- ok: fully braced
+int a[2][2] = { { 1, 2 }, { 3, 4 } };
+
+--- ok: the zero initializer
+int b[2][2] = { 0 };
+struct pair { int x; int y; } p = { 0 };
+
+--- ok: braces for a nested struct
+struct inner { int a; int b; };
+struct outer { struct inner i; int c; };
+struct outer o = { { 1, 2 }, 3 };
+
+--- bad: nested array initialized without inner braces
+int a[2][2] = { 1, 2, 3, 4 }; /*@V*/
+
+--- bad: nested struct initialized without braces
+struct inner { int a; int b; };
+struct outer { struct inner i; int c; };
+struct outer o = { 1, 2, 3 }; /*@V*/
+
+##### rule 9.3
+summary: Reports an array initializer list that supplies fewer elements than the array size, other than the single-zero form.
+limits: String literal initializers of char arrays are not examined here.
+
+--- ok: every element supplied
+int a[3] = { 1, 2, 3 };
+
+--- ok: the single zero form
+int b[10] = { 0 };
+
+--- ok: size taken from the initializer
+int c[] = { 1, 2, 3, 4 };
+
+--- bad: fewer elements than the array size
+int a[5] = { 1, 2 }; /*@V*/
+
+--- bad: a single non-zero element for a larger array
+int b[4] = { 7 }; /*@V*/
+
+##### rule 9.4
+summary: Reports an element that is designated more than once in one initializer list.
+limits: Only designated initializers are examined.
+
+--- ok: distinct designators
+int a[3] = { [0] = 1, [2] = 3 };
+struct s { int x; int y; } v = { .x = 1, .y = 2 };
+
+--- bad: the same array element twice
+int a[3] = { [1] = 1, [1] = 2 }; /*@V*/
+
+--- bad: the same member twice
+struct s { int x; int y; };
+struct s v = { .x = 1, .x = 2 }; /*@V*/
+
+##### rule 9.5
+summary: Reports an array of unspecified size that is initialized with array designators.
+limits: Only arrays declared without a size are examined.
+
+--- ok: sized array with designators
+int a[5] = { [3] = 1 };
+
+--- ok: unspecified size without designators
+int b[] = { 1, 2, 3 };
+
+--- bad: unspecified size with a designator
+int a[] = { [2] = 1 }; /*@V*/
+
+##### rule 10.1
+summary: Subset: reports Boolean or enumerated operands of arithmetic operators, unary minus on unsigned operands, and operands of bitwise and shift operators that are not unsigned or not constants.
+limits: Only the listed operator and operand combinations are examined, not the whole operand table.
+
+--- ok: unsigned operands of bitwise operators
+unsigned int f(unsigned int a, unsigned int b) { return (a & b) | (a << 1); }
+
+--- ok: arithmetic on integers
+int g(int a, int b) { return a + b * 2; }
+
+--- bad: Boolean operand of an arithmetic operator
+int f(_Bool flag) { return flag + 1; } /*@V*/
+
+--- bad: enumerated operand of an arithmetic operator
+enum e { A, B };
+int g(enum e v) { return v + 1; } /*@V*/
+
+--- bad: unary minus on an unsigned operand
+int h(unsigned int u) { return (int)-u; } /*@V*/
+
+--- bad: bitwise operator on signed non-constant operands
+int k(int a, int b) { return a & b; } /*@V*/
+
+--- bad: shift of a signed non-constant value
+int m(int a) { return a << 2; } /*@V*/
+
+##### rule 10.2
+summary: Reports a character operand used inappropriately in an addition or subtraction.
+limits: Only addition and subtraction are examined.
+
+--- ok: a digit converted to a number and back
+int to_int(char c) { return c - '0'; }
+char to_char(int d) { return (char)('0' + d); }
+
+--- ok: character compared and not computed
+int is_a(char c) { return c == 'a'; }
+
+--- bad: two characters added
+int f(char a, char b) { return a + b; } /*@V*/
+
+--- bad: a character added to a character constant
+int g(char a) { return a + 'b'; } /*@V*/
+
+##### rule 10.3
+summary: Reports an assignment or initialization of a non-constant value to an object of a different essential type category or of a narrower width.
+limits: Constants are exempt. Only assignments and initializers are examined; function arguments and returns are Rule 10.3's neighbours but are not covered here.
+
+--- ok: same category, same or wider width
+int f(int a) { long wide = a; int same = a; return (int)wide + same; }
+
+--- ok: constants may initialize narrower objects
+unsigned char u = 3;
+
+--- ok: a conditional keeps the type of its operands
+int g(int c, int a, int b) { int r = c ? a : b; return r; }
+
+--- bad: narrowing assignment
+void f(int i)
+{
+    unsigned char u;
+    u = i; /*@V*/
+    (void)u;
+}
+
+--- bad: different category (int to float)
+void g(int i)
+{
+    float f = i; /*@V*/
+    (void)f;
+}
+
+--- bad: integer to Boolean
+void h(int i)
+{
+    _Bool b = i; /*@V*/
+    (void)b;
+}
+
+--- bad: wider to narrower within the same category
+void k(long l)
+{
+    int n = l; /*@V*/
+    (void)n;
+}
+
+##### rule 10.4
+summary: Reports arithmetic, relational, equality and bitwise operators whose non-constant operands have different essential type categories.
+limits: Constants are exempt. The essential type of arithmetic on small integers is computed without promotion.
+
+--- ok: same category
+int f(int a, int b) { return a + b; }
+int g(unsigned int a, unsigned int b) { return a < b; }
+
+--- ok: a constant operand of another category
+int h(unsigned int u) { return u + 1; }
+
+--- ok: small unsigned arithmetic is unsigned
+int k(unsigned char a, unsigned char b, unsigned char c) { return a == (b - c); }
+
+--- bad: signed with unsigned
+int f(int a, unsigned int b) { return a + b; } /*@V*/
+
+--- bad: integer with floating
+int g(int a, double b) { return a < b; } /*@V*/
+
+--- bad: Boolean with integer in a comparison
+int h(_Bool f, int a) { return f == a; } /*@V*/
+
+##### rule 10.5
+summary: Subset: reports casts to or from Boolean, to character, to an enumeration type from another type, and from character to floating.
+limits: Numeric casts between integer and floating types are not reported. Whether a cast of an integer constant to char is reported depends on the strict reading (undecided, see docs/independent-validation.md).
+
+--- ok: numeric casts
+long f(int a) { return (long)a; }
+unsigned int g(int a) { return (unsigned int)a; }
+float h(int a) { return (float)a; }
+
+--- ok: a cast between character types
+char k(char c) { return (char)c; }
+
+--- bad: unsigned char is an unsigned number in the essential type model, not a character
+char u(unsigned char c) { return (char)c; } /*@V*/
+
+--- bad: integer cast to Boolean
+_Bool f(int a) { return (_Bool)a; } /*@V*/
+
+--- bad: integer cast to character
+char g(int a) { return (char)a; } /*@V*/
+
+--- bad: integer cast to an enumeration
+enum e { A, B };
+enum e h(int a) { return (enum e)a; } /*@V*/
+
+--- bad: character cast to floating
+float k(char c) { return (float)c; } /*@V*/
+
+##### rule 10.6
+summary: Reports a composite arithmetic expression whose value is assigned to an object of a wider essential type.
+limits: The essential type of the expression is that of its operands (no integer promotion).
+
+--- ok: the operands are widened before the operation
+int f(short a, short b) { int r = (int)a + (int)b; return r; }
+
+--- ok: assignment to an object of the same width
+short g(short a, short b) { short r = (short)(a + b); return r; }
+
+--- bad: a short sum assigned to an int
+int f(short a, short b)
+{
+    int r = a + b; /*@V*/
+    return r;
+}
+
+--- bad: an unsigned char product assigned to an unsigned int
+unsigned int g(unsigned char a, unsigned char b)
+{
+    unsigned int r;
+    r = a * b; /*@V*/
+    return r;
+}
+
+##### rule 10.7
+summary: Reports a composite expression used as an operand together with an operand of a wider non-constant essential type.
+limits: Constants are exempt.
+
+--- ok: both operands of the same width
+int f(short a, short b, short c) { return (a + b) * c; }
+
+--- ok: a constant operand
+int g(short a, short b) { return (a + b) * 2; }
+
+--- bad: a composite short operand combined with an int
+int f(short a, short b, int c) { return (a + b) * c; } /*@V*/
+
+--- bad: a composite char-width operand combined with a long
+long g(unsigned char a, unsigned char b, long c) { return (a + b) + c; } /*@V*/
+
+##### rule 10.8
+summary: Reports a cast of a composite expression to a wider or different essential type.
+limits: Only explicit casts are examined.
+
+--- ok: cast to the same width
+short f(short a, short b) { return (short)(a + b); }
+
+--- ok: cast of a non-composite operand to a wider type
+int g(short a) { return (int)a; }
+
+--- bad: composite short sum cast to int
+int f(short a, short b) { return (int)(a + b); } /*@V*/
+
+--- bad: composite unsigned char product cast to unsigned long
+unsigned long g(unsigned char a, unsigned char b) { return (unsigned long)(a * b); } /*@V*/
+
+##### rule 11.1
+summary: Reports a cast that converts to or from a function pointer type, other than the ordinary conversion of a function designator to a pointer.
+limits: A cast to void of a function pointer is not reported (documented gap; the FreeRTOS authors treat it as a violation).
+
+--- ok: calling through a function pointer and assigning a compatible one
+int twice(int x) { return x * 2; }
+int (*fp)(int) = twice;
+int use(void) { return fp(3); }
+
+--- ok: attributes do not change the function pointer type
+typedef void (*task_t)(void *arg);
+static void idle(void *arg) __attribute__((noreturn));
+static void idle(void *arg) { (void)arg; for (;;) { } }
+task_t entry = &idle;
+
+--- bad: function pointer cast to void pointer
+void (*fp)(void);
+void *p = (void *)fp; /*@V*/
+
+--- bad: function pointer cast to an integer
+void (*fp)(void);
+unsigned long v = (unsigned long)fp; /*@V*/
+
+--- bad: cast between two function pointer types
+int (*a)(int);
+long (*b)(long) = (long (*)(long))a; /*@V*/
+
+--- gap: a cast of a function pointer to void
+void (*fp)(void);
+void f(void) { (void)fp; } /*@V*/
+
+##### rule 11.2
+summary: Reports a conversion between a pointer to an incomplete type and any other pointer or integer type (a null pointer constant is exempt).
+limits: Only conversions of pointers to incomplete struct or union types are examined.
+
+--- ok: a null pointer constant and equal types
+struct opaque;
+struct opaque *handle;
+int is_set(void) { return handle != 0; }
+struct opaque *copy(struct opaque *p) { return p; }
+
+--- ok: conversion to void pointer of a complete type
+int x;
+void *v = &x;
+
+--- bad: pointer to incomplete type cast to an integer
+struct opaque;
+unsigned long f(struct opaque *p) { return (unsigned long)p; } /*@V*/
+
+--- bad: pointer to incomplete type cast to another pointer type
+struct opaque;
+char *g(struct opaque *p) { return (char *)p; } /*@V*/
+
+##### rule 11.3
+summary: Reports an explicit cast between pointers to different object types (void pointers are excluded).
+limits: Casts to and from character-type pointers are reported (strict reading; Coverity and cppcheck do not report them, so this is undecided).
+
+--- ok: same type, qualifier changes handled elsewhere
+int *f(int *p) { return (int *)p; }
+
+--- ok: conversion through void pointer is Rule 11.5
+void *g(int *p) { return (void *)p; }
+
+--- bad: int pointer to float pointer
+float *f(int *p) { return (float *)p; } /*@V*/
+
+--- bad: struct pointer to int pointer
+struct s { int a; };
+int *g(struct s *p) { return (int *)p; } /*@V*/
+
+--- bad: int pointer to char pointer (strict reading)
+char *h(int *p) { return (char *)p; } /*@V*/
+
+##### rule 11.4
+summary: Reports an explicit cast between a pointer and an integer type (a null constant is exempt).
+limits: Only explicit casts are examined.
+
+--- ok: null pointer constants
+int *p = (int *)0;
+void *q = (void *)0;
+
+--- ok: no cast
+int *r = 0;
+
+--- bad: integer address cast to a pointer
+int *p = (int *)0x1000; /*@V*/
+
+--- bad: pointer cast to an integer
+unsigned long f(int *p) { return (unsigned long)p; } /*@V*/
+
+--- bad: a memory-mapped register address
+#define REG (*(volatile unsigned int *)0x40021000)
+unsigned int f(void) { return REG; } /*@V*/
+
+##### rule 11.5
+summary: Reports a conversion from pointer to void to a pointer to an object type, implicit or explicit.
+limits: A conversion in the other direction (object pointer to void pointer) is compliant.
+
+--- ok: object pointer to void pointer
+int x;
+void *v = &x;
+
+--- ok: void pointer stays void pointer
+void *copy(void *p) { return p; }
+
+--- bad: implicit conversion
+void *src(void);
+int *p;
+void f(void) { p = src(); } /*@V*/
+
+--- bad: explicit cast of a void pointer
+void *src(void);
+int *g(void) { return (int *)src(); } /*@V*/
+
+##### rule 11.6
+summary: Reports an explicit cast between a pointer to void and an integer type.
+limits: A null pointer constant is exempt.
+
+--- ok: null pointer
+void *p = (void *)0;
+
+--- ok: pointers only
+int x;
+void *q = &x;
+
+--- bad: integer cast to void pointer
+void *p = (void *)5; /*@V*/
+
+--- bad: void pointer cast to integer
+unsigned long f(void *p) { return (unsigned long)p; } /*@V*/
+
+##### rule 11.7
+summary: Reports a cast between a pointer and a floating type.
+limits: Compilers reject such casts, so the check is reached only through compiler extensions. No violating example can be compiled in standard mode.
+
+--- ok: pointer and floating objects without a cast between them
+float f;
+int *p;
+void g(void) { f = 1.0f; p = 0; }
+
+--- ok: casts that are not between pointers and floating types
+double d = (double)1;
+long l = (long)d;
+
+##### rule 11.8
+summary: Reports an explicit pointer cast that removes const or volatile from the pointed-to type.
+limits: Only explicit casts are examined; an implicit conversion that drops a qualifier is a compiler diagnostic.
+
+--- ok: adding a qualifier
+const int *f(int *p) { return (const int *)p; }
+
+--- ok: casting without changing qualifiers
+int *g(int *p) { return (int *)p; }
+
+--- bad: casting away const
+int *f(const int *p) { return (int *)p; } /*@V*/
+
+--- bad: casting away volatile
+int *g(volatile int *p) { return (int *)p; } /*@V*/
+
+##### rule 11.9
+summary: Reports a null pointer constant that is not written with the NULL macro (for example a plain 0 or (void *)0).
+limits: NULL passed through the argument of another macro still counts as NULL.
+
+--- ok: NULL and comparisons without a constant
+#include <stddef.h>
+int *p = NULL;
+int f(int *q) { return q != NULL && *q > 0; }
+
+--- ok: a pointer used as a condition
+int g(int *q) { if (q) { return 1; } return 0; }
+
+--- bad: zero as a null pointer
+int *p = 0; /*@V*/
+
+--- bad: comparison with zero
+int f(int *p) { return p == 0; } /*@V*/
+
+--- bad: a cast zero
+void *q = (void *)0; /*@V*/
+
+##### rule 12.1
+summary: Strict reading: reports a binary operator that has an unparenthesized binary operand of a different precedence level.
+limits: Chains of the same precedence level are accepted; this is the strict interpretation of the rule.
+
+--- ok: explicit parentheses
+int f(int a, int b, int c) { return a + (b * c); }
+
+--- ok: operators of the same level
+int g(int a, int b, int c) { return a + b + c; }
+int h(int a, int b, int c) { return a * b * c; }
+
+--- ok: parenthesized logical mix
+int k(int a, int b, int c) { return (a && b) || c; }
+
+--- bad: addition mixed with multiplication
+int f(int a, int b, int c) { return a + b * c; } /*@V*/
+
+--- bad: logical and mixed with logical or
+int g(int a, int b, int c) { return a || b && c; } /*@V*/
+
+--- bad: shift mixed with addition
+int h(int a, int b) { return a << b + 1; } /*@V*/
+
+##### rule 12.2
+summary: Reports a constant shift count that is negative or not smaller than the width of the left operand.
+limits: Only constant shift counts are examined.
+
+--- ok: counts within the width
+unsigned int a = 1U << 31;
+unsigned char b(unsigned char x) { return (unsigned char)(x << 3); }
+
+--- bad: count equal to the width
+unsigned int f(unsigned int x) { return x << 32; } /*@V*/
+
+--- bad: negative count
+int g(int x) { return x << -1; } /*@V*/
+
+--- bad: count too big for the type of the left operand
+long long h(long long x) { return x >> 64; } /*@V*/
+
+##### rule 12.3
+summary: Reports every use of the comma operator.
+limits: Commas that separate arguments, declarators and initializers are not the comma operator.
+
+--- ok: commas in calls, declarations and initializers
+int add(int a, int b);
+int a = 1, b = 2;
+int arr[3] = { 1, 2, 3 };
+int s = 0;
+void f(void) { s = add(a, b); }
+
+--- bad: comma operator in a for statement
+void f(void)
+{
+    int i, j;
+    for (i = 0, j = 10; i < j; i++) { j--; } /*@V*/
+}
+
+--- bad: comma operator in an expression
+int g(int a, int b) { return (a++, b); } /*@V*/
+
+##### rule 12.4
+summary: Reports a constant unsigned addition, subtraction, multiplication or shift whose exact result does not fit the type (wrap-around).
+limits: Only constant expressions are evaluated.
+
+--- ok: results that fit
+unsigned int a = 5U - 3U;
+unsigned int b = 0xFFFFFFFFU - 1U;
+unsigned int c = 1U << 31;
+
+--- bad: unsigned subtraction below zero
+unsigned int a = 0U - 1U; /*@V*/
+
+--- bad: unsigned addition past the maximum
+unsigned int b = 0xFFFFFFFFU + 1U; /*@V*/
+
+--- bad: unsigned multiplication overflow
+unsigned int c = 0x10000U * 0x10000U; /*@V*/

@@ -1,0 +1,430 @@
+##### rule 17.1
+summary: Reports use of va_arg and of the va_start, va_end and va_copy built-ins from the variable-argument facility.
+limits: Matched by use; a function declared with an ellipsis but never reading its arguments is not reported.
+
+--- ok: a normal function
+int add(int a, int b) { return a + b; }
+
+--- ok: only the header is included
+#include <stdarg.h>
+int plain(int a) { return a; }
+
+--- bad: reading variable arguments
+#include <stdarg.h>
+int sum(int n, ...)
+{
+    va_list ap;
+    int v;
+    va_start(ap, n); /*@V*/
+    v = va_arg(ap, int); /*@V*/
+    va_end(ap); /*@V*/
+    return v;
+}
+
+##### rule 17.2
+summary: Reports a function that can reach itself through direct or mutual calls visible in the translation unit.
+limits: Calls through function pointers and calls into other translation units are not followed.
+
+--- ok: no recursion
+int helper(int x) { return x + 1; }
+int top(int x) { return helper(x); }
+
+--- ok: a call to a different function with the same name pattern
+int fact_iter(int n) { int r = 1; int i; for (i = 2; i <= n; i++) { r *= i; } return r; }
+
+--- bad: direct recursion
+int fact(int n) /*@V*/
+{
+    return (n <= 1) ? 1 : (n * fact(n - 1));
+}
+
+--- bad: mutual recursion
+int is_odd(int n);
+int is_even(int n) /*@V*/
+{
+    return (n == 0) ? 1 : is_odd(n - 1);
+}
+int is_odd(int n)
+{
+    return (n == 0) ? 0 : is_even(n - 1);
+}
+
+--- gap: recursion through a function pointer is not followed
+typedef int (*fn_t)(int);
+int loop(int n)
+{
+    fn_t self = loop;
+    return (n > 0) ? self(n - 1) : 0; /*@V*/
+}
+
+##### rule 17.3
+summary: Reports a call to an implicitly declared function (one with no prior declaration).
+limits: Compiler built-in functions are not reported.
+
+--- ok: declared before the call
+int helper(int x);
+int use(int x) { return helper(x); }
+
+--- ok: a standard function with its header
+#include <string.h>
+unsigned long n(const char *s) { return strlen(s); }
+
+--- bad: call of an undeclared function
+int use(int x)
+{
+    return unknown_function(x); /*@V*/
+}
+
+--- bad: a second undeclared call
+void g(void)
+{
+    another_unknown(); /*@V*/
+}
+
+##### rule 17.4
+summary: Reports a return without a value in a non-void function, and a non-void function that has a reachable path leaving the body without returning a value (main is exempt).
+limits: Functions that compile errors have made invalid, and functions whose body was emptied by an error, are not examined.
+
+--- ok: every path returns a value
+int f(int x) { if (x) { return 1; } return 0; }
+
+--- ok: a void function
+void g(int x) { if (x) { return; } }
+
+--- ok: main is exempt
+int main(void) { }
+
+--- ok: a function that never returns
+void h(void) { for (;;) { } }
+
+--- bad: one path has no return
+int f(int x) /*@V*/
+{
+    if (x) { return 1; }
+}
+
+--- bad: a switch whose clauses do not all return
+int g(int v) /*@V*/
+{
+    switch (v)
+    {
+        case 1: return 1;
+        default: break;
+    }
+}
+
+--- bad: falls off the end after a loop
+int k(int n) /*@V*/
+{
+    while (n > 0) { n--; }
+}
+
+##### rule 17.5
+summary: Reports an argument that is smaller than the stated size of its array parameter, or a null argument for one.
+limits: Only arguments whose array size is known at the call site are checked.
+
+--- ok: argument at least as large as the parameter
+void f(int a[4]);
+int big[8];
+int exact[4];
+void g(void) { f(big); f(exact); }
+
+--- ok: a parameter of unspecified size
+void h(int a[]);
+int small[2];
+void k(void) { h(small); }
+
+--- bad: argument smaller than the parameter
+void f(int a[4]);
+int small[2];
+void g(void) { f(small); } /*@V*/
+
+--- bad: null argument for an array parameter
+void f(int a[4]);
+void g(void) { f(0); } /*@V*/
+
+##### rule 17.6
+summary: Reports an array parameter declared with the static keyword inside the brackets.
+limits: Only the bracketed form is examined.
+
+--- ok: ordinary array parameter
+void f(int a[4]);
+void g(int b[]);
+
+--- bad: static inside the brackets
+void f(int a[static 4]); /*@V*/
+
+--- bad: in a definition
+int sum(int a[static 2]) { return a[0] + a[1]; } /*@V*/
+
+##### rule 17.7
+summary: Reports a call to a non-void function used as an expression statement (a cast to void is accepted).
+limits: Only calls whose result is discarded as a statement are examined.
+
+--- ok: the result is used or cast to void
+int g(void);
+void f(void) { int x = g(); (void)g(); (void)x; }
+
+--- ok: a void function
+void h(void);
+void k(void) { h(); }
+
+--- bad: the result of a function is discarded
+int g(void);
+void f(void)
+{
+    g(); /*@V*/
+}
+
+--- bad: the result of a library function is discarded
+#include <string.h>
+void f(char *d, const char *s)
+{
+    strcpy(d, s); /*@V*/
+}
+
+##### rule 17.8
+summary: Reports assignment, compound assignment, increment or decrement applied directly to a function parameter.
+limits: Modifying the object a pointer parameter points to is allowed; only the parameter itself is examined.
+
+--- ok: the pointee is modified
+void set(int *p) { *p = 1; (*p)++; }
+
+--- ok: a local copy is modified
+int f(int a) { int local = a; local++; return local; }
+
+--- bad: assignment to a parameter
+int f(int a)
+{
+    a = 1; /*@V*/
+    return a;
+}
+
+--- bad: increment of a parameter
+int g(int a)
+{
+    a++; /*@V*/
+    return a;
+}
+
+--- bad: compound assignment to a pointer parameter
+void h(char *p)
+{
+    p += 1; /*@V*/
+    (void)p;
+}
+
+##### rule 18.1
+summary: Subset: reports a constant offset or constant index that falls outside the declared array (a pointer one past the end is accepted).
+limits: Only constant offsets on arrays with a known size are examined.
+
+--- ok: indexes inside the array and the one-past-the-end pointer
+int a[4];
+int first(void) { return a[0]; }
+int last(void) { return a[3]; }
+int *end = a + 4;
+
+--- bad: a constant index past the end
+int a[4];
+int f(void) { return a[4]; } /*@V*/
+
+--- bad: a negative constant index
+int a[4];
+int g(void) { return a[-1]; } /*@V*/
+
+--- bad: a pointer formed beyond one past the end
+int a[4];
+int *p = a + 5; /*@V*/
+
+--- gap: an index computed through a variable
+int a[4];
+int h(void)
+{
+    int i = 6;
+    return a[i]; /*@V*/
+}
+
+##### rule 18.2
+summary: Subset: reports the subtraction of pointers derived from two different declared arrays.
+limits: Only pointers formed directly from named arrays are examined.
+
+--- ok: pointers into the same array
+int a[8];
+long d(void) { return &a[6] - &a[1]; }
+
+--- bad: pointers into two arrays
+int a[8];
+int b[8];
+long d(void) { return &a[1] - &b[0]; } /*@V*/
+
+--- bad: array names of two arrays
+int a[8];
+int b[8];
+long e(void) { return (a + 2) - b; } /*@V*/
+
+##### rule 18.3
+summary: Subset: reports a relational comparison of pointers derived from two different declared arrays.
+limits: Only pointers formed directly from named arrays are examined.
+
+--- ok: comparing within one array
+int a[8];
+int f(void) { return &a[1] < &a[5]; }
+
+--- bad: comparing across arrays
+int a[8];
+int b[8];
+int f(void) { return &a[1] < &b[1]; } /*@V*/
+
+--- bad: with the other relational operators
+int a[8];
+int b[8];
+int g(void) { return &a[0] >= &b[0]; } /*@V*/
+
+##### rule 18.4
+summary: Reports +, -, += and -= applied to an operand of pointer type.
+limits: Subscripting, dereference and increment or decrement are not reported.
+
+--- ok: subscripts and dereference
+int f(int *p) { return p[1] + *p; }
+
+--- ok: increment (not one of the listed operators)
+int g(int *p) { p++; return *p; }
+
+--- bad: pointer plus integer
+int *f(int *p) { return p + 1; } /*@V*/
+
+--- bad: pointer minus integer
+int *g(int *p) { return p - 1; } /*@V*/
+
+--- bad: compound assignments on a pointer
+void h(int *p)
+{
+    p += 2; /*@V*/
+    p -= 1; /*@V*/
+    (void)p;
+}
+
+--- bad: an array name decays to a pointer
+int a[4];
+int *k(void) { return a + 1; } /*@V*/
+
+##### rule 18.5
+summary: Reports a declaration whose type has more than two levels of pointer nesting.
+limits: The levels are counted in the declaration as written; a typedef name counts as one level, so a typedef of a two-level pointer used through one more pointer is not reported (each declaration has at most two levels).
+
+--- ok: up to two levels
+int *a;
+int **b;
+char *argv[4];
+
+--- bad: three levels
+int ***c; /*@V*/
+
+--- ok: a typedef counts as one level in the declaration that uses it
+typedef int **pp_t;
+void f(pp_t *q);
+
+--- bad: three levels written in a parameter
+void g(int ***r); /*@V*/
+
+##### rule 18.6
+summary: Subset: reports returning, or storing in a longer-lived object, the address of an automatic object.
+limits: Only direct address-of expressions of local objects are tracked.
+
+--- ok: the address of a static object or of a parameter pointer
+int *f(void) { static int s; return &s; }
+int *g(int *p) { return p; }
+
+--- ok: a local pointer to a local object
+int h(void) { int x = 1; int *p = &x; return *p; }
+
+--- bad: returning the address of a local
+int *f(void)
+{
+    int x = 1;
+    return &x; /*@V*/
+}
+
+--- bad: storing the address of a local in a global
+int *keep;
+void g(void)
+{
+    int y = 2;
+    keep = &y; /*@V*/
+}
+
+--- bad: returning the address of a local array
+char *name(void)
+{
+    char buf[8];
+    return buf; /*@V*/
+}
+
+##### rule 18.7
+summary: Reports a structure whose last member is an array of unspecified size (a flexible array member).
+limits: Only structure definitions are examined.
+
+--- ok: fixed-size array members
+struct a { int n; int data[4]; };
+
+--- ok: a pointer member
+struct b { int n; int *data; };
+
+--- bad: flexible array member
+struct c { int n; int data[]; }; /*@V*/
+
+##### rule 18.8
+summary: Reports a declaration of variable-length array type.
+limits: Only declarations whose size is not a constant are examined.
+
+--- ok: constant sized arrays
+#define N 8
+void f(void) { int a[N]; int b[4]; (void)a; (void)b; }
+
+--- bad: size from a parameter
+void f(int n)
+{
+    int a[n]; /*@V*/
+    (void)a;
+}
+
+--- bad: a variable-length array parameter type
+void g(int n, int m[n]); /*@V*/
+
+##### rule 19.1
+summary: Subset: reports self-assignment and copy calls whose source and destination are the same expression.
+limits: Only syntactically identical operands are compared; overlapping objects reached by different expressions are not found.
+
+--- ok: assignment between different objects
+void f(int a, int b) { a = b; (void)a; }
+
+--- ok: a copy between different buffers
+#include <string.h>
+void g(char *d, const char *s) { memcpy(d, s, 4); }
+
+--- bad: self-assignment
+void f(int a)
+{
+    a = a; /*@V*/
+}
+
+--- bad: copying a buffer onto itself
+#include <string.h>
+void g(char *p) { memcpy(p, p, 4); } /*@V*/
+
+--- gap: overlap through different expressions
+#include <string.h>
+void h(char *p) { memcpy(p, p + 1, 4); } /*@V*/
+
+##### rule 19.2
+summary: Reports the definition of a union type.
+limits: Only definitions are reported, not uses of a union defined elsewhere.
+
+--- ok: structures only
+struct s { int a; float b; };
+
+--- bad: a union definition
+union u { int i; float f; }; /*@V*/
+
+--- bad: an anonymous union member
+struct s { int kind; union { int i; float f; } value; }; /*@V*/

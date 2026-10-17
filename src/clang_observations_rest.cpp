@@ -689,10 +689,9 @@ class RestVisitor final : public clang::RecursiveASTVisitor<RestVisitor> {
             released_or_escaped = true;  // initializer of another declaration
             break;
           }
-          if (llvm::isa<clang::ParenExpr>(parent) ||
-              (llvm::isa<clang::ImplicitCastExpr>(parent) &&
-               (llvm::cast<clang::ImplicitCastExpr>(parent)->getCastKind() ==
-                clang::CK_LValueToRValue))) {
+          // Look through parentheses and every implicit conversion: free(p) on a char pointer
+          // converts it to void *, which must still count as handing the pointer on.
+          if (llvm::isa<clang::ParenExpr>(parent) || llvm::isa<clang::ImplicitCastExpr>(parent)) {
             current = parent;
             continue;
           }
@@ -709,8 +708,7 @@ class RestVisitor final : public clang::RecursiveASTVisitor<RestVisitor> {
                 (binary->getLHS()->IgnoreParenImpCasts() == reference);
             released_or_escaped = released_or_escaped || (!comparison && !assigned_to);
           } else if (llvm::isa<clang::UnaryOperator>(parent) || llvm::isa<clang::MemberExpr>(parent) ||
-                     llvm::isa<clang::ArraySubscriptExpr>(parent) ||
-                     llvm::isa<clang::ImplicitCastExpr>(parent) || llvm::isa<clang::IfStmt>(parent)) {
+                     llvm::isa<clang::ArraySubscriptExpr>(parent) || llvm::isa<clang::IfStmt>(parent)) {
             const auto* unary = llvm::dyn_cast<clang::UnaryOperator>(parent);
             released_or_escaped = released_or_escaped ||
                                   ((unary != nullptr) && (unary->getOpcode() == clang::UO_AddrOf));

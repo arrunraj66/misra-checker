@@ -266,7 +266,11 @@ class ObservationVisitor final
     if (pointer_depth(type) > 2U) {
       recorder_.add("pointer-nesting", location);
     }
-    if (type->isVariableArrayType()) {
+    // A parameter declared as `int a[n]` has already been adjusted to a pointer; the type as
+    // written still shows the variably modified type.
+    const auto* parameter = llvm::dyn_cast<clang::ParmVarDecl>(variable);
+    if (type->isVariableArrayType() ||
+        ((parameter != nullptr) && parameter->getOriginalType()->isVariablyModifiedType())) {
       recorder_.add("variable-length-array", location);
     }
     if (variable->isFileVarDecl()) {

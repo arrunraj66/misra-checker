@@ -856,6 +856,13 @@ class ExtraVisitor final : public clang::RecursiveASTVisitor<ExtraVisitor> {
     if (declaration->isImplicit() || (declaration->getTypeSourceInfo() == nullptr)) {
       return;
     }
+    if (const auto* function = llvm::dyn_cast<clang::FunctionDecl>(declaration)) {
+      // A function whose return type is not written at all (implicit int).
+      if (function->getReturnTypeSourceRange().isInvalid() && !function->isImplicit()) {
+        recorder_.add("implicit-type", function->getLocation());
+      }
+      return;
+    }
     const clang::SourceLocation type_start = declaration->getTypeSpecStartLoc();
     if (type_start.isInvalid() || (sm_.getExpansionLoc(type_start) == sm_.getExpansionLoc(declaration->getLocation()) &&
                                    !llvm::isa<clang::FunctionDecl>(declaration) &&
@@ -936,6 +943,12 @@ class ExtraVisitor final : public clang::RecursiveASTVisitor<ExtraVisitor> {
     const clang::Expr* stripped = expression->IgnoreParenImpCasts();
     if (is_boolean_like(stripped)) {
       return {Category::Boolean, 1U, nullptr};
+    }
+    // A character constant such as 'a' has type int in C but is essentially a character.
+    if (const auto* character = llvm::dyn_cast<clang::CharacterLiteral>(stripped)) {
+      if (character->getKind() == clang::CharacterLiteral::Ascii) {
+        return {Category::Character, static_cast<unsigned int>(ast_.getTypeSize(ast_.CharTy)), nullptr};
+      }
     }
     if (const auto* conditional = llvm::dyn_cast<clang::ConditionalOperator>(stripped)) {
       const clang::Expr* first = conditional->getTrueExpr();
