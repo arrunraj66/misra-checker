@@ -212,6 +212,9 @@ td.loc { font:12.5px var(--mono); color:var(--muted); white-space:nowrap; }
 tr.dev td { opacity:.62; } tr.dev td:first-child { opacity:1; }
 .xtag { display:inline-block; font:600 11px system-ui,sans-serif; padding:1px 8px; border-radius:999px; border:1px solid currentColor; white-space:nowrap; }
 .xtag.both { color:var(--pass); } .xtag.ours-only { color:var(--muted); } .xtag.cppcheck-only { color:var(--warn); }
+.newtag { font:700 10px system-ui,sans-serif; text-transform:uppercase; padding:0 6px; border-radius:6px; margin-left:6px;
+  background:var(--accent); color:var(--accent-ink); }
+.chip.st-new { color:var(--accent); }
 .vbtn { background:none; border:1px solid var(--line); border-radius:6px; cursor:pointer; padding:0 6px; font-size:12px; color:var(--muted); }
 .vbtn:hover { color:var(--text); background:var(--surface-2); }
 .vtag { font:600 10px system-ui,sans-serif; text-transform:uppercase; padding:0 6px; border-radius:6px; border:1px solid currentColor; margin-right:4px; }
@@ -481,6 +484,7 @@ let active = Math.max(0, Math.min(store.get("active", 0), files.length - 1));
 let lastRes = null, stale = false;
 let sortKey = "loc", sortDir = 1, selectedFinding = null;
 const sevOff = new Set(); let findQuery = "";
+const statusOff = new Set();
 const crossOff = new Set();
 let rules = [];
 let project = null, viewPath = null;
@@ -602,7 +606,7 @@ function visibleFindings() {
     ...c, col: 0, category: ruleCategory(c.rule), key: "cppcheck",
     message: "reported only by cppcheck" + (c.message ? ": " + c.message : "") }));
   const pool = lastRes.findings.concat(devOff.v ? [] : (lastRes.deviated || []).map((d) => ({ ...d, deviated: true })), crossOnly);
-  const rows = pool.filter((x) => !sevOff.has(x.category) && !(libOff.v && x.library) && !crossOff.has(x.cross) &&
+  const rows = pool.filter((x) => !sevOff.has(x.category) && !(libOff.v && x.library) && !crossOff.has(x.cross) && !statusOff.has(x.status) &&
     (!q || `${x.rule} ${x.message} ${topicOf(x.rule)} ${x.file}`.toLowerCase().includes(q)));
   const ruleNum = (r) => r.split(".").map(Number);
   const cmp = {
@@ -621,8 +625,8 @@ function download(name, text, type) {
 }
 function exportCsv() {
   const q = (v) => '"' + String(v).replace(/"/g, '""') + '"';
-  download("misra-findings.csv", ["file,line,column,rule,category,check,topic,origin,cppcheck",
-    ...visibleFindings().map((x) => [x.file, x.line, x.col, x.rule, x.category, x.message, topicOf(x.rule), x.library ? "library" : "project", x.cross || ""].map(q).join(","))].join("\n"), "text/csv");
+  download("misra-findings.csv", ["file,line,column,rule,category,check,topic,origin,cppcheck,status,fingerprint",
+    ...visibleFindings().map((x) => [x.file, x.line, x.col, x.rule, x.category, x.message, topicOf(x.rule), x.library ? "library" : "project", x.cross || "", x.status || "", x.fp || ""].map(q).join(","))].join("\n"), "text/csv");
 }
 function exportJson() { download("misra-findings.json", JSON.stringify(visibleFindings(), null, 2), "application/json"); }
 function exportReport() {
@@ -673,6 +677,7 @@ function renderResult() {
     card(new Set(all.map((x) => x.rule)).size, "Rules hit"),
     ...SEVS.filter((s) => counts[s]).map((s) => card(counts[s], s, s)),
     ...((res.deviated || []).length ? [card(res.deviated.length, "Deviated")] : []),
+    ...(res.baseline ? [card(res.baseline.new, "new", "mandatory"), card(res.baseline.unchanged, "unchanged"), card(res.baseline.fixed, "fixed", "pass")] : []),
     ...(res.cross ? [card(res.cross.agree, "cppcheck agrees", "pass"), card(res.cross.ours_only, "only here"), card(res.cross.cppcheck_only, "only cppcheck")] : [])));
   if (res.cross) {
     box.append(el("div", { className: "xnote" },
@@ -685,6 +690,7 @@ function renderResult() {
   const staleBanner = el("div", { className: "banner warn", id: "stale-banner" }, "The code changed since this analysis. Run it again to refresh the results.");
   staleBanner.hidden = !stale;
   box.append(staleBanner);
+  box.append(baselineBlock(res));
   if (res.error) box.append(el("div", { className: "banner err" }, res.error));
   if (res.compile_errors) {
     if ((res.missing_headers || []).length) {
@@ -717,6 +723,13 @@ function renderResult() {
     dc.addEventListener("click", () => { devOff.v = !devOff.v; renderResult(); });
     bar.append(dc);
   }
+  if (res.baseline) {
+    [["new", "New since baseline", res.baseline.new], ["unchanged", "Unchanged", res.baseline.unchanged]].forEach(([key, label, n]) => {
+      const sc = el("span", { className: `chip st-${key}` + (statusOff.has(key) ? " off" : ""), role: "button", tabIndex: 0 }, el("i"), `${label} ${n}`);
+      sc.addEventListener("click", () => { statusOff.has(key) ? statusOff.delete(key) : statusOff.add(key); renderResult(); });
+      bar.append(sc);
+    });
+  }
   if (res.cross) {
     [["both", "Confirmed by cppcheck", res.cross.agree], ["ours-only", "Only misra-checker", res.cross.ours_only],
      ["cppcheck-only", "Only cppcheck", res.cross.cppcheck_only]].forEach(([key, label, n]) => {
@@ -739,6 +752,46 @@ function renderResult() {
   renderTable();
   if (res.summary) box.append(el("div", { className: "sub", style: "padding:10px 12px" }, res.summary + (res.compiler ? ` Compiler profile: ${res.compiler}.` : "")));
 }
+// ---- baseline: what is new since the last saved state
+function baselineBlock(res) {
+  const wrap = el("div", { className: "xnote", style: "display:flex;gap:8px;flex-wrap:wrap;align-items:center" });
+  if (!res.workspace_key) return wrap;
+  const b = res.baseline;
+  if (b) {
+    const gate = (b.new_by_category.required || 0) + (b.new_by_category.mandatory || 0);
+    wrap.append(el("span", {}, `Baseline from ${new Date(b.saved).toLocaleString()}: `), el("b", {}, `${b.new} new`),
+      `, ${b.unchanged} unchanged, ${b.fixed} fixed. `,
+      gate ? el("span", { className: "badge FAIL", title: "A CI gate on required and mandatory rules would fail" }, `${gate} new required/mandatory`)
+           : el("span", { className: "badge PASS" }, "no new required/mandatory"));
+  } else {
+    wrap.append("No baseline yet. Save one to see from now on what is new, unchanged or fixed.");
+  }
+  const save = el("button", { className: "btn small", title: "Remember these findings as the reference state" }, b ? "Update baseline" : "Save as baseline");
+  save.addEventListener("click", async () => {
+    try {
+      await api("/api/baseline/save", { method: "POST", body: JSON.stringify({ key: res.workspace_key }) });
+      res.findings.forEach((f) => { f.status = "unchanged"; });
+      res.baseline = { saved: new Date().toISOString(), new: 0, unchanged: res.findings.length, fixed: 0, new_by_category: {}, fixed_entries: [] };
+      toast("Baseline saved");
+      renderResult();
+    } catch (e) { toast(e.message); }
+  });
+  wrap.append(save);
+  if (b) {
+    const clear = el("button", { className: "btn small" }, "Clear");
+    clear.addEventListener("click", async () => {
+      try { await api("/api/baseline/clear", { method: "POST", body: JSON.stringify({ key: res.workspace_key }) });
+        res.baseline = null; res.findings.forEach((f) => { delete f.status; }); renderResult(); } catch (e) { toast(e.message); }
+    });
+    wrap.append(clear);
+    if (b.fixed_entries && b.fixed_entries.length) {
+      wrap.append(el("details", { style: "flex-basis:100%" }, el("summary", {}, `Fixed since the baseline (${b.fixed})`),
+        ...b.fixed_entries.map((e) => el("div", { className: "sub" }, `${e.file}:${e.line}  Rule ${e.rule}  ${e.text}`))));
+    }
+  }
+  return wrap;
+}
+
 function renderTable() {
   const rows = visibleFindings(), body = el("tbody");
   const th = (label, key) => {
@@ -749,7 +802,8 @@ function renderTable() {
   rows.forEach((x) => {
     const base = x.file.split("/").pop();
     const tr = el("tr", { className: "clickable" + (selectedFinding === x ? " sel" : "") + (x.deviated ? " dev" : "") },
-      el("td", {}, sevTag(x.category), ...(x.deviated ? [el("span", { className: "devtag", title: "Covered by deviation " + x.deviation }, x.deviation)] : [])),
+      el("td", {}, sevTag(x.category), ...(x.status === "new" && lastRes.baseline ? [el("span", { className: "newtag", title: "Not in the saved baseline" }, "new")] : []),
+        ...(x.deviated ? [el("span", { className: "devtag", title: "Covered by deviation " + x.deviation }, x.deviation)] : [])),
       el("td", {}, el("div", { className: "rulecode" }, x.rule), el("div", { className: "sub" }, topicOf(x.rule))),
       el("td", {}, x.message),
       ...(lastRes.cross ? [el("td", {}, x.cross && x.cross !== "not-comparable"
@@ -1047,7 +1101,7 @@ $("valall").addEventListener("click", async () => {
 ["filter", "fcat", "fstat"].forEach((i) => $(i).addEventListener("input", renderRules));
 
 // ---- triage: verdicts on findings and missed violations
-let triageCases = [], triageSummary = {};
+let triageCases = [], triageSummary = {}, triageFp = "";
 const KIND_LABEL = { "false-positive": "FP", "true-positive": "TP", "false-negative": "missed" };
 function fieldText(rule) {
   const r = triageSummary[rule];
@@ -1063,7 +1117,10 @@ async function loadTriage() {
   if (typeof renderRules === "function") renderRules();
   if (lastRes && $("ftable")) renderTable();
 }
-function verdictsFor(x) { return triageCases.filter((c) => c.file === x.file && c.rule === x.rule && c.line === x.line); }
+function verdictsFor(x) {
+  // A fingerprint follows the violation when the code around it changes; older cases fall back to the line.
+  return triageCases.filter((c) => (c.fp && x.fp) ? c.fp === x.fp : (c.file === x.file && c.rule === x.rule && c.line === x.line));
+}
 function verdictCell(x) {
   const td = el("td", {});
   if (x.cross === "cppcheck-only") {
@@ -1075,7 +1132,7 @@ function verdictCell(x) {
   verdictsFor(x).forEach((c) => td.append(el("span", { className: "vtag " + c.kind, title: c.note || "" }, KIND_LABEL[c.kind])));
   for (const [kind, label, tip] of [["true-positive", "✓", "True positive: the violation is real"], ["false-positive", "✗", "False positive: the checker is wrong"]]) {
     const b = el("button", { className: "vbtn", title: tip }, label);
-    b.addEventListener("click", (ev) => { ev.stopPropagation(); openTriage({ kind, rule: x.rule, file: x.file, line: x.line }); });
+    b.addEventListener("click", (ev) => { ev.stopPropagation(); openTriage({ kind, rule: x.rule, file: x.file, line: x.line, fp: x.fp }); });
     td.append(b);
   }
   return td;
@@ -1085,6 +1142,7 @@ function openTriage(v) {
   $("tri-title").textContent = v.kind === "false-negative" ? "Report a missed violation" : "Record a verdict";
   $("tri-kind").value = v.kind; $("tri-rule").value = v.rule || ""; $("tri-file").value = v.file;
   $("tri-line").value = v.line; $("tri-note").value = v.note || "";
+  triageFp = v.fp || "";
   $("tri-error").hidden = true;
   $("tri-dialog").hidden = false;
   (v.rule ? $("tri-note") : $("tri-rule")).focus();
@@ -1105,7 +1163,7 @@ $("tri-form").addEventListener("submit", async (e) => {
   try {
     if (project) await flushProjectSave();
     const body = { kind: $("tri-kind").value, rule: $("tri-rule").value.trim(), file: $("tri-file").value, line: Number($("tri-line").value),
-      note: $("tri-note").value, std: $("std").value, compiler: $("compiler").value, flags: $("cflags").value, ...triageSources() };
+      note: $("tri-note").value, fp: triageFp, std: $("std").value, compiler: $("compiler").value, flags: $("cflags").value, ...triageSources() };
     await api("/api/triage", { method: "POST", body: JSON.stringify(body) });
     $("tri-dialog").hidden = true;
     toast(body.kind === "false-negative" ? "Missed violation recorded" : "Verdict recorded");

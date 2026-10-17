@@ -159,6 +159,12 @@ Each project can be analysed as its own compiler (GCC, `arm-none-eabi-gcc`, ...)
 target, system headers and version macros. Pick it in the GUI or use
 `scripts/make_compile_db.py --compiler ...`; see [docs/compilers.md](docs/compilers.md).
 
+## Baselines and the CI gate
+
+Violations get a stable fingerprint, so a saved baseline shows what is *new*, *unchanged* or *fixed*
+after edits, and `scripts/misra_ci.py` fails a build only on new violations. See
+[docs/baseline-and-ci.md](docs/baseline-and-ci.md).
+
 ## Edit, compare, label, improve
 
 Project files can be edited in the GUI, checked again, compared side by side with cppcheck, and each

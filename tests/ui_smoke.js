@@ -42,12 +42,15 @@ const downloads = [];
 const analysis = {
   exit_code: 1, summary: "Analyzed 1 translation unit(s)", elapsed_ms: 12, compile_errors: false, error: "",
   compiler_output: "", sarif: "{\"version\":\"2.1.0\"}", deviation_notes: ["Deviation D9 matched no finding."],
+  workspace_key: "files:a.c",
+  baseline: { saved: "2026-10-01T10:00:00+0000", new: 1, unchanged: 1, fixed: 1, new_by_category: { required: 1 },
+    fixed_entries: [{ file: "a.c", line: 7, rule: "9.1", text: "int u;" }] },
   cross: { tool: "Cppcheck 2.7", rules_covered: 130, agree: 1, ours_only: 1, not_comparable: 0, cppcheck_only: 1, notes: [],
     cppcheck_only_findings: [{ file: "a.c", line: 9, rule: "17.7", message: "Return value not used", cross: "cppcheck-only" }],
     cppcheck_misra: [{ file: "a.c", line: 1, rule: "7.1", message: "", also_ours: true }, { file: "a.c", line: 9, rule: "17.7", message: "", also_ours: false }],
     native: [{ file: "a.c", line: 5, severity: "error", id: "arrayIndexOutOfBounds", message: "Array index out of bounds" }] },
-  findings: [{ file: "a.c", line: 1, col: 1, category: "required", rule: "7.1", key: "k", message: "octal constant", cross: "both" },
-             { file: "a.c", line: 3, col: 1, category: "advisory", rule: "15.1", key: "k", message: "goto", library: false, cross: "ours-only" }],
+  findings: [{ file: "a.c", line: 1, col: 1, category: "required", rule: "7.1", key: "k", message: "octal constant", cross: "both", fp: "aaaaaaaaaaaaaaaa", status: "new" },
+             { file: "a.c", line: 3, col: 1, category: "advisory", rule: "15.1", key: "k", message: "goto", library: false, cross: "ours-only", fp: "bbbbbbbbbbbbbbbb", status: "unchanged" }],
   deviated: [{ file: "a.c", line: 2, col: 1, category: "advisory", rule: "19.2", key: "k", message: "union declared", deviation: "D1" }],
 };
 const responses = {
@@ -85,7 +88,7 @@ const api = new Function(source + `
 ;return { getMe: () => me, csrf: () => csrf, runCode, files: () => files, visibleFindings,
   setLast: (r) => { lastRes = r; }, crossOffAdd: (k) => crossOff.add(k), renderResult, showLogin, project: () => project, devOffSet: (v) => { devOff.v = v; },
   exportCsv, exportJson, exportReport, setDeviations: (t, n) => { deviationsText = t; deviationCount = n; },
-  loadTriage, openTriage, verdictsFor, fieldText, renderCompare, showCompareDetail, setCmpKey: (k) => { cmpKey = k; }, renderEditorLines, setViewPath: (v) => { viewPath = v; }, analyze, runProject, setProject: (p) => { project = p; }, openProjectFile, leaveProject };`)();
+  loadTriage, openTriage, verdictsFor, statusOffAdd: (k) => statusOff.add(k), baselineBlock, fieldText, renderCompare, showCompareDetail, setCmpKey: (k) => { cmpKey = k; }, getLast: () => lastRes, renderEditorLines, setViewPath: (v) => { viewPath = v; }, analyze, runProject, setProject: (p) => { project = p; }, openProjectFile, leaveProject };`)();
 
 const tick = () => new Promise((resolve) => GLib.timeout_add(GLib.PRIORITY_DEFAULT, 30, () => { resolve(); return false; }));
 const loop = new GLib.MainLoop(null, false);
@@ -118,15 +121,24 @@ const loop = new GLib.MainLoop(null, false);
   api.devOffSet(true);
   expect("deviated rows can be hidden", api.visibleFindings().length === 3);
   api.devOffSet(false);
+  api.statusOffAdd("unchanged");
+  expect("the baseline status filter hides unchanged findings", !api.visibleFindings().some((r) => r.status === "unchanged"));
+  const block = api.baselineBlock(api.getLast());
+  expect("the baseline summary is shown", block.children.length >= 4, String(block.children.length));
   api.crossOffAdd("cppcheck-only");
   expect("cppcheck-only rows can be hidden", !api.visibleFindings().some((r) => r.cross === "cppcheck-only"));
 
   // triage: verdicts shown next to findings, and saved with the analysed sources
-  responses["/api/triage"] = { status: 200, body: { cases: [{ id: "abc", kind: "false-positive", rule: "7.1", file: "a.c", line: 1, note: "n", state: "open" }],
+  responses["/api/triage"] = { status: 200, body: { cases: [{ id: "abc", kind: "false-positive", rule: "7.1", file: "a.c", line: 1, note: "n", state: "open", fp: "aaaaaaaaaaaaaaaa" }],
     summary: { "7.1": { true_positive: 0, false_positive: 1, false_negative: 0, precision: 0 } }, case: {} } };
   await api.loadTriage();
   expect("a saved verdict is matched to its finding", api.verdictsFor({ file: "a.c", rule: "7.1", line: 1 }).length === 1);
+  expect("a finding without a fingerprint falls back to the line", api.verdictsFor({ file: "a.c", rule: "7.1", line: 1 }).length === 1);
   expect("a different line has no verdict", api.verdictsFor({ file: "a.c", rule: "7.1", line: 2 }).length === 0);
+  expect("a verdict follows its violation to a new line by fingerprint",
+    api.verdictsFor({ file: "a.c", rule: "7.1", line: 40, fp: "aaaaaaaaaaaaaaaa" }).length === 1);
+  expect("a different fingerprint on the old line is not that violation",
+    api.verdictsFor({ file: "a.c", rule: "7.1", line: 1, fp: "cccccccccccccccc" }).length === 0);
   expect("rule summary text", api.fieldText("7.1") === "1 FP" && api.fieldText("9.9") === "—", api.fieldText("7.1"));
   api.openTriage({ kind: "false-positive", rule: "15.1", file: "a.c", line: 3, note: "wrong" });
   expect("the dialog opens prefilled", document.getElementById("tri-dialog").hidden === false && document.getElementById("tri-line").value === 3);

@@ -298,6 +298,47 @@ with tempfile.TemporaryDirectory() as data_dir:
         check("author can delete a case", status == 200 and gone["deleted"] is True, gone)
         check("a deleted case is gone", fp_id not in [c["id"] for c in bob.call("GET", "/api/triage")[1]["cases"]])
 
+        # ---- baselines: stable identity, new / unchanged / fixed, privacy
+        def check_code(client, code, name="b.c"):
+            return client.call("POST", "/api/analyze", {"files": [{"name": name, "code": code}], "std": "c99"})
+        bcode1 = "int a;\nint x = 010;\n"
+        status, r1, _ = check_code(bob, bcode1)
+        key = r1.get("workspace_key")
+        check("findings carry a fingerprint and the line text", status == 200 and all(f.get("fp") and "text" in f for f in r1["findings"]), r1["findings"][:2])
+        check("no baseline before one is saved", r1["baseline"] is None and key == "files:b.c", (key, r1.get("baseline")))
+        check("viewer cannot save a baseline", carol.call("POST", "/api/baseline/save", {"key": key})[0] == 403)
+        check("cannot save a workspace that was never analysed",
+              bob.call("POST", "/api/baseline/save", {"key": "files:never.c"})[0] == 400)
+        status, saved, _ = bob.call("POST", "/api/baseline/save", {"key": key})
+        check("baseline saved from the last analysis", status == 200 and saved["counts"]["total"] == len(r1["findings"]), saved)
+        old_fp = {(f["rule"], f["text"]): f["fp"] for f in r1["findings"]}
+        bcode2 = "/* header added */\nint a;\nint x = 010;\nint y = 077;\n"      # code moved down, one violation added
+        status, r2, _ = check_code(bob, bcode2)
+        base = r2["baseline"]
+        check("baseline comparison is returned", base and base["new"] >= 1 and base["unchanged"] >= 2, base)
+        check("old violations keep their fingerprint after the code moved",
+              all(f["fp"] == old_fp[(f["rule"], f["text"])] and f["status"] == "unchanged" for f in r2["findings"] if (f["rule"], f["text"]) in old_fp), r2["findings"])
+        check("the added violation is new", any(f["status"] == "new" and f["text"] == "int y = 077;" for f in r2["findings"]), r2["findings"])
+        check("new violations are counted by category", base["new_by_category"].get("required", 0) >= 1, base)
+        status, r3, _ = check_code(bob, "int a;\n")
+        check("removed violations are reported as fixed", r3["baseline"]["fixed"] >= 1 and r3["baseline"]["fixed_entries"], r3["baseline"])
+        status, other, _ = check_code(erin, bcode1)
+        check("another user has no baseline for the same code", other["baseline"] is None, other.get("baseline"))
+        status, hist, _ = bob.call("GET", f"/api/baseline?key={key}")
+        check("history is available", status == 200 and len(hist["history"]) == 1 and hist["latest"]["total"] == saved["counts"]["total"], hist)
+        # a triage label made on the first version still matches the violation after the edit
+        octal = next(f for f in r1["findings"] if f["rule"] == "7.1")
+        status, made, _ = bob.call("POST", "/api/triage", {"files": [{"name": "b.c", "code": bcode1}], "std": "c99", "kind": "true-positive",
+                                                            "rule": "7.1", "file": "b.c", "line": octal["line"], "fp": octal["fp"]})
+        octal2 = next(f for f in r2["findings"] if f["rule"] == "7.1" and f["text"] == "int x = 010;")
+        check("triage cases carry the fingerprint", made["case"]["fp"] == octal["fp"] == octal2["fp"], (made["case"].get("fp"), octal["fp"], octal2["fp"]))
+        check("a bad fingerprint from the client is ignored",
+              bob.call("POST", "/api/triage", {"files": [{"name": "b.c", "code": bcode1}], "std": "c99", "kind": "true-positive", "rule": "7.1",
+                                               "file": "b.c", "line": 2, "fp": "../../etc"})[1]["case"]["fp"] == octal["fp"])
+        status, cleared, _ = bob.call("POST", "/api/baseline/clear", {"key": key})
+        status, r4, _ = check_code(bob, bcode2)
+        check("clearing removes the baseline", cleared["cleared"] and r4["baseline"] is None, r4.get("baseline"))
+
         # ---- cppcheck cross-verification
         status, me2, _ = bob.call("GET", "/api/me")
         has_cppcheck = me2["tools"]["cppcheck"]["available"]

@@ -41,6 +41,7 @@ sys.path.insert(0, str(ROOT / "scripts"))
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import auth  # noqa: E402
 import compiler_profiles as cp  # noqa: E402
+import baseline as bl  # noqa: E402
 import cppcheck_cross as cx  # noqa: E402
 import triage as tg  # noqa: E402
 import triage_runner as tr  # noqa: E402
@@ -73,6 +74,8 @@ ROUTE_ROLE = {
     ("POST", "/api/project"): "analyst", ("POST", "/api/file"): "analyst",
     ("GET", "/api/project-zip"): "analyst",
     ("GET", "/api/triage"): "analyst", ("GET", "/api/triage-export"): "analyst",
+    ("GET", "/api/baseline"): "analyst", ("POST", "/api/baseline/save"): "analyst",
+    ("POST", "/api/baseline/clear"): "analyst",
     ("POST", "/api/triage"): "analyst", ("POST", "/api/triage/delete"): "analyst",
     ("POST", "/api/triage/run"): "analyst", ("POST", "/api/triage/promote"): "admin",
 }
@@ -85,6 +88,8 @@ class State:
     compilers: dict = {}
     tools: dict = {}
     triage: tg.TriageStore
+    baselines: bl.BaselineStore
+    last: dict = {}
     promote_dir: Path = ROOT / "tests" / "triage"
     cases: dict
     users: auth.UserStore
@@ -483,7 +488,52 @@ def create_triage(session: dict, body: dict) -> dict:
     case = tg.make_case(user=session["user"], kind=str(body.get("kind", "")), rule=str(body.get("rule", "")),
                         file=file, line=int(body.get("line", 0)), note=str(body.get("note", "")),
                         files=files, build=build, tool_version=version, compiler=label, mode=mode)
+    given = str(body.get("fp", ""))
+    if re.fullmatch(r"[0-9a-f]{16}", given):
+        case["fp"] = given        # from the analysis result: matches the finding even after edits
+    else:
+        probe = [{"file": file, "line": case["line"], "rule": case["rule"]}]
+        lines = files[file].split("\n")
+        bl.fingerprint_all(probe, lambda f, n: lines[n - 1] if 0 < n <= len(lines) else "")
+        case["fp"] = probe[0]["fp"]
     return tg.public(State.triage.save(case))
+
+
+def track_violations(session: dict, result: dict, key: str, text_of) -> None:
+    """Give every finding a stable fingerprint and compare with the user's baseline for this workspace."""
+    everything = result["findings"] + result["deviated"]
+    bl.fingerprint_all(everything, text_of)
+    result["workspace_key"] = key
+    State.last[(session["user"], key)] = [dict(f) for f in result["findings"]]
+    while len(State.last) > 200:
+        State.last.pop(next(iter(State.last)))
+    previous = State.baselines.latest(session["user"], key)
+    result["baseline"] = None
+    if previous:
+        summary = bl.compare(result["findings"], previous["findings"])
+        summary["fixed_entries"] = summary["fixed_entries"][:200]
+        summary["saved"] = previous["saved"]
+        result["baseline"] = summary
+
+
+def handle_baseline(session: dict, path: str, body: dict, query: dict) -> dict:
+    user = session["user"]
+    key = str(body.get("key") or (query.get("key") or [""])[0])
+    if not key or len(key) > 200:
+        raise ValueError("no workspace to track; run an analysis first")
+    if path == "/api/baseline":
+        latest = State.baselines.latest(user, key)
+        return {"key": key, "history": State.baselines.history(user, key),
+                "latest": latest["counts"] if latest else None}
+    if path == "/api/baseline/clear":
+        return {"cleared": State.baselines.clear(user, key)}
+    findings = State.last.get((user, key))
+    if findings is None:
+        raise ValueError("run an analysis of this workspace first")
+    version = subprocess.run([str(State.checker), "--version"], capture_output=True, text=True).stdout.strip()
+    saved = State.baselines.save(user, key, findings, version)
+    State.audit.write(user, "baseline_save", key=key, findings=len(findings))
+    return {"saved": saved["saved"], "counts": saved["counts"], "history": State.baselines.history(user, key)}
 
 
 def handle_triage(session: dict, path: str, body: dict) -> dict:
@@ -628,6 +678,8 @@ class Handler(BaseHTTPRequestHandler):
             if url.path == "/api/file":
                 return self._json(200, {"source": read_project_file(
                     session, (query.get("project") or [""])[0], (query.get("path") or [""])[0])})
+            if url.path == "/api/baseline":
+                return self._json(200, handle_baseline(session, url.path, {}, query))
             if url.path == "/api/triage":
                 cases = State.triage.visible(session["user"], session["role"])
                 return self._json(200, {"cases": [tg.public(c) for c in cases], "summary": tg.summarize(cases)})
@@ -674,6 +726,8 @@ class Handler(BaseHTTPRequestHandler):
         try:
             if url.path.startswith("/api/triage"):
                 return self._json(200, handle_triage(session, url.path, json.loads(raw or b"{}")))
+            if url.path.startswith("/api/baseline"):
+                return self._json(200, handle_baseline(session, url.path, json.loads(raw or b"{}"), {}))
             if url.path == "/api/file":
                 q = parse_qs(url.query)
                 return self._json(200, write_project_file(session, (q.get("project") or [""])[0],
@@ -692,6 +746,17 @@ class Handler(BaseHTTPRequestHandler):
                                          deviations, str(body.get("compiler", "default")),
                                          str(body.get("flags", "")), bool(body.get("cppcheck")))
                 mode = "project"
+                proj = project_for(session, str(body["project"]))
+                cache: dict = {}
+
+                def project_text(file: str, line: int, _p=proj, _c=cache) -> str:
+                    if file not in _c:
+                        try:
+                            _c[file] = project_member(_p, file).read_text(errors="replace").split("\n")
+                        except (OSError, ValueError):
+                            _c[file] = []
+                    return _c[file][line - 1] if 0 < line <= len(_c[file]) else ""
+                track_violations(session, result, "project:" + proj.name, project_text)
             elif body.get("compile_commands"):
                 if session["role"] != "admin":
                     return self._json(403, {"error": "the admin role is required"})
@@ -703,6 +768,9 @@ class Handler(BaseHTTPRequestHandler):
                                        str(body.get("compiler", "default")), str(body.get("flags", "")),
                                        bool(body.get("cppcheck")))
                 mode = "files"
+                by_name = {str(f.get("name")): str(f.get("code", "")).split("\n") for f in files}
+                track_violations(session, result, "files:" + ",".join(sorted(by_name)),
+                                 lambda file, line: (by_name.get(file) or [""])[line - 1] if 0 < line <= len(by_name.get(file) or []) else "")
             State.audit.write(session["user"], "analyze", mode=mode, compiler=result.get("compiler", ""),
                               cppcheck=bool(body.get("cppcheck")),
                               findings=len(result["findings"]),
@@ -789,6 +857,7 @@ def main() -> int:
     args = parser.parse_args()
 
     State.triage = tg.TriageStore(args.data_dir / "triage")
+    State.baselines = bl.BaselineStore(args.data_dir / "baselines")
     State.promote_dir = args.promote_dir
     State.users = auth.UserStore(args.data_dir / "users.json")
     State.audit = auth.AuditLog(args.data_dir / "audit.log")
