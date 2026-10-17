@@ -1,0 +1,321 @@
+##### rule 2.1
+summary: ignored (merged)
+
+--- ok: code after a branch that returns on both arms is not reached (no code follows)
+int f(int c) { if (c) { return 1; } else { return 2; } }
+
+--- ok: a loop that ends through a condition
+int f(int n) { int i = 0; while (i < n) { i++; } return i; }
+
+--- ok: do-while-zero in a macro is reachable
+#define STEP(p) do { (*(p))++; } while (0)
+void f(int *p) { STEP(p); }
+
+--- bad: code after an infinite while in a void function
+void f(int *p)
+{
+    while (1) { (*p)++; }
+    *p = 0; /*@V*/
+}
+
+--- bad: the else branch of a constant true condition
+int f(void)
+{
+    if (1) { return 1; } else { return 2; } /*@V*/
+}
+
+##### rule 2.2
+summary: ignored (merged)
+
+--- ok: a volatile read is an effect
+volatile int status;
+void f(void) { (void)status; }
+
+--- ok: increments and calls as statements
+void g(void);
+void f(int *p) { (*p)++; g(); }
+
+--- ok: a cast to void of a call result
+int g(void);
+void f(void) { (void)g(); }
+
+--- bad: a comparison used as a statement
+void f(int a, int b)
+{
+    a == b; /*@V*/
+}
+
+--- bad: a member access used as a statement
+struct s { int v; };
+void f(struct s *p)
+{
+    p->v; /*@V*/
+}
+
+##### rule 2.3
+summary: ignored (merged)
+
+--- ok: typedef used only inside sizeof
+typedef int word_t;
+unsigned long n = sizeof(word_t);
+
+--- ok: typedef used in a cast
+typedef unsigned char byte_t;
+int f(int x) { return (byte_t)x; }
+
+--- ok: typedef used as a parameter type of a prototype
+typedef int id_t2;
+void use(id_t2 a);
+
+##### rule 2.4
+summary: ignored (merged)
+
+--- ok: a tag used only through a pointer declaration
+struct opaque;
+struct opaque *handle;
+
+--- ok: a tag used in a cast
+struct data { int a; };
+int f(void *p) { return ((struct data *)p)->a; }
+
+##### rule 2.5
+summary: ignored (merged)
+
+--- ok: a macro used in an elif
+#define MODE 2
+#if MODE == 1
+int a;
+#elif MODE == 2
+int b;
+#endif
+
+--- ok: a header guard style macro is tested
+#ifndef GUARD_H
+#define GUARD_H
+int a;
+#endif
+
+--- ok: a macro used only inside another macro that is used
+#define INNER 3
+#define OUTER (INNER + 1)
+int a[OUTER];
+
+##### rule 2.7
+summary: ignored (merged)
+
+--- ok: a parameter used only in sizeof
+unsigned long f(int *p) { return sizeof(*p); }
+
+--- ok: a parameter used only in a condition
+int f(int a, int b) { if (b) { return a; } return 0; }
+
+--- bad: a parameter shadowed by a local and never used
+int f(int a) /*@V*/
+{
+    int a2 = 1;
+    return a2;
+}
+
+##### rule 7.1
+summary: ignored (merged)
+
+--- ok: character literals and floating literals with leading zeros
+char c = '\0';
+double d = 00.5;
+double e = 0e2;
+
+--- ok: hexadecimal with a leading zero
+int h = 0x0F;
+
+--- bad: octal in a case label
+int f(int v)
+{
+    switch (v)
+    {
+        case 010: return 1; /*@V*/
+        default: return 0;
+    }
+}
+
+##### rule 7.2
+summary: ignored (merged)
+
+--- ok: suffix in lower and upper case combinations
+unsigned int a = 0xFFFFFFFFu;
+unsigned long b = 0xFFFFFFFFFFFFFFFFUL;
+
+--- ok: a signed hexadecimal literal that fits int
+int a = 0x7FFFFFFF;
+
+--- bad: a hexadecimal literal that does not fit a signed long
+unsigned long a = 0xFFFFFFFFFFFFFFFF; /*@V*/
+
+##### rule 8.2
+summary: ignored (merged)
+
+--- ok: a function pointer type with named parameters
+typedef int (*op_t)(int a, int b);
+op_t table[2];
+
+--- ok: a function pointer object that takes no parameters
+int (*fp)(void);
+
+--- gap: a function pointer type with unnamed parameters (only function declarations are checked)
+typedef int (*op_t)(int, int); /*@V*/
+op_t table[2];
+
+##### rule 8.9
+summary: ignored (merged)
+
+--- ok: a static used in two functions
+static int state;
+void a(void) { state = 1; }
+int b(void) { return state; }
+
+--- ok: two statics each used by two functions
+static int base = 4;
+static int derived = 5;
+int f(void) { return base + derived; }
+int g(void) { return base - derived; }
+
+--- bad: a static array used by one function
+static int buf[4]; /*@V*/
+int f(int i) { buf[i % 4] = i; return buf[0]; }
+
+##### rule 11.4
+summary: ignored (merged)
+
+--- ok: a cast between pointers is not an integer cast
+int *a(void *p);
+
+--- bad: a cast of an integer constant to a pointer inside a function
+int f(void)
+{
+    int *p = (int *)4096; /*@V*/
+    return *p;
+}
+
+##### rule 12.3
+summary: ignored (merged)
+
+--- ok: commas in a function-like macro argument list
+#define MAX(a, b) (((a) > (b)) ? (a) : (b))
+int m = MAX(1, 2);
+
+--- ok: commas in an enumeration and in a struct initializer
+enum e { A, B, C };
+struct p { int x; int y; } v = { 1, 2 };
+
+--- bad: the comma operator inside a condition
+int f(int a, int b)
+{
+    if ((a++, b) > 0) { return 1; } /*@V*/
+    return 0;
+}
+
+##### rule 14.4
+summary: ignored (merged)
+
+--- ok: a masked comparison and a pointer comparison
+int f(int x, int *p) { if ((x & 4) != 0) { return 1; } if (p != 0) { return 2; } return 0; }
+
+--- ok: a Boolean valued macro expression
+#define IS_SET(x, m) (((x) & (m)) != 0)
+int f(int x) { if (IS_SET(x, 4)) { return 1; } return 0; }
+
+--- bad: a bit test without comparison
+int f(int x)
+{
+    if (x & 4) { return 1; } /*@V*/
+    return 0;
+}
+
+--- bad: a function result used as a condition
+int check(void);
+void f(void)
+{
+    while (check()) { } /*@V*/
+}
+
+##### rule 17.3
+summary: ignored (merged)
+
+--- ok: a call through a function pointer and through a declared function
+int apply(int (*fn)(int), int v) { return fn(v); }
+
+--- ok: compiler built-in functions are not reported
+int f(int x) { return __builtin_expect(x, 1); }
+
+--- bad: a call in a condition
+int f(int x)
+{
+    if (mystery(x)) { return 1; } /*@V*/
+    return 0;
+}
+
+##### rule 18.6
+summary: ignored (merged)
+
+--- ok: returning a pointer that was passed in
+char *f(char *buf) { buf[0] = 'a'; return buf; }
+
+--- ok: returning the address of a file-scope object
+int global;
+int *f(void) { return &global; }
+
+--- gap: returning the address of a local through a pointer variable (only direct &local is tracked)
+int *f(void)
+{
+    int x = 1;
+    int *p = &x;
+    return p; /*@V*/
+}
+
+##### rule 19.2
+summary: ignored (merged)
+
+--- ok: a use of a union defined elsewhere is not a definition
+struct s { int kind; };
+
+--- bad: a typedef of a union
+typedef union { int i; float f; } mix_t; /*@V*/
+
+##### rule 21.6
+summary: ignored (merged)
+
+--- bad: formatted input and output
+#include <stdio.h>
+void f(char *buf)
+{
+    (void)sprintf(buf, "%d", 1); /*@V*/
+    (void)snprintf(buf, 8, "%d", 1); /*@V*/
+    (void)scanf("%d", (int *)0); /*@V*/
+}
+
+--- bad: character and block I/O
+#include <stdio.h>
+void g(char *buf, FILE *s)
+{
+    (void)getchar(); /*@V*/
+    (void)fgets(buf, 4, s); /*@V*/
+    (void)fread(buf, 1, 4, s); /*@V*/
+}
+
+##### rule 20.9
+summary: ignored (merged)
+
+--- ok: macros defined on the command line style via a prior define
+#define CONFIG_LEVEL 3
+#if CONFIG_LEVEL >= 2 && defined(CONFIG_LEVEL)
+int a;
+#endif
+
+--- ok: the __STDC_VERSION__ predefined macro
+#if __STDC_VERSION__ >= 199901L
+int a;
+#endif
+
+--- ok: __has_include style checks are not identifiers to define
+#ifdef __has_include
+int b;
+#endif

@@ -152,7 +152,8 @@ def run_case(checker: str, clang: str, rule: str, case: Case) -> dict:
 
 
 def load_specs(rules: list[str] | None) -> list[dict]:
-    """One rule per `<rule>.spec`, or many in a `*.specs` file split by lines `##### rule X.Y`."""
+    """One rule per `<rule>.spec`, or many in a `*.specs` file split by lines `##### rule X.Y`.
+    A rule may appear in several files; their cases are combined."""
     specs = []
     for path in sorted(SPEC_DIR.glob("*.spec")):
         specs.append(parse_spec(path))
@@ -160,12 +161,15 @@ def load_specs(rules: list[str] | None) -> list[dict]:
         parts = re.split(r"^#####\s*rule\s+(\d+\.\d+)\s*$", path.read_text(), flags=re.M)
         for i in range(1, len(parts), 2):
             specs.append(parse_spec(path, parts[i + 1], parts[i]))
-    seen = set()
-    for spec in specs:
-        if spec["rule"] in seen:
-            raise ValueError(f"rule {spec['rule']} is specified twice")
-        seen.add(spec["rule"])
-    specs = [s for s in specs if not rules or s["rule"] in rules]
+    merged: dict[str, dict] = {}
+    for spec in specs:          # several files may contribute cases to one rule (the first supplies the summary)
+        if spec["rule"] in merged:
+            merged[spec["rule"]]["cases"].extend(spec["cases"])
+            for key, value in spec["meta"].items():
+                merged[spec["rule"]]["meta"].setdefault(key, value)
+        else:
+            merged[spec["rule"]] = spec
+    specs = [s for s in merged.values() if not rules or s["rule"] in rules]
     return sorted(specs, key=lambda s: tuple(int(x) for x in s["rule"].split(".")))
 
 

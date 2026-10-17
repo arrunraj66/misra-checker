@@ -554,7 +554,7 @@ int g(int a, int b) { return (a++, b); } /*@V*/
 
 ##### rule 12.4
 summary: Reports a constant unsigned addition, subtraction, multiplication or shift whose exact result does not fit the type (wrap-around).
-limits: Only constant expressions are evaluated.
+limits: Only constant addition, subtraction and multiplication are evaluated. Shifts are not (whether bits shifted out of an unsigned value count as wrap-around is undecided, and the ~0u << n mask idiom is accepted).
 
 --- ok: results that fit
 unsigned int a = 5U - 3U;

@@ -537,6 +537,7 @@ class RestVisitor final : public clang::RecursiveASTVisitor<RestVisitor> {
 
   [[nodiscard]] bool pointer_use_read_only(const clang::Stmt* reference) const {
     const clang::Stmt* current = reference;
+    bool stepped = false;   // the pointer variable itself was incremented or decremented on the way
     while (true) {
       const auto parents = ast_.getParents(*current);
       if (parents.size() != 1U) {
@@ -545,6 +546,16 @@ class RestVisitor final : public clang::RecursiveASTVisitor<RestVisitor> {
       const clang::Stmt* parent = parents[0].get<clang::Stmt>();
       if (parent == nullptr) {
         return false;
+      }
+      // p++ changes the pointer, not what it points to: judge how the resulting pointer is used.
+      if (const auto* step = llvm::dyn_cast<clang::UnaryOperator>(parent);
+          (step != nullptr) && step->isIncrementDecrementOp()) {
+        current = parent;
+        stepped = true;
+        continue;
+      }
+      if (stepped && !llvm::isa<clang::Expr>(parent)) {
+        return true;   // a standalone p++; statement or a for-loop step
       }
       if (const auto* cast = llvm::dyn_cast<clang::ImplicitCastExpr>(parent)) {
         if ((cast->getCastKind() == clang::CK_LValueToRValue) ||
