@@ -340,6 +340,80 @@ with tempfile.TemporaryDirectory() as data_dir:
         status, r4, _ = check_code(bob, bcode2)
         check("clearing removes the baseline", cleared["cleared"] and r4["baseline"] is None, r4.get("baseline"))
 
+        # ---- central history: API tokens for CI, shared projects, trends
+        created = cli(data_dir, "--create-token", "ci-main", "--token-role", "analyst")
+        ci_token = created.stdout.strip()
+        read_token = cli(data_dir, "--create-token", "reader", "--token-role", "viewer").stdout.strip()
+        check("a token is created and printed once", ci_token.startswith("mt_") and created.returncode == 0, created)
+        check("tokens are listed without their secret", "ci-main" in cli(data_dir, "--list-tokens").stdout
+              and ci_token not in cli(data_dir, "--list-tokens").stdout)
+        check("an admin token cannot be created", cli(data_dir, "--create-token", "root", "--token-role", "admin").returncode != 0)
+        runner = Client(port)          # no cookie and no CSRF token: only the bearer header
+
+        def ci(token, **body):
+            return runner.call("POST", "/api/runs", body, headers={"Authorization": f"Bearer {token}"})
+        fingerprint = lambda n: f"{n:016x}"  # noqa: E731
+        finding = lambda n, rule="8.4", cat="required": {"fp": fingerprint(n), "rule": rule, "category": cat, "file": "a.c", "line": n}  # noqa: E731
+        status, r1, _ = ci(ci_token, project="fw", branch="main", commit="abc123", tool_version="v1", findings=[finding(1), finding(2)])
+        check("CI publishes a run with a token", status == 200 and r1["run"]["total"] == 2 and r1["run"]["new_count"] == 0, (status, r1))
+        status, r2, _ = ci(ci_token, project="fw", branch="main", commit="def456", findings=[finding(2), finding(3, "9.1", "mandatory")])
+        check("the next run reports new and fixed since the previous one", r2["run"]["new_count"] == 1 and r2["run"]["fixed_count"] == 1
+              and r2["run"]["mandatory"] == 1, r2)
+        check("a wrong token is refused", ci("mt_wrong", project="fw", findings=[])[0] == 401)
+        check("a viewer token cannot publish", ci(read_token, project="fw", findings=[])[0] == 403)
+        check("no credentials at all", runner.call("POST", "/api/runs", {"project": "fw", "findings": []})[0] == 401)
+        for bad in (dict(project="bad name", findings=[]), dict(project="fw", branch="../x", findings=[]), dict(project="fw", findings="no"),
+                    dict(project="fw", findings=[{"fp": "zz", "rule": "8.4", "category": "required"}])):
+            check(f"bad run rejected: {list(bad)}", ci(ci_token, **bad)[0] == 400, bad)
+        status, listing, _ = runner.call("GET", "/api/projects", headers={"Authorization": f"Bearer {read_token}"})
+        check("a viewer token can read the projects", status == 200 and listing["projects"][0]["name"] == "fw" and listing["projects"][0]["runs"] == 2, listing)
+        status, hist, _ = carol.call("GET", "/api/history?project=fw&branch=main")
+        check("the viewer role can read a project's history", status == 200 and [r["total"] for r in hist["runs"]] == [2, 2], hist)
+        status, detail, _ = carol.call("GET", f"/api/history-run?id={r2['run']['id']}")
+        check("a run's findings can be read", status == 200 and len(detail["findings"]) == 2, detail)
+        status, diff, _ = carol.call("GET", f"/api/history-diff?older={r1['run']['id']}&newer={r2['run']['id']}")
+        check("two runs can be compared", status == 200 and [f["rule"] for f in diff["new"]] == ["9.1"] and diff["unchanged"] == 1, diff)
+        check("a bad run id is a clean error", carol.call("GET", "/api/history-run?id=abc")[0] == 400 and carol.call("GET", "/api/history-run?id=99999")[0] == 400)
+        # a GUI user publishes the last analysis of a workspace; other users see it
+        check_code(erin, bcode1)
+        status, pub, _ = erin.call("POST", "/api/runs", {"key": "files:b.c", "project": "from-gui", "branch": "local"})
+        check("the GUI can publish its last analysis", status == 200 and pub["run"]["source"] == "gui" and pub["run"]["total"] > 0
+              and pub["run"]["submitted_by"] == "erin", (status, pub))
+        status, listing, _ = bob.call("GET", "/api/projects")
+        check("projects are shared between users", {p["name"] for p in listing["projects"]} == {"fw", "from-gui"}, listing)
+        check("an analyst cannot delete a project", bob.call("POST", "/api/projects/delete", {"name": "fw"})[0] == 403)
+        status, gone, _ = alice.call("POST", "/api/projects/delete", {"name": "from-gui"})
+        check("an admin can delete a project", status == 200 and gone["deleted"] is True)
+        # the CI script end to end
+        work = Path(data_dir) / "ci-work"
+        work.mkdir()
+        (work / "m.c").write_text("int a;\n")
+        (work / "compile_commands.json").write_text(json.dumps([{"directory": str(work), "file": str(work / "m.c"),
+                                                                   "arguments": ["/usr/bin/clang-14", "-std=c99", "-c", str(work / "m.c")]}]))
+
+        def run_ci():
+            return subprocess.run([sys.executable, str(ROOT / "scripts" / "misra_ci.py"), "--checker", CHECKER, "--compile-commands",
+                                   str(work / "compile_commands.json"), "--source-root", str(work), "--publish", f"http://127.0.0.1:{port}",
+                                   "--project", "ci-demo", "--branch", "main", "--commit", "1234abcd", "--token", ci_token, "--fail-on", "none"],
+                                  capture_output=True, text=True)
+        first = run_ci()
+        check("misra_ci publishes", "stored for ci-demo/main" in first.stdout, first.stdout + first.stderr)
+        (work / "m.c").write_text("int a;\nint x = 010;\n")
+        second = run_ci()
+        check("the second CI run sees what is new", "stored for ci-demo/main" in second.stdout and "new" in second.stdout, second.stdout + second.stderr)
+        runs = alice.call("GET", "/api/history?project=ci-demo")[1]["runs"]
+        check("the history holds both CI runs with their commit", [r["commit_id"] for r in runs] == ["1234abcd", "1234abcd"]
+              and runs[1]["new_count"] >= 1 and runs[0]["source"] == "ci", runs)
+        bad_token = subprocess.run([sys.executable, str(ROOT / "scripts" / "misra_ci.py"), "--checker", CHECKER, "--compile-commands",
+                                    str(work / "compile_commands.json"), "--source-root", str(work), "--publish", f"http://127.0.0.1:{port}",
+                                    "--project", "ci-demo", "--token", "mt_wrong", "--fail-on", "none"], capture_output=True, text=True)
+        check("a failed publish only warns by default", bad_token.returncode == 0 and "could not publish" in bad_token.stderr, bad_token.stderr)
+        required = subprocess.run([sys.executable, str(ROOT / "scripts" / "misra_ci.py"), "--checker", CHECKER, "--compile-commands",
+                                   str(work / "compile_commands.json"), "--source-root", str(work), "--publish", f"http://127.0.0.1:{port}",
+                                   "--project", "ci-demo", "--token", "mt_wrong", "--fail-on", "none", "--require-publish"], capture_output=True, text=True)
+        check("--require-publish makes it fail", required.returncode == 2, required.returncode)
+        check("revoking a token stops it", "revoked" in cli(data_dir, "--revoke-token", "ci-main").stdout and ci(ci_token, project="fw", findings=[])[0] == 401)
+
         # ---- compliance documents
         status, page, hdr = bob.call("GET", f"/api/compliance?key={key}&format=html")
         text = page.decode() if isinstance(page, bytes) else str(page)

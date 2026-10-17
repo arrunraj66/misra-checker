@@ -45,6 +45,7 @@ import compiler_profiles as cp  # noqa: E402
 import baseline as bl  # noqa: E402
 import compliance as cm  # noqa: E402
 import cppcheck_cross as cx  # noqa: E402
+import history as hs  # noqa: E402
 import triage as tg  # noqa: E402
 import triage_runner as tr  # noqa: E402
 import validate_rules as vr  # noqa: E402
@@ -56,6 +57,7 @@ MAX_UNPACKED = 300 * 1024 * 1024
 MAX_PROJECT_FILES = 10000
 MAX_PROJECTS_PER_USER = 3
 MAX_DEVIATION_BYTES = 1024 * 1024
+MAX_RUN_BODY = 24 * 1024 * 1024
 DEVIATION_FILE = "misra-deviations.json"
 COOKIE = "misra_session"
 LIBRARY_DIR = re.compile(
@@ -76,6 +78,8 @@ ROUTE_ROLE = {
     ("POST", "/api/project"): "analyst", ("POST", "/api/file"): "analyst",
     ("GET", "/api/project-zip"): "analyst",
     ("GET", "/api/triage"): "analyst", ("GET", "/api/triage-export"): "analyst",
+    ("GET", "/api/projects"): "viewer", ("GET", "/api/history"): "viewer", ("GET", "/api/history-run"): "viewer",
+    ("GET", "/api/history-diff"): "viewer", ("POST", "/api/runs"): "analyst", ("POST", "/api/projects/delete"): "admin",
     ("GET", "/api/compliance"): "analyst", ("GET", "/api/baseline"): "analyst", ("POST", "/api/baseline/save"): "analyst",
     ("POST", "/api/baseline/clear"): "analyst",
     ("POST", "/api/triage"): "analyst", ("POST", "/api/triage/delete"): "analyst",
@@ -91,6 +95,8 @@ class State:
     tools: dict = {}
     triage: tg.TriageStore
     baselines: bl.BaselineStore
+    history: hs.HistoryStore
+    tokens: hs.TokenStore
     last: dict = {}
     runs: dict = {}
     version: str = ""
@@ -582,6 +588,56 @@ def compliance_document(session: dict, key: str, fmt: str) -> tuple[bytes, str, 
     return cm.to_html(doc).encode(), "text/html; charset=utf-8", "html"
 
 
+def to_int(value, name: str) -> int:
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        raise ValueError(f"{name} must be a number") from None
+
+
+def handle_history_get(session: dict, path: str, query: dict) -> dict:
+    first = lambda k: (query.get(k) or [""])[0]  # noqa: E731
+    if path == "/api/projects":
+        return {"projects": State.history.projects()}
+    if path == "/api/history":
+        project = first("project")
+        if not hs.NAME_RE.match(project):
+            raise ValueError("bad project name")
+        return {"project": project, "runs": State.history.runs(project, first("branch") or None, min(to_int(first("limit") or 100, "limit"), 500))}
+    if path == "/api/history-run":
+        run = State.history.run(to_int(first("id"), "id"))
+        if run is None:
+            raise ValueError("no such run")
+        return run
+    diff = State.history.diff(to_int(first("older"), "older"), to_int(first("newer"), "newer"))
+    if diff is None:
+        raise ValueError("those runs cannot be compared")
+    return diff
+
+
+def publish_run(session: dict, body: dict) -> dict:
+    """Store a run from CI (findings in the body) or from the GUI (the last analysis of a workspace)."""
+    version = State.version
+    key = str(body.get("key", ""))
+    if key:
+        findings = State.last.get((session["user"], key))
+        if findings is None:
+            raise ValueError("run an analysis of this workspace first")
+        run = State.runs.get((session["user"], key)) or {}
+        deviated, source = len(run.get("result", {}).get("deviated", [])), "gui"
+    else:
+        findings, deviated, source = body.get("findings"), to_int(body.get("deviated", 0), "deviated"), "ci"
+        if not isinstance(findings, list):
+            raise ValueError("findings must be a list")
+        version = str(body.get("tool_version", ""))[:100]
+    stored = State.history.add_run(project=str(body.get("project", "")), branch=str(body.get("branch") or "main"),
+                                   commit=str(body.get("commit", "")), user=session["user"], source=source, tool_version=version,
+                                   findings=findings, deviated=deviated, note=str(body.get("note", "")))
+    State.audit.write(session["user"], "run_published", project=stored["project"], branch=stored["branch"], total=stored["total"],
+                      new=stored["new_count"], fixed=stored["fixed_count"])
+    return {"run": stored}
+
+
 def handle_baseline(session: dict, path: str, body: dict, query: dict) -> dict:
     user = session["user"]
     key = str(body.get("key") or (query.get("key") or [""])[0])
@@ -678,6 +734,12 @@ class Handler(BaseHTTPRequestHandler):
     def _session(self) -> dict | None:
         if not State.require_auth:
             return {"user": "local", "role": "admin", "csrf": "", "token": ""}
+        header = self.headers.get("Authorization") or ""
+        if header.startswith("Bearer "):          # API token (CI): no cookie, no CSRF
+            record = State.tokens.verify(header[7:].strip())
+            if record:
+                return {"user": "token:" + record["name"], "role": record["role"], "csrf": "", "token": "", "bearer": True}
+            return None
         cookie = SimpleCookie(self.headers.get("Cookie") or "")
         morsel = cookie.get(COOKIE)
         return State.sessions.get(morsel.value if morsel else None)
@@ -692,7 +754,7 @@ class Handler(BaseHTTPRequestHandler):
         if auth.ROLES[session["role"]] < auth.ROLES[need]:
             self._json(403, {"error": f"the {need} role is required"})
             return None
-        if method == "POST" and State.require_auth:
+        if method == "POST" and State.require_auth and not session.get("bearer"):
             if not secrets.compare_digest(self.headers.get("X-CSRF-Token") or "", session["csrf"]):
                 self._json(403, {"error": "bad CSRF token; reload the page"})
                 return None
@@ -744,6 +806,8 @@ class Handler(BaseHTTPRequestHandler):
             if url.path == "/api/file":
                 return self._json(200, {"source": read_project_file(
                     session, (query.get("project") or [""])[0], (query.get("path") or [""])[0])})
+            if url.path in ("/api/projects", "/api/history", "/api/history-run", "/api/history-diff"):
+                return self._json(200, handle_history_get(session, url.path, query))
             if url.path == "/api/compliance":
                 fmt = (query.get("format") or ["html"])[0]
                 if fmt not in ("html", "csv", "json"):
@@ -793,12 +857,18 @@ class Handler(BaseHTTPRequestHandler):
         session = self._authorize("POST", url.path)
         if session is None:
             return None
-        raw = self._read_body(MAX_ZIP if url.path == "/api/project" else MAX_BODY)
+        raw = self._read_body(MAX_ZIP if url.path == "/api/project" else MAX_RUN_BODY if url.path == "/api/runs" else MAX_BODY)
         if raw is None:
             return None
         try:
             if url.path.startswith("/api/triage"):
                 return self._json(200, handle_triage(session, url.path, json.loads(raw or b"{}")))
+            if url.path == "/api/runs":
+                return self._json(200, publish_run(session, json.loads(raw or b"{}")))
+            if url.path == "/api/projects/delete":
+                name = str(json.loads(raw or b"{}").get("name", ""))
+                State.audit.write(session["user"], "project_deleted", name=name)
+                return self._json(200, {"deleted": State.history.delete_project(name)})
             if url.path.startswith("/api/baseline"):
                 return self._json(200, handle_baseline(session, url.path, json.loads(raw or b"{}"), {}))
             if url.path == "/api/file":
@@ -938,13 +1008,36 @@ def main() -> int:
     parser.add_argument("--role", choices=list(auth.ROLES), default="analyst")
     parser.add_argument("--remove-user", metavar="NAME")
     parser.add_argument("--list-users", action="store_true")
+    parser.add_argument("--create-token", metavar="NAME", help="create an API token for CI (printed once)")
+    parser.add_argument("--token-role", choices=list(hs.TOKEN_ROLES), default="analyst")
+    parser.add_argument("--revoke-token", metavar="NAME")
+    parser.add_argument("--list-tokens", action="store_true")
     args = parser.parse_args()
 
     State.triage = tg.TriageStore(args.data_dir / "triage")
     State.baselines = bl.BaselineStore(args.data_dir / "baselines")
+    State.history = hs.HistoryStore(args.data_dir / "history.db")
+    State.tokens = hs.TokenStore(args.data_dir / "tokens.json")
     State.promote_dir = args.promote_dir
     State.users = auth.UserStore(args.data_dir / "users.json")
     State.audit = auth.AuditLog(args.data_dir / "audit.log")
+    if args.create_token or args.revoke_token or args.list_tokens:
+        try:
+            if args.create_token:
+                print(State.tokens.create(args.create_token, args.token_role))
+                print(f"token '{args.create_token}' ({args.token_role}) created; it is shown only now", file=sys.stderr)
+                State.audit.write("cli", "token_create", name=args.create_token, role=args.token_role)
+            if args.revoke_token:
+                ok = State.tokens.revoke(args.revoke_token)
+                State.audit.write("cli", "token_revoke", name=args.revoke_token, revoked=ok)
+                print("revoked" if ok else "no such token")
+            if args.list_tokens:
+                for rec in State.tokens.list():
+                    print(f"{rec['name']}\t{rec['role']}\tcreated {rec['created']}\tlast used {rec['last_used'] or 'never'}")
+        except ValueError as exc:
+            print(f"error: {exc}", file=sys.stderr)
+            return 2
+        return 0
     if args.add_user or args.remove_user or args.list_users:
         try:
             if args.add_user:

@@ -212,6 +212,16 @@ td.loc { font:12.5px var(--mono); color:var(--muted); white-space:nowrap; }
 tr.dev td { opacity:.62; } tr.dev td:first-child { opacity:1; }
 .xtag { display:inline-block; font:600 11px system-ui,sans-serif; padding:1px 8px; border-radius:999px; border:1px solid currentColor; white-space:nowrap; }
 .xtag.both { color:var(--pass); } .xtag.ours-only { color:var(--muted); } .xtag.cppcheck-only { color:var(--warn); }
+.hproj { padding:10px 12px; border-top:1px solid var(--line); cursor:pointer; }
+.hproj:hover { background:var(--surface-2); } .hproj.sel { background:var(--accent-soft); box-shadow:inset 3px 0 0 var(--accent); }
+.hproj b { font-size:14px; } .hproj .sub { display:flex; gap:10px; flex-wrap:wrap; }
+.up { color:var(--fail); } .down { color:var(--pass); }
+.chart { width:100%; height:auto; display:block; }
+.chart .axis { stroke:var(--line); stroke-width:1; } .chart text { fill:var(--muted); font:11px system-ui,sans-serif; }
+.chart .l-total { stroke:var(--advisory); fill:none; stroke-width:2; } .chart .l-block { stroke:var(--required); fill:none; stroke-width:2; }
+.chart .l-mand { stroke:var(--mandatory); fill:none; stroke-width:2; }
+.legend { display:flex; gap:14px; font-size:12px; color:var(--muted); padding:0 12px 6px; flex-wrap:wrap; }
+.legend i { display:inline-block; width:10px; height:10px; border-radius:2px; margin-right:5px; vertical-align:-1px; }
 .newtag { font:700 10px system-ui,sans-serif; text-transform:uppercase; padding:0 6px; border-radius:6px; margin-left:6px;
   background:var(--accent); color:var(--accent-ink); }
 .chip.st-new { color:var(--accent); }
@@ -254,6 +264,7 @@ tr.dev td { opacity:.62; } tr.dev td:first-child { opacity:1; }
   <nav class="nav" role="tablist">
     <button role="tab" id="nav-analyze" aria-selected="true" data-view="analyze">Analyze</button>
     <button role="tab" id="nav-compare" aria-selected="false" data-view="compare">Compare</button>
+    <button role="tab" id="nav-history" aria-selected="false" data-view="history">History</button>
     <button role="tab" id="nav-triage" aria-selected="false" data-view="triage">Triage</button>
     <button role="tab" id="nav-rules" aria-selected="false" data-view="rules">Rules &amp; validation</button>
   </nav>
@@ -342,6 +353,7 @@ tr.dev td { opacity:.62; } tr.dev td:first-child { opacity:1; }
       <div class="pane">
         <div class="pane-head">
           <span class="pane-title">Results</span>
+          <button class="btn small" id="exp-publish" disabled title="Share this result in the team's project history">Publish</button>
           <button class="btn small" id="exp-comp-html" disabled title="Guideline Compliance Summary, deviation register and enforcement plan (HTML, printable)">Compliance report</button>
           <button class="btn small" id="exp-comp-csv" disabled title="One row per rule: status and counts">Summary CSV</button>
           <button class="btn small" id="exp-report" disabled>Findings</button>
@@ -369,6 +381,22 @@ tr.dev td { opacity:.62; } tr.dev td:first-child { opacity:1; }
       <div class="pane"><div class="pane-head"><span class="pane-title">cppcheck · own checks</span><span class="sub" id="cmp-n3"></span></div><div class="pane-body" id="cmp-native"></div></div>
     </div>
     <div class="pane cmp-detail" id="cmp-detail" hidden></div>
+  </section>
+
+  <section class="view" id="view-history" hidden>
+    <div class="split" style="grid-template-columns:minmax(0,1fr) minmax(0,2fr)">
+      <div class="pane">
+        <div class="pane-head"><span class="pane-title">Projects</span><button class="btn small" id="h-refresh">Refresh</button></div>
+        <div class="pane-body" id="h-projects"></div>
+        <div class="foot"><span class="sub">CI publishes runs with <code>misra_ci.py --publish</code> and an API token; see docs/central-history.md.</span></div>
+      </div>
+      <div class="pane">
+        <div class="pane-head"><span class="pane-title" id="h-title">Select a project</span>
+          <select id="h-branch" aria-label="Branch" hidden></select>
+          <button class="btn small" id="h-delete" hidden>Delete project</button></div>
+        <div class="pane-body" id="h-detail"><div class="empty"><b>Nothing selected</b>Pick a project to see how its violations change over time.</div></div>
+      </div>
+    </div>
   </section>
 
   <section class="view" id="view-triage" hidden>
@@ -467,7 +495,7 @@ $("theme").addEventListener("click", () => {
 });
 
 // ---- views
-const VIEWS = ["analyze", "compare", "triage", "rules"];
+const VIEWS = ["analyze", "compare", "history", "triage", "rules"];
 function showView(name) {
   for (const v of VIEWS) {
     $("view-" + v).hidden = v !== name;
@@ -475,6 +503,7 @@ function showView(name) {
   }
   if (name === "compare") renderCompare();
   if (name === "triage") loadTriage();
+  if (name === "history") loadHistory();
 }
 document.querySelectorAll(".nav button").forEach((b) => b.addEventListener("click", () => showView(b.dataset.view)));
 
@@ -678,7 +707,7 @@ function renderResult() {
   const box = $("result"), res = lastRes;
   box.replaceChildren();
   ["exp-csv", "exp-json", "exp-report", "exp-sarif"].forEach((id) => { $(id).disabled = !res; });
-  ["exp-comp-html", "exp-comp-csv"].forEach((id) => { $(id).disabled = !(res && res.workspace_key); });
+  ["exp-comp-html", "exp-comp-csv", "exp-publish"].forEach((id) => { $(id).disabled = !(res && res.workspace_key); });
   if (!res) { box.append(el("div", { className: "empty" }, el("b", {}, "No analysis yet"), "Run an analysis to see findings here. Press Ctrl+Enter.")); return; }
 
   const all = res.findings;
@@ -1109,6 +1138,130 @@ $("valall").addEventListener("click", async () => {
   b.disabled = false; b.textContent = "Validate all";
 });
 ["filter", "fcat", "fstat"].forEach((i) => $(i).addEventListener("input", renderRules));
+
+// ---- history: shared projects, runs and trends
+let hProjects = [], hProject = null, hBranch = "", hRuns = [];
+const svg = (tag, attrs = {}, ...kids) => {
+  const e = document.createElementNS("http://www.w3.org/2000/svg", tag);
+  Object.entries(attrs).forEach(([k, v]) => e.setAttribute(k, String(v)));
+  kids.forEach((k) => e.append(k));
+  return e;
+};
+async function loadHistory() {
+  try { hProjects = (await api("/api/projects")).projects; } catch { hProjects = []; }
+  renderHistory();
+  if (hProject && hProjects.some((p) => p.name === hProject)) await selectProject(hProject, hBranch);
+}
+function delta(n, goodWhenDown = true) {
+  if (!n) return el("span", { className: "sub" }, "no change");
+  return el("span", { className: (n > 0) === goodWhenDown ? "up" : "down" }, `${n > 0 ? "+" : ""}${n}`);
+}
+function renderHistory() {
+  const box = $("h-projects");
+  box.replaceChildren();
+  hProjects.forEach((p) => {
+    const l = p.latest, blocking = l ? l.mandatory + l.required : 0;
+    const row = el("div", { className: "hproj" + (p.name === hProject ? " sel" : "") },
+      el("b", {}, p.name),
+      el("div", { className: "sub" }, `${p.runs} run(s)`, l ? ` · latest ${l.total} findings` : "", l ? ` · ${blocking} required/mandatory` : ""),
+      l ? el("div", { className: "sub" }, "since the previous run: ", el("span", {}, `${l.new_count} new`), el("span", {}, `${l.fixed_count} fixed`)) : "");
+    row.addEventListener("click", () => selectProject(p.name, ""));
+    box.append(row);
+  });
+  if (!hProjects.length) box.append(el("div", { className: "empty" }, el("b", {}, "No projects yet"),
+    "Use Publish in the results, or publish from CI with misra_ci.py --publish."));
+}
+async function selectProject(name, branch) {
+  hProject = name; hBranch = branch || "";
+  const project = hProjects.find((p) => p.name === name);
+  try { hRuns = (await api(`/api/history?project=${encodeURIComponent(name)}&branch=${encodeURIComponent(hBranch)}`)).runs; } catch { hRuns = []; }
+  $("h-title").textContent = name;
+  const sel = $("h-branch");
+  sel.hidden = !(project && project.branches.length > 1);
+  sel.replaceChildren(el("option", { value: "" }, "All branches"), ...(project ? project.branches : []).map((b) => el("option", { value: b }, b)));
+  sel.value = hBranch;
+  $("h-delete").hidden = !(me && me.role === "admin");
+  renderHistory(); renderProjectDetail();
+}
+function trendChart(runs) {
+  const W = 640, H = 170, L = 38, R = 10, T = 10, B = 24;
+  const top = Math.max(1, ...runs.map((r) => r.total));
+  const x = (i) => L + (runs.length === 1 ? (W - L - R) / 2 : (i * (W - L - R)) / (runs.length - 1));
+  const y = (v) => T + (H - T - B) * (1 - v / top);
+  const line = (cls, pick) => svg("polyline", { class: cls, points: runs.map((r, i) => `${x(i)},${y(pick(r))}`).join(" ") });
+  const root = svg("svg", { viewBox: `0 0 ${W} ${H}`, class: "chart", role: "img", "aria-label": "Violations per run" });
+  [0, 0.5, 1].forEach((f) => {
+    root.append(svg("line", { class: "axis", x1: L, x2: W - R, y1: y(top * f), y2: y(top * f) }),
+      svg("text", { x: 4, y: y(top * f) + 4 }, String(Math.round(top * f))));
+  });
+  root.append(line("l-total", (r) => r.total), line("l-block", (r) => r.mandatory + r.required), line("l-mand", (r) => r.mandatory));
+  runs.forEach((r, i) => root.append(svg("circle", { cx: x(i), cy: y(r.total), r: 3.5, fill: "var(--advisory)" },
+    svg("title", {}, `run ${r.id} · ${r.created.slice(0, 16).replace("T", " ")} · ${r.total} findings (${r.new_count} new, ${r.fixed_count} fixed)`))));
+  root.append(svg("text", { x: L, y: H - 6 }, runs[0].created.slice(0, 10)), svg("text", { x: W - R - 60, y: H - 6 }, runs[runs.length - 1].created.slice(0, 10)));
+  return root;
+}
+function renderProjectDetail() {
+  const box = $("h-detail");
+  box.replaceChildren();
+  if (!hRuns.length) { box.append(el("div", { className: "empty" }, "No runs for this selection.")); return; }
+  const last = hRuns[hRuns.length - 1], prev = hRuns[hRuns.length - 2];
+  box.append(el("div", { className: "cards" }, card(last.total, "findings"), card(last.mandatory + last.required, "required + mandatory"),
+    card(last.new_count, "new in latest run", "mandatory"), card(last.fixed_count, "fixed in latest run", "pass"),
+    card(prev ? last.total - prev.total : 0, "change vs previous run")));
+  box.append(trendChart(hRuns));
+  box.append(el("div", { className: "legend" }, el("span", {}, el("i", { style: "background:var(--advisory)" }), "all findings"),
+    el("span", {}, el("i", { style: "background:var(--required)" }), "required + mandatory"), el("span", {}, el("i", { style: "background:var(--mandatory)" }), "mandatory")));
+  const body = el("tbody");
+  hRuns.slice().reverse().forEach((r) => {
+    const tr = el("tr", { className: "clickable" },
+      el("td", {}, String(r.id)), el("td", { className: "sub" }, r.created.slice(0, 16).replace("T", " ")), el("td", {}, r.branch),
+      el("td", { className: "loc" }, (r.commit_id || "").slice(0, 8) || "—"), el("td", {}, String(r.total)),
+      el("td", {}, `${r.mandatory}/${r.required}/${r.advisory}`), el("td", {}, delta(r.new_count)), el("td", {}, delta(-r.fixed_count)),
+      el("td", { className: "sub" }, r.source === "ci" ? "CI" : r.submitted_by));
+    tr.addEventListener("click", () => showRun(r));
+    body.append(tr);
+  });
+  box.append(el("table", {}, el("thead", {}, el("tr", {}, ...["Run", "When", "Branch", "Commit", "Total", "M/R/A", "New", "Fixed", "By"].map((h) => el("th", {}, h)))), body),
+    el("div", { id: "h-run" }));
+}
+async function showRun(r) {
+  const area = $("h-run");
+  area.replaceChildren(el("div", { className: "empty" }, "Loading…"));
+  try {
+    const parts = [];
+    if (r.prev_run) {
+      const d = await api(`/api/history-diff?older=${r.prev_run}&newer=${r.id}`);
+      parts.push(el("h3", { style: "padding:0 12px" }, `Run ${r.id} compared with run ${r.prev_run}`),
+        el("div", { className: "xnote" }, `${d.new.length} new, ${d.fixed.length} fixed, ${d.unchanged} unchanged`),
+        ...d.new.slice(0, 200).map((f) => el("div", { className: "crow" }, el("span", { className: "newtag" }, "new"), el("span", { className: "what" }, `${f.rule}  ${f.message}`), el("span", { className: "where" }, `${f.file}:${f.line}`))),
+        ...d.fixed.slice(0, 200).map((f) => el("div", { className: "crow" }, el("span", { className: "vtag true-positive" }, "fixed"), el("span", { className: "what" }, `${f.rule}  ${f.message}`), el("span", { className: "where" }, `${f.file}:${f.line}`))));
+    } else {
+      const run = await api(`/api/history-run?id=${r.id}`);
+      parts.push(el("h3", { style: "padding:0 12px" }, `Run ${r.id}: first run of this branch`),
+        ...run.findings.slice(0, 200).map((f) => el("div", { className: "crow" }, sevTag(f.category), el("span", { className: "what" }, `${f.rule}  ${f.message}`), el("span", { className: "where" }, `${f.file}:${f.line}`))));
+    }
+    area.replaceChildren(...parts);
+  } catch (e) { area.replaceChildren(el("div", { className: "banner err" }, e.message)); }
+}
+$("h-branch").addEventListener("change", () => selectProject(hProject, $("h-branch").value));
+$("h-refresh").addEventListener("click", loadHistory);
+$("h-delete").addEventListener("click", async () => {
+  if (!hProject || !confirm(`Delete project "${hProject}" and all its runs?`)) return;
+  try { await api("/api/projects/delete", { method: "POST", body: JSON.stringify({ name: hProject }) }); hProject = null; $("h-title").textContent = "Select a project"; $("h-detail").replaceChildren(); loadHistory(); }
+  catch (e) { toast(e.message); }
+});
+$("exp-publish").addEventListener("click", async () => {
+  if (!lastRes || !lastRes.workspace_key) { toast("Run an analysis first"); return; }
+  const suggestion = (project ? project.name.replace(/\.zip$/i, "") : "my-project").replace(/[^A-Za-z0-9_.-]/g, "_").slice(0, 60);
+  const name = (prompt("Project name in the shared history", store.get("pubProject", suggestion)) || "").trim();
+  if (!name) return;
+  const branch = (prompt("Branch or label", store.get("pubBranch", "local")) || "").trim() || "local";
+  try {
+    const r = await api("/api/runs", { method: "POST", body: JSON.stringify({ key: lastRes.workspace_key, project: name, branch }) });
+    store.set("pubProject", name); store.set("pubBranch", branch);
+    toast(`Published as run ${r.run.id}: ${r.run.new_count} new, ${r.run.fixed_count} fixed since the previous run`);
+  } catch (e) { toast(e.message); }
+});
 
 // ---- triage: verdicts on findings and missed violations
 let triageCases = [], triageSummary = {}, triageFp = "";

@@ -25,7 +25,7 @@ globalThis.document = {
   documentElement: { dataset: {} },
   getElementById(id) { return nodes[id] || (nodes[id] = makeNode(id)); },
   createElement: makeNode, createDocumentFragment: () => makeNode("frag"),
-  querySelectorAll: () => [], querySelector: () => makeNode("q"), addEventListener() {}, body: makeNode("body"),
+  createElementNS: (ns, tag) => makeNode(tag), querySelectorAll: () => [], querySelector: () => makeNode("q"), addEventListener() {}, body: makeNode("body"),
 };
 globalThis.window = { matchMedia: () => ({ matches: false }) };
 globalThis.matchMedia = window.matchMedia;
@@ -67,6 +67,14 @@ const responses = {
   "/api/analyze": { status: 200, body: analysis },
   "/api/project": { status: 200, body: { id: "p1", name: "fw.zip", c_files: 1, h_files: 0, library_files: 0,
     files: [{ path: "src/a.c", kind: "c", library: false }] } },
+  "/api/projects": { status: 200, body: { projects: [{ name: "fw", runs: 3, branches: ["main", "dev"], created: "x", created_by: "ci",
+    latest: { id: 3, total: 5, mandatory: 1, required: 2, advisory: 2, new_count: 1, fixed_count: 0 } }] } },
+  "/api/history": { status: 200, body: { runs: [
+    { id: 1, created: "2026-10-01T10:00:00+0000", branch: "main", commit_id: "abcdef123", total: 8, mandatory: 1, required: 3, advisory: 4, new_count: 0, fixed_count: 0, source: "ci", submitted_by: "ci", prev_run: null },
+    { id: 2, created: "2026-10-02T10:00:00+0000", branch: "main", commit_id: "fedcba321", total: 6, mandatory: 1, required: 2, advisory: 3, new_count: 0, fixed_count: 2, source: "ci", submitted_by: "ci", prev_run: 1 },
+    { id: 3, created: "2026-10-03T10:00:00+0000", branch: "main", commit_id: "1111111", total: 5, mandatory: 1, required: 2, advisory: 2, new_count: 1, fixed_count: 2, source: "gui", submitted_by: "bob", prev_run: 2 }] } },
+  "/api/history-diff": { status: 200, body: { new: [{ rule: "8.4", message: "m", file: "a.c", line: 1, category: "required" }], fixed: [], unchanged: 4 } },
+  "/api/runs": { status: 200, body: { run: { id: 9, new_count: 1, fixed_count: 0 } } },
   "/api/file": { status: 200, body: { source: "int x = 010;\n" } },
   "/api/logout": { status: 200, body: { ok: true } },
 };
@@ -88,7 +96,7 @@ const api = new Function(source + `
 ;return { getMe: () => me, csrf: () => csrf, runCode, files: () => files, visibleFindings,
   setLast: (r) => { lastRes = r; }, crossOffAdd: (k) => crossOff.add(k), renderResult, showLogin, project: () => project, devOffSet: (v) => { devOff.v = v; },
   exportCsv, exportJson, exportReport, setDeviations: (t, n) => { deviationsText = t; deviationCount = n; },
-  loadTriage, openTriage, verdictsFor, statusOffAdd: (k) => statusOff.add(k), baselineBlock, fieldText, renderCompare, showCompareDetail, setCmpKey: (k) => { cmpKey = k; }, getLast: () => lastRes, renderEditorLines, setViewPath: (v) => { viewPath = v; }, analyze, runProject, setProject: (p) => { project = p; }, openProjectFile, leaveProject };`)();
+  loadHistory, selectProject, showRun, getRuns: () => hRuns, loadTriage, openTriage, verdictsFor, statusOffAdd: (k) => statusOff.add(k), baselineBlock, fieldText, renderCompare, showCompareDetail, setCmpKey: (k) => { cmpKey = k; }, getLast: () => lastRes, renderEditorLines, setViewPath: (v) => { viewPath = v; }, analyze, runProject, setProject: (p) => { project = p; }, openProjectFile, leaveProject };`)();
 
 const tick = () => new Promise((resolve) => GLib.timeout_add(GLib.PRIORITY_DEFAULT, 30, () => { resolve(); return false; }));
 const loop = new GLib.MainLoop(null, false);
@@ -148,6 +156,21 @@ const loop = new GLib.MainLoop(null, false);
   expect("the verdict is posted with the analysed sources", savedBody.kind === "false-positive" && savedBody.rule === "15.1"
     && savedBody.line === 3 && Array.isArray(savedBody.files) && savedBody.files.length > 0, saved && saved.body);
   expect("the dialog closes after saving", document.getElementById("tri-dialog").hidden === true);
+
+  // history: shared projects with a trend and run-to-run differences
+  await api.loadHistory();
+  expect("projects are listed", document.getElementById("h-projects").children.length === 1);
+  await api.selectProject("fw", "");
+  expect("the runs of the project are loaded", api.getRuns().length === 3);
+  const detail = document.getElementById("h-detail").children;
+  expect("the detail has cards, a chart, a legend and a table", detail.length >= 4, String(detail.length));
+  await api.showRun(api.getRuns()[2]);
+  expect("a run is compared with its predecessor", calls.some((c) => c.path === "/api/history-diff" && c.method === "GET"));
+  globalThis.prompt = (q) => (/Project name/.test(q) ? "fw" : "main");
+  await document.getElementById("exp-publish").handlers.click();
+  const pub = calls.filter((c) => c.path === "/api/runs").pop();
+  expect("publishing sends the workspace key, project and branch", pub && JSON.parse(pub.body).key === "files:a.c"
+    && JSON.parse(pub.body).project === "fw" && JSON.parse(pub.body).branch === "main", pub && pub.body);
 
   // compare view: three panes side by side
   api.renderCompare();

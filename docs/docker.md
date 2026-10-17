@@ -82,3 +82,11 @@ then runs on the CPU, much more slowly.
   an external service unless you choose the Claude provider.
 - The `misra` image runs as a non-root user.
 - Changing the C++ sources requires `docker compose build misra`.
+
+## CI tokens for the shared history
+
+```bash
+docker compose exec misra python3 /opt/misra/gui/misra_gui.py --create-token ci-main --token-role analyst
+```
+The token is printed once and stored hashed in the `misra-data` volume together with the history database.
+See [central-history.md](central-history.md).
