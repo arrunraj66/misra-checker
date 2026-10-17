@@ -256,6 +256,14 @@ if(BUILD_TESTING)
     )
   endif()
   add_test(
+    NAME e2e_browser
+    COMMAND
+      "${Python3_EXECUTABLE}" "${CMAKE_CURRENT_SOURCE_DIR}/tests/e2e_browser.py"
+      --checker "$<TARGET_FILE:misra-checker>"
+  )
+  # Exit status 77 means Playwright is not installed: the test is skipped, not failed.
+  set_tests_properties(e2e_browser PROPERTIES SKIP_RETURN_CODE 77 TIMEOUT 400)
+  add_test(
     NAME history
     COMMAND "${Python3_EXECUTABLE}" -I "${CMAKE_CURRENT_SOURCE_DIR}/tests/history_test.py"
   )

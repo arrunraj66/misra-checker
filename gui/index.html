@@ -33,6 +33,7 @@
   }
 }
 * { box-sizing:border-box; }
+[hidden] { display:none !important; }
 html, body { height:100%; }
 body { margin:0; background:var(--bg); color:var(--text); display:flex; flex-direction:column;
   font:14px/1.5 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif; }
@@ -56,6 +57,17 @@ button, input, select, textarea { font:inherit; color:inherit; }
   color:var(--muted); display:grid; place-items:center; }
 .iconbtn:hover { color:var(--text); background:var(--surface-2); }
 
+@media (max-width:980px) {
+  .appbar { height:auto; flex-wrap:wrap; padding:8px 12px; gap:6px 12px; }
+  .nav { order:3; flex:1 0 100%; height:40px; overflow-x:auto; overflow-y:hidden; }
+  .nav button { white-space:nowrap; padding:0 12px; }
+  .brand small { display:none; }
+  .spacer { display:none; }
+  .userbox { margin-left:auto; }
+  main { padding:12px; }
+  .editor { min-height:300px; }
+  .pane { min-height:0; }
+}
 /* ---- layout */
 main { flex:1; min-height:0; padding:16px 20px; display:flex; }
 .view { flex:1; min-width:0; min-height:0; display:flex; flex-direction:column; }
@@ -132,6 +144,17 @@ textarea.code { position:absolute; inset:0; width:100%; height:100%; padding:8px
 .tag { font:600 10px system-ui,sans-serif; text-transform:uppercase; letter-spacing:.4px; padding:0 6px; border-radius:6px;
   border:1px solid var(--line); color:var(--muted); }
 .cnt-pill { font:600 11px system-ui,sans-serif; padding:0 7px; border-radius:9px; background:var(--accent-soft); color:var(--accent); }
+#sample { max-width:170px; }
+.optbar { display:flex; gap:8px; align-items:center; flex-wrap:wrap; padding:8px 12px; border-bottom:1px solid var(--line); background:var(--surface-2); }
+.optbar input[type=text] { flex:1; min-width:160px; }
+.optbar select { max-width:230px; }
+.menu { position:relative; }
+.menu-list { position:absolute; right:0; top:calc(100% + 4px); z-index:12; min-width:230px; background:var(--surface); border:1px solid var(--line);
+  border-radius:10px; box-shadow:0 8px 24px rgba(0,0,0,.18); padding:4px; display:flex; flex-direction:column; }
+.menu-list button { background:none; border:0; text-align:left; padding:7px 10px; border-radius:6px; cursor:pointer; color:var(--text); }
+.menu-list button:hover:not(:disabled) { background:var(--accent-soft); }
+.menu-list button:disabled { opacity:.45; cursor:default; }
+.menu-list hr { border:0; border-top:1px solid var(--line); margin:4px 0; width:100%; }
 .foot { display:flex; gap:10px; align-items:center; padding:8px 12px; border-top:1px solid var(--line);
   background:var(--surface-2); flex-wrap:wrap; }
 .foot input[type=text] { flex:1; min-width:200px; }
@@ -217,7 +240,7 @@ tr.dev td { opacity:.62; } tr.dev td:first-child { opacity:1; }
 .hproj b { font-size:14px; } .hproj .sub { display:flex; gap:10px; flex-wrap:wrap; }
 .up { color:var(--fail); } .down { color:var(--pass); }
 .chart { width:100%; height:auto; display:block; }
-.chart .axis { stroke:var(--line); stroke-width:1; } .chart text { fill:var(--muted); font:11px system-ui,sans-serif; }
+.chart .axis { stroke:var(--line); stroke-width:1; } .chart text { fill:var(--muted); font:9px system-ui,sans-serif; }
 .chart .l-total { stroke:var(--advisory); fill:none; stroke-width:2; } .chart .l-block { stroke:var(--required); fill:none; stroke-width:2; }
 .chart .l-mand { stroke:var(--mandatory); fill:none; stroke-width:2; }
 .legend { display:flex; gap:14px; font-size:12px; color:var(--muted); padding:0 12px 6px; flex-wrap:wrap; }
@@ -308,13 +331,19 @@ tr.dev td { opacity:.62; } tr.dev td:first-child { opacity:1; }
       <div class="pane">
         <div class="pane-head">
           <span class="pane-title">Source</span>
-          <button class="btn small" id="miss-btn" title="Report a violation the checker did not find (false negative)">+ Missed violation</button>
           <select id="sample" aria-label="Load sample"><option value="">Samples…</option></select>
           <label class="btn" title="Add .c / .h files">Add files<input type="file" id="file" accept=".c,.h,text/plain" multiple hidden></label>
-          <label class="btn" title="Upload a whole project as a .zip (sources, headers, libraries)">Upload project (.zip)<input type="file" id="zip" accept=".zip,application/zip" hidden></label>
+          <label class="btn" title="Upload a whole project as a .zip (sources, headers, libraries)">Upload zip<input type="file" id="zip" accept=".zip,application/zip" hidden></label>
+          <button class="btn primary" id="run"><span id="run-label">Analyze</span> <kbd>Ctrl ↵</kbd></button>
+        </div>
+        <div class="optbar">
           <select id="std" aria-label="Language standard" title="Language standard"><option>c99</option><option>c90</option><option>c11</option><option>c17</option><option>gnu99</option><option>gnu11</option><option>gnu17</option></select>
           <select id="compiler" aria-label="Project compiler" title="Compiler your project is built with"><option value="default">Compiler: default (Clang)</option></select>
-          <button class="btn primary" id="run"><span id="run-label">Analyze</span> <kbd>Ctrl ↵</kbd></button>
+          <input type="text" id="cflags" placeholder="Compiler flags, e.g. -mcpu=cortex-m4 -mthumb -DSTM32F4" aria-label="Compiler flags">
+          <label class="chip" id="xwrap" title="Also run cppcheck's MISRA add-on on the same files and compare"><input type="checkbox" id="xcheck"> Cross-check with cppcheck</label>
+          <label class="btn small" title="JSON file of approved deviation records">Deviations…<input type="file" id="devfile" accept=".json,application/json" hidden></label>
+          <span class="chip" id="devchip" hidden></span>
+          <button class="btn small" id="miss-btn" title="Report a violation the checker did not find (false negative)">+ Missed violation</button>
         </div>
         <div class="projbar" id="projbar" hidden>
           <div class="projhead"><b id="pj-name"></b><span class="sub" id="pj-meta"></span>
@@ -338,12 +367,6 @@ tr.dev td { opacity:.62; } tr.dev td:first-child { opacity:1; }
             <div class="empty-hint" id="hint">Paste C code, load a sample, or add files. Several files are analyzed together, which also enables the whole-program rules.</div>
           </div>
         </div>
-        <div class="foot">
-          <label class="btn small" title="JSON file of approved deviation records">Deviations…<input type="file" id="devfile" accept=".json,application/json" hidden></label>
-          <span class="chip" id="devchip" hidden></span>
-          <label class="chip" id="xwrap" title="Also run cppcheck's MISRA add-on on the same files and compare"><input type="checkbox" id="xcheck"> Cross-check with cppcheck</label>
-          <input type="text" id="cflags" placeholder="Compiler flags, e.g. -mcpu=cortex-m4 -mthumb -DSTM32F4" aria-label="Compiler flags" style="flex:1;min-width:200px">
-        </div>
         <div class="foot" id="dbrow" hidden>
           <input type="text" id="db" placeholder="Or analyze an existing project: path to compile_commands.json / build directory" aria-label="Compile database path">
           <button class="btn" id="rundb">Analyze project</button>
@@ -354,12 +377,18 @@ tr.dev td { opacity:.62; } tr.dev td:first-child { opacity:1; }
         <div class="pane-head">
           <span class="pane-title">Results</span>
           <button class="btn small" id="exp-publish" disabled title="Share this result in the team's project history">Publish</button>
-          <button class="btn small" id="exp-comp-html" disabled title="Guideline Compliance Summary, deviation register and enforcement plan (HTML, printable)">Compliance report</button>
-          <button class="btn small" id="exp-comp-csv" disabled title="One row per rule: status and counts">Summary CSV</button>
-          <button class="btn small" id="exp-report" disabled>Findings</button>
-          <button class="btn small" id="exp-sarif" disabled>SARIF</button>
-          <button class="btn small" id="exp-csv" disabled>CSV</button>
-          <button class="btn small" id="exp-json" disabled>JSON</button>
+          <div class="menu" id="exp-menu">
+            <button class="btn small" id="exp-toggle" disabled aria-haspopup="true" aria-expanded="false">Export ▾</button>
+            <div class="menu-list" id="exp-list" hidden role="menu">
+              <button id="exp-comp-html" role="menuitem" disabled title="Guideline Compliance Summary, deviation register and enforcement plan (printable)">Compliance report (HTML)</button>
+              <button id="exp-comp-csv" role="menuitem" disabled title="One row per rule: status and counts">Guideline summary (CSV)</button>
+              <hr>
+              <button id="exp-report" role="menuitem" disabled>Findings report (HTML)</button>
+              <button id="exp-sarif" role="menuitem" disabled>SARIF</button>
+              <button id="exp-csv" role="menuitem" disabled>Findings (CSV)</button>
+              <button id="exp-json" role="menuitem" disabled>Findings (JSON)</button>
+            </div>
+          </div>
         </div>
         <div class="pane-body" id="result">
           <div class="empty"><b>No analysis yet</b>Run an analysis to see findings here. Press Ctrl+Enter.</div>
@@ -685,6 +714,14 @@ function downloadCompliance(format) {
   const a = el("a", { href: `/api/compliance?key=${encodeURIComponent(lastRes.workspace_key)}&format=${format}` });
   document.body.append(a); a.click(); a.remove();
 }
+$("exp-toggle").addEventListener("click", (e) => {
+  e.stopPropagation();
+  const open = $("exp-list").hidden;
+  $("exp-list").hidden = !open;
+  $("exp-toggle").setAttribute("aria-expanded", String(open));
+});
+document.addEventListener("click", (e) => { if (!e.target.closest || !e.target.closest("#exp-menu")) { $("exp-list").hidden = true; $("exp-toggle").setAttribute("aria-expanded", "false"); } });
+$("exp-list").addEventListener("click", () => { $("exp-list").hidden = true; });
 $("exp-comp-html").addEventListener("click", () => downloadCompliance("html"));
 $("exp-comp-csv").addEventListener("click", () => downloadCompliance("csv"));
 $("exp-csv").addEventListener("click", exportCsv);
@@ -696,7 +733,7 @@ $("exp-sarif").addEventListener("click", () => {
 });
 
 // ---- results rendering
-function card(n, label, kind) { return el("div", { className: "card" + (kind ? " k-" + kind : "") }, el("b", {}, String(n)), el("span", {}, label)); }
+function card(n, label, kind) { return el("div", { className: "card" + (kind && n ? " k-" + kind : "") }, el("b", {}, String(n)), el("span", {}, label)); }
 
 function markStale() {
   const b = $("stale-banner");
@@ -706,7 +743,7 @@ function markStale() {
 function renderResult() {
   const box = $("result"), res = lastRes;
   box.replaceChildren();
-  ["exp-csv", "exp-json", "exp-report", "exp-sarif"].forEach((id) => { $(id).disabled = !res; });
+  ["exp-toggle", "exp-csv", "exp-json", "exp-report", "exp-sarif"].forEach((id) => { $(id).disabled = !res; });
   ["exp-comp-html", "exp-comp-csv", "exp-publish"].forEach((id) => { $(id).disabled = !(res && res.workspace_key); });
   if (!res) { box.append(el("div", { className: "empty" }, el("b", {}, "No analysis yet"), "Run an analysis to see findings here. Press Ctrl+Enter.")); return; }
 
@@ -1001,10 +1038,14 @@ $("pj-download").addEventListener("click", async (e) => {
   document.body.append(a); a.click(); a.remove();
 });
 
+let openTicket = 0;
 async function openProjectFile(path) {
   await flushProjectSave();
+  const ticket = ++openTicket;
   try {
     const data = await api(`/api/file?project=${encodeURIComponent(project.id)}&path=${encodeURIComponent(path)}`);
+    // A newer open supersedes this one, and text typed while the file was loading must not be overwritten.
+    if (ticket !== openTicket || savePath !== null || saveTimer !== null) return;
     viewPath = path;
     $("code").value = data.source; $("code").scrollTop = 0;
     files[active] = files[active] || { name: "input.c", code: "" };
@@ -1190,9 +1231,9 @@ function trendChart(runs) {
   const y = (v) => T + (H - T - B) * (1 - v / top);
   const line = (cls, pick) => svg("polyline", { class: cls, points: runs.map((r, i) => `${x(i)},${y(pick(r))}`).join(" ") });
   const root = svg("svg", { viewBox: `0 0 ${W} ${H}`, class: "chart", role: "img", "aria-label": "Violations per run" });
-  [0, 0.5, 1].forEach((f) => {
+  (top >= 4 ? [0, 0.5, 1] : [0, 1]).forEach((f) => {
     root.append(svg("line", { class: "axis", x1: L, x2: W - R, y1: y(top * f), y2: y(top * f) }),
-      svg("text", { x: 4, y: y(top * f) + 4 }, String(Math.round(top * f))));
+      svg("text", { x: 4, y: y(top * f) + 3 }, String(Math.round(top * f))));
   });
   root.append(line("l-total", (r) => r.total), line("l-block", (r) => r.mandatory + r.required), line("l-mand", (r) => r.mandatory));
   runs.forEach((r, i) => root.append(svg("circle", { cx: x(i), cy: y(r.total), r: 3.5, fill: "var(--advisory)" },

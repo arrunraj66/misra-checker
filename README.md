@@ -159,6 +159,11 @@ Each project can be analysed as its own compiler (GCC, `arm-none-eabi-gcc`, ...)
 target, system headers and version macros. Pick it in the GUI or use
 `scripts/make_compile_db.py --compiler ...`; see [docs/compilers.md](docs/compilers.md).
 
+## Testing
+
+`ctest` runs the rule fixtures, the libraries, the server and a real-browser end-to-end test of the GUI.
+See [docs/testing.md](docs/testing.md).
+
 ## Central history
 
 CI jobs and GUI users publish runs to a shared database; the History tab shows each project's trend and what
