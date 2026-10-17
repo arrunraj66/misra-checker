@@ -1,0 +1,26 @@
+# Example: fail a pull request on NEW MISRA violations (copy to .github/workflows/misra.yml).
+# misra-baseline.json is committed; refresh it deliberately with scripts/misra_ci.py --update-baseline.
+name: misra
+on: [pull_request]
+jobs:
+  misra:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Tools
+        run: sudo apt-get update && sudo apt-get install -y clang-14 llvm-14-dev libclang-14-dev libclang-cpp14-dev cmake ninja-build
+      - name: Build misra-checker
+        run: |
+          git clone --depth 1 https://github.com/arrunraj66/misra-checker.git /tmp/misra
+          cmake -S /tmp/misra -B /tmp/misra/build -G Ninja -DLLVM_DIR=/usr/lib/llvm-14/lib/cmake/llvm
+          cmake --build /tmp/misra/build --target misra-checker
+      - name: Compile database for your project (replace with your own build step)
+        run: cmake -S . -B build -DCMAKE_EXPORT_COMPILE_COMMANDS=ON
+      - name: MISRA gate
+        run: |
+          python3 /tmp/misra/scripts/misra_ci.py --checker /tmp/misra/build/misra-checker \
+            --compile-commands build/compile_commands.json --baseline misra-baseline.json \
+            --min-category required --deviations misra-deviations.json --sarif-out misra.sarif --source-root .
+      - uses: github/codeql-action/upload-sarif@v3
+        if: always()
+        with: { sarif_file: misra.sarif }

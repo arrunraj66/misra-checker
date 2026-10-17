@@ -1,0 +1,21 @@
+{
+ "id": "fp-17-4-invalid-function",
+ "kind": "false-positive",
+ "rule": "17.4",
+ "file": "main.c",
+ "line": 3,
+ "note": "uint32_t is unknown (header not found), so g_ms and millis() are invalid declarations and the return statement is dropped. The function does return a value; Rule 17.4 must not be reported.",
+ "files": {
+  "main.c": "static volatile uint32_t g_ms = 0U;\n\nstatic uint32_t millis(void)\n{\n    return g_ms;\n}\n"
+ },
+ "build": {
+  "std": "c99",
+  "clang_flags": [],
+  "defines": [],
+  "include_dirs": [
+   ""
+  ]
+ },
+ "state": "fixed",
+ "tool_version": "misra-checker 0.4.0"
+}

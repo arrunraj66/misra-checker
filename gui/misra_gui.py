@@ -1,0 +1,1108 @@
+#!/usr/bin/env python3
+"""Web GUI for misra-checker.
+
+* analyzes pasted/uploaded C code, zip projects, or an existing compile database,
+* applies deviation records and exports SARIF,
+* lists all rules with their per-rule fixture validation status and validates them.
+
+Only the Python standard library is used. Access requires a login (roles:
+viewer, analyst, admin) unless --no-auth is given, which is only allowed when
+bound to loopback. Manage users with --add-user / --remove-user / --list-users.
+
+    python3 gui/misra_gui.py --add-user alice --role analyst
+    python3 gui/misra_gui.py [--port 8765] [--data-dir DIR] [--tls-cert C --tls-key K]
+"""
+
+from __future__ import annotations
+
+import argparse
+import io
+import json
+import os
+import re
+import secrets
+import ssl
+import subprocess
+import sys
+import tempfile
+import threading
+import time
+import uuid
+import webbrowser
+import zipfile
+from collections import OrderedDict
+from dataclasses import asdict
+from http.cookies import SimpleCookie
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from pathlib import Path
+from urllib.parse import parse_qs, urlparse
+
+ROOT = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(ROOT / "scripts"))
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+import auth  # noqa: E402
+import compiler_profiles as cp  # noqa: E402
+import baseline as bl  # noqa: E402
+import compliance as cm  # noqa: E402
+import cppcheck_cross as cx  # noqa: E402
+import history as hs  # noqa: E402
+import triage as tg  # noqa: E402
+import triage_runner as tr  # noqa: E402
+import validate_rules as vr  # noqa: E402
+
+INDEX = Path(__file__).resolve().parent / "index.html"
+MAX_BODY = 8 * 1024 * 1024
+MAX_ZIP = 100 * 1024 * 1024
+MAX_UNPACKED = 300 * 1024 * 1024
+MAX_PROJECT_FILES = 10000
+MAX_PROJECTS_PER_USER = 3
+MAX_DEVIATION_BYTES = 1024 * 1024
+MAX_RUN_BODY = 24 * 1024 * 1024
+DEVIATION_FILE = "misra-deviations.json"
+COOKIE = "misra_session"
+LIBRARY_DIR = re.compile(
+    r"(^|/)(libs?|librar(y|ies)|third[_-]?party|vendors?|externa?l?|drivers?|hal|cmsis|middlewares?|sdk|thirdparty)(/|$)",
+    re.I)
+DEFINE_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*(=[^\s]*)?$")
+FINDING_RE = re.compile(
+    r"^(?P<file>.+?):(?P<line>\d+):(?P<col>\d+): (?P<category>\w+): "
+    r"MISRA C:2012 Rule (?P<rule>\S+) \[(?P<key>[^\]]+)\](?: \((?P<deviation>[^)]+)\))?$")
+STANDARDS = {"c90", "c99", "c11", "c17", "gnu90", "gnu99", "gnu11", "gnu17"}
+SAFE_NAME = re.compile(r"^[A-Za-z0-9_][A-Za-z0-9_.-]{0,63}\.[ch]$")
+
+# Minimum role per route (see auth.ROLES).
+ROUTE_ROLE = {
+    ("GET", "/api/compilers"): "viewer", ("GET", "/api/rules"): "viewer", ("GET", "/api/samples"): "viewer",
+    ("GET", "/api/validate"): "analyst", ("GET", "/api/validate-all"): "analyst",
+    ("GET", "/api/file"): "analyst", ("POST", "/api/analyze"): "analyst",
+    ("POST", "/api/project"): "analyst", ("POST", "/api/file"): "analyst",
+    ("GET", "/api/project-zip"): "analyst",
+    ("GET", "/api/triage"): "analyst", ("GET", "/api/triage-export"): "analyst",
+    ("GET", "/api/projects"): "viewer", ("GET", "/api/history"): "viewer", ("GET", "/api/history-run"): "viewer",
+    ("GET", "/api/history-diff"): "viewer", ("POST", "/api/runs"): "analyst", ("POST", "/api/projects/delete"): "admin",
+    ("GET", "/api/compliance"): "analyst", ("GET", "/api/baseline"): "analyst", ("POST", "/api/baseline/save"): "analyst",
+    ("POST", "/api/baseline/clear"): "analyst",
+    ("POST", "/api/triage"): "analyst", ("POST", "/api/triage/delete"): "analyst",
+    ("POST", "/api/triage/run"): "analyst", ("POST", "/api/triage/promote"): "admin",
+}
+
+
+class State:
+    projects: "OrderedDict[str, Project]" = OrderedDict()
+    checker: Path
+    compiler: str
+    compilers: dict = {}
+    tools: dict = {}
+    triage: tg.TriageStore
+    baselines: bl.BaselineStore
+    history: hs.HistoryStore
+    tokens: hs.TokenStore
+    last: dict = {}
+    runs: dict = {}
+    version: str = ""
+    _rule_status: dict | None = None
+    _status_lock = threading.Lock()
+    promote_dir: Path = ROOT / "tests" / "triage"
+    cases: dict
+    users: auth.UserStore
+    sessions = auth.Sessions()
+    limiter = auth.LoginLimiter()
+    audit = auth.AuditLog(None)
+    require_auth = True
+    secure_cookie = False
+    allowed_hosts = {"127.0.0.1", "localhost", "::1"}
+    db_roots: list[Path] = []
+
+
+def compile_profile(compiler_id: str, flags_text: str) -> tuple[list[str], str]:
+    """Clang flags that imitate the selected project compiler, plus a label for the report."""
+    chosen = State.compilers.get(compiler_id or "default")
+    if chosen is None:
+        raise ValueError("unknown compiler; pick one from the list")
+    flags = cp.clang_flags(chosen, State.compiler) + cp.validate_flags(flags_text)
+    return flags, chosen.label
+
+
+def load_rule_table() -> list[dict]:
+    """Rule metadata from the engineering inventory (no normative text)."""
+    rows = []
+    path = ROOT / "docs" / "rule-implementation-status.md"
+    for line in path.read_text().splitlines():
+        cells = [c.strip() for c in line.strip().strip("|").split("|")]
+        if len(cells) == 8 and re.fullmatch(r"\d+\.\d+", cells[0]):
+            rows.append({"id": cells[0], "category": cells[1], "decidability": cells[2],
+                         "scope": cells[3], "topic": cells[6]})
+    return rows
+
+
+def rule_category(rule: str) -> str:
+    if not hasattr(rule_category, "table"):
+        rule_category.table = {r["id"]: r["category"].lower() for r in load_rule_table()}
+    return rule_category.table.get(rule, "advisory")
+
+
+def parse_findings(stdout: str) -> tuple[list[dict], list[dict], str]:
+    findings, deviated, summary = [], [], []
+    for line in stdout.splitlines():
+        m = FINDING_RE.match(line)
+        if m:
+            d = m.groupdict()
+            d["line"], d["col"] = int(d["line"]), int(d["col"])
+            d["message"] = re.sub(r"^misra-c2012-\d+\.\d+-", "", d["key"]).replace("-", " ")
+            if d["category"] == "deviated":
+                d["category"] = rule_category(d["rule"])
+                if d not in deviated:
+                    deviated.append(d)
+            else:
+                d.pop("deviation")
+                if d not in findings:
+                    findings.append(d)
+        elif line.strip():
+            summary.append(line.strip())
+    return findings, deviated, " ".join(summary)
+
+
+def run_checker(db_path: Path, timeout: int = 300, deviations: str = "",
+                source_root: str = "") -> dict:
+    if len(deviations.encode()) > MAX_DEVIATION_BYTES:
+        raise ValueError("deviation file is too large")
+    with tempfile.TemporaryDirectory(prefix="misra-run-") as run_dir:
+        args = [str(State.checker), "analyze", "--compile-commands", str(db_path),
+                "--sarif-out", str(Path(run_dir) / "result.sarif")]
+        if deviations.strip():
+            dev_path = Path(run_dir) / "deviations.json"
+            dev_path.write_text(deviations)
+            args += ["--deviations", str(dev_path)]
+        if source_root:
+            args += ["--source-root", source_root]
+        started = time.monotonic()
+        proc = subprocess.run(args, capture_output=True, text=True, timeout=timeout)
+        elapsed_ms = round((time.monotonic() - started) * 1000)
+        sarif = ""
+        sarif_file = Path(run_dir) / "result.sarif"
+        if sarif_file.is_file():
+            document = json.loads(sarif_file.read_text())
+            for run in document.get("runs", []):
+                run.pop("originalUriBaseIds", None)  # do not leak server paths
+            sarif = json.dumps(document)
+    findings, deviated, summary = parse_findings(proc.stdout)
+    compile_errors = "results may be incomplete" in proc.stderr
+    notes = [ln.replace("misra-checker: ", "") for ln in proc.stderr.splitlines()
+             if "deviation" in ln and ("expired" in ln or "matched no finding" in ln)]
+    missing = []
+    for header in re.findall(r"fatal error: '([^']+)' file not found", proc.stderr):
+        if header not in missing and len(missing) < 20:
+            missing.append(header)
+    error = ""
+    if proc.returncode not in (0, 1) and not compile_errors:
+        error = proc.stderr.strip()
+    return {"exit_code": proc.returncode, "findings": findings, "deviated": deviated,
+            "summary": summary, "elapsed_ms": elapsed_ms, "compile_errors": compile_errors,
+            "compiler_output": proc.stderr.strip()[:20000] if compile_errors else "",
+            "missing_headers": missing,
+            "deviation_notes": notes, "error": error, "sarif": sarif}
+
+
+def cross_verify(result: dict, db: list[dict], prefix: str) -> None:
+    """Run cppcheck on the same translation units and annotate the findings."""
+    if not State.tools.get("cppcheck", {}).get("available"):
+        raise ValueError("cppcheck cross-checking is not available on this server")
+    both = result["findings"] + result["deviated"]
+    result["cross"] = cx.cross_check(db, both, prefix)
+
+
+def analyze_files(files: list[dict], std: str, deviations: str, compiler_id: str = "default",
+                  flags_text: str = "", cross: bool = False) -> dict:
+    """Analyze several in-memory files together (enables whole-program rules)."""
+    if std not in STANDARDS:
+        raise ValueError("unsupported language standard")
+    if not files or len(files) > 50:
+        raise ValueError("provide between 1 and 50 files")
+    names = [str(f.get("name", "")) for f in files]
+    if any(not SAFE_NAME.match(n) for n in names) or len(set(names)) != len(names):
+        raise ValueError("file names must be unique and look like name.c or name.h")
+    if not any(n.endswith(".c") for n in names):
+        raise ValueError("at least one .c file is required")
+    profile_flags, compiler_label = compile_profile(compiler_id, flags_text)
+    with tempfile.TemporaryDirectory(prefix="misra-gui-") as tmp:
+        for f in files:
+            (Path(tmp) / f["name"]).write_text(str(f.get("code", "")))
+        db = Path(tmp) / "compile_commands.json"
+        entries = [{
+            "directory": tmp, "file": str(Path(tmp) / n),
+            "arguments": [State.compiler, f"-std={std}", *profile_flags, "-I", tmp, "-c", str(Path(tmp) / n)]}
+            for n in names if n.endswith(".c")]
+        db.write_text(json.dumps(entries))
+        result = run_checker(db, deviations=deviations, source_root=tmp)
+        prefix = tmp + "/"
+        for f in result["findings"] + result["deviated"]:
+            f["file"] = f["file"].replace(prefix, "")
+        if cross:
+            cross_verify(result, entries, prefix)
+    for key in ("compiler_output", "error"):
+        result[key] = result[key].replace(prefix, "")
+    result["compiler"] = compiler_label
+    return result
+
+
+def analyze_database(path: str, deviations: str) -> dict:
+    p = Path(path).expanduser().resolve()
+    if p.is_dir():
+        p = p / "compile_commands.json"
+    if not State.db_roots:
+        raise ValueError("analyzing server-side paths is disabled; start the server with --db-root DIR")
+    if not any(root == p or root in p.parents for root in State.db_roots):
+        raise ValueError("that path is outside the allowed --db-root directories")
+    if not p.is_file():
+        raise ValueError(f"no such compile database: {p}")
+    return run_checker(p, deviations=deviations)
+
+
+def case_with_source(case: vr.CaseResult, sources: list[Path]) -> dict:
+    d = asdict(case)
+    d["files"] = [{"name": s.name, "source": s.read_text(errors="replace")} for s in sources]
+    return d
+
+
+def validate_one(rule: str, with_source: bool) -> dict:
+    result = vr.validate_rule(State.checker, State.compiler, rule, State.cases)
+    out = asdict(result)
+    if with_source:
+        by_name = {name: srcs for name, _k, srcs in State.cases.get(rule, [])}
+        out["cases"] = [case_with_source(c, by_name[c.name]) for c in result.cases]
+    return out
+
+
+class Project:
+    """A zip uploaded by a user, unpacked (C sources and headers only) in a temp dir."""
+
+    def __init__(self, owner: str, name: str, tmp: tempfile.TemporaryDirectory, root: Path,
+                 c_files: list[str], h_files: list[str], deviations: str) -> None:
+        self.id = uuid.uuid4().hex
+        self.owner, self.name, self._tmp, self.root = owner, name, tmp, root
+        self.c_files, self.h_files, self.deviations = c_files, h_files, deviations
+
+    @property
+    def include_dirs(self) -> list[str]:
+        dirs = {""}
+        for rel in self.c_files + self.h_files:
+            dirs.add(str(Path(rel).parent) if str(Path(rel).parent) != "." else "")
+        return sorted(dirs)[:300]
+
+    def describe(self) -> dict:
+        return {"id": self.id, "name": self.name, "c_files": len(self.c_files),
+                "h_files": len(self.h_files), "include_dirs": len(self.include_dirs),
+                "library_files": sum(1 for f in self.c_files + self.h_files if LIBRARY_DIR.search(f)),
+                "has_deviations": bool(self.deviations.strip()),
+                "files": [{"path": f, "kind": "c" if f.endswith(".c") else "h",
+                           "library": bool(LIBRARY_DIR.search(f))}
+                          for f in sorted(self.c_files + self.h_files)]}
+
+
+def create_project(owner: str, name: str, data: bytes) -> Project:
+    try:
+        archive = zipfile.ZipFile(io.BytesIO(data))
+    except zipfile.BadZipFile as exc:
+        raise ValueError("not a valid zip archive") from exc
+    wanted, deviation_info = [], None
+    for info in archive.infolist():
+        path = info.filename.replace("\\", "/")
+        parts = [p for p in path.split("/") if p not in ("", ".")]
+        if info.is_dir() or not parts or "__MACOSX" in parts:
+            continue
+        if path.startswith("/") or ".." in parts or ":" in parts[0]:
+            raise ValueError(f"unsafe path in archive: {info.filename}")
+        if ((info.external_attr >> 16) & 0o170000) == 0o120000:
+            continue  # symlink
+        if parts[-1].lower().endswith((".c", ".h")):
+            wanted.append((info, "/".join(parts)))
+        elif parts[-1] == DEVIATION_FILE and len(parts) <= 2:
+            deviation_info = info
+    if not wanted:
+        raise ValueError("the archive contains no .c or .h files")
+    if len(wanted) > MAX_PROJECT_FILES or sum(i.file_size for i, _ in wanted) > MAX_UNPACKED:
+        raise ValueError("project is too large")
+    prefix = ""  # drop a single common top-level folder
+    firsts = {rel.split("/")[0] for _, rel in wanted}
+    if len(firsts) == 1 and all("/" in rel for _, rel in wanted):
+        prefix = firsts.pop() + "/"
+    tmp = tempfile.TemporaryDirectory(prefix="misra-project-")
+    root = Path(tmp.name).resolve()
+    c_files, h_files = [], []
+    for info, rel in wanted:
+        rel = rel[len(prefix):] if prefix else rel
+        target = (root / rel).resolve()
+        if root not in target.parents:
+            raise ValueError(f"unsafe path in archive: {rel}")
+        target.parent.mkdir(parents=True, exist_ok=True)
+        with archive.open(info) as src, open(target, "wb") as dst:
+            dst.write(src.read(MAX_UNPACKED + 1))
+        (c_files if rel.lower().endswith(".c") else h_files).append(rel)
+    deviations = ""
+    if deviation_info is not None and deviation_info.file_size <= MAX_DEVIATION_BYTES:
+        deviations = archive.read(deviation_info).decode("utf-8", "replace")
+    project = Project(owner, name, tmp, root, c_files, h_files, deviations)
+    State.projects[project.id] = project
+    mine = [p for p in State.projects.values() if p.owner == owner]
+    for old in mine[:-MAX_PROJECTS_PER_USER]:
+        State.projects.pop(old.id, None)
+    return project
+
+
+def project_for(session: dict, project_id: str) -> Project:
+    project = State.projects.get(project_id)
+    if project is None or (project.owner != session["user"] and session["role"] != "admin"):
+        raise ValueError("project not found; upload it again")
+    return project
+
+
+def analyze_project(session: dict, project_id: str, std: str, defines: str, includes: str,
+                    deviations: str, compiler_id: str = "default", flags_text: str = "",
+                    cross: bool = False) -> dict:
+    project = project_for(session, project_id)
+    if std not in STANDARDS:
+        raise ValueError("unsupported language standard")
+    if not project.c_files:
+        raise ValueError("the project has no .c files to analyze")
+    macros = [d for d in re.split(r"[\s,]+", defines.strip()) if d]
+    if any(not DEFINE_RE.match(d) for d in macros):
+        raise ValueError("defines must look like NAME or NAME=value")
+    extra = []
+    for line in includes.splitlines():
+        line = line.strip().strip("/")
+        if line:
+            resolved = (project.root / line).resolve()
+            if project.root not in (resolved, *resolved.parents) or not resolved.is_dir():
+                raise ValueError(f"include directory not in project: {line}")
+            extra.append(str(resolved))
+    profile_flags, compiler_label = compile_profile(compiler_id, flags_text)
+    flags = [f"-std={std}", *profile_flags, *(f"-D{d}" for d in macros),
+             *("-I" + str(project.root / d) if d else "-I" + str(project.root) for d in project.include_dirs),
+             *("-I" + e for e in extra)]
+    db = [{"directory": str(project.root), "file": str(project.root / rel),
+           "arguments": [State.compiler, *flags, "-c", str(project.root / rel)]}
+          for rel in sorted(project.c_files)]
+    with tempfile.TemporaryDirectory(prefix="misra-db-") as t:
+        db_path = Path(t) / "compile_commands.json"
+        db_path.write_text(json.dumps(db))
+        # A deviation file sent with the request wins over the one shipped in the zip.
+        result = run_checker(db_path, timeout=900, deviations=deviations or project.deviations,
+                             source_root=str(project.root))
+    prefix = str(project.root) + "/"
+    for f in result["findings"] + result["deviated"]:
+        f["file"] = f["file"].replace(prefix, "")
+        f["library"] = bool(LIBRARY_DIR.search(f["file"]))
+    if cross:
+        cross_verify(result, db, prefix)
+    for key in ("compiler_output", "error"):
+        result[key] = result[key].replace(prefix, "")[:20000]
+    result["project"] = project.describe() | {"files": []}
+    result["compiler"] = compiler_label
+    return result
+
+
+def project_member(project: Project, rel: str) -> Path:
+    """Validated absolute path of a .c/.h member of the project (it may not exist yet)."""
+    clean = rel.replace("\\", "/").strip()
+    parts = [p for p in clean.split("/") if p not in ("", ".")]
+    if (clean.startswith("/") or not parts or ".." in parts or len(clean) > 200 or ":" in parts[0]
+            or not parts[-1].lower().endswith((".c", ".h"))):
+        raise ValueError("file names must be relative paths ending in .c or .h")
+    target = (project.root / "/".join(parts)).resolve()
+    if project.root not in target.parents:
+        raise ValueError("file not in project")
+    return target
+
+
+def write_project_file(session: dict, project_id: str, rel: str, text: str) -> dict:
+    project = project_for(session, project_id)
+    target = project_member(project, rel)
+    if len(text.encode()) > 2_000_000:
+        raise ValueError("file is too large")
+    relative = str(target.relative_to(project.root))
+    is_new = not target.exists()
+    if is_new and len(project.c_files) + len(project.h_files) >= MAX_PROJECT_FILES:
+        raise ValueError("project has too many files")
+    target.parent.mkdir(parents=True, exist_ok=True)
+    target.write_text(text)
+    if is_new:
+        (project.c_files if relative.lower().endswith(".c") else project.h_files).append(relative)
+    return {"saved": True, "new": is_new, "project": project.describe()}
+
+
+def project_zip(session: dict, project_id: str) -> bytes:
+    project = project_for(session, project_id)
+    buffer = io.BytesIO()
+    with zipfile.ZipFile(buffer, "w", zipfile.ZIP_DEFLATED) as archive:
+        for rel in sorted(project.c_files + project.h_files):
+            archive.write(project.root / rel, rel)
+        if project.deviations.strip():
+            archive.writestr(DEVIATION_FILE, project.deviations)
+    return buffer.getvalue()
+
+
+def read_project_file(session: dict, project_id: str, rel: str) -> str:
+    project = project_for(session, project_id)
+    target = (project.root / rel).resolve()
+    if project.root not in target.parents or target.suffix.lower() not in (".c", ".h"):
+        raise ValueError("file not in project")
+    return target.read_text(errors="replace")[:2_000_000]
+
+
+def project_snapshot(project: Project, wanted: str) -> tuple[dict[str, str], bool]:
+    """The project's sources for a case: the file concerned first, then the rest while they fit."""
+    members = sorted(project.c_files + project.h_files)
+    if wanted not in members:
+        raise ValueError("the file is not part of the project")
+    files, used, complete = {}, 0, True
+    for rel in [wanted] + [m for m in members if m != wanted]:
+        text = (project.root / rel).read_text(errors="replace")
+        if used + len(text) > tg.SNAPSHOT_LIMIT and rel != wanted:
+            complete = False
+            continue
+        files[rel] = text
+        used += len(text)
+    return files, complete
+
+
+def create_triage(session: dict, body: dict) -> dict:
+    std = str(body.get("std", "c99"))
+    if std not in STANDARDS:
+        raise ValueError("unsupported language standard")
+    profile_flags, label = compile_profile(str(body.get("compiler", "default")), str(body.get("flags", "")))
+    macros = [d for d in re.split(r"[\s,]+", str(body.get("defines", "")).strip()) if d]
+    if any(not DEFINE_RE.match(d) for d in macros):
+        raise ValueError("defines must look like NAME or NAME=value")
+    file = str(body.get("file", ""))
+    if body.get("project"):
+        project = project_for(session, str(body["project"]))
+        files, complete = project_snapshot(project, file)
+        dirs = {str(Path(r).parent) if str(Path(r).parent) != "." else "" for r in files} | {""}
+        for line in str(body.get("includes", "")).splitlines():
+            line = line.strip().strip("/")
+            if line:
+                resolved = (project.root / line).resolve()
+                if project.root not in resolved.parents or not resolved.is_dir():
+                    raise ValueError(f"include directory not in project: {line}")
+                dirs.add(str(resolved.relative_to(project.root)))
+        mode, include_dirs = "project", sorted(dirs)
+    else:
+        listed = body.get("files") or []
+        names = [str(f.get("name", "")) for f in listed]
+        if (not listed or len(listed) > 50 or any(not SAFE_NAME.match(n) for n in names)
+                or len(set(names)) != len(names)):
+            raise ValueError("provide the analysed files")
+        files = {str(f["name"]): str(f.get("code", "")) for f in listed}
+        complete, mode, include_dirs = True, "files", [""]
+    build = {"std": std, "clang_flags": profile_flags, "defines": macros, "include_dirs": include_dirs,
+             "complete_snapshot": complete}
+    version = subprocess.run([str(State.checker), "--version"], capture_output=True, text=True).stdout.strip()
+    case = tg.make_case(user=session["user"], kind=str(body.get("kind", "")), rule=str(body.get("rule", "")),
+                        file=file, line=int(body.get("line", 0)), note=str(body.get("note", "")),
+                        files=files, build=build, tool_version=version, compiler=label, mode=mode)
+    given = str(body.get("fp", ""))
+    if re.fullmatch(r"[0-9a-f]{16}", given):
+        case["fp"] = given        # from the analysis result: matches the finding even after edits
+    else:
+        probe = [{"file": file, "line": case["line"], "rule": case["rule"]}]
+        lines = files[file].split("\n")
+        bl.fingerprint_all(probe, lambda f, n: lines[n - 1] if 0 < n <= len(lines) else "")
+        case["fp"] = probe[0]["fp"]
+    return tg.public(State.triage.save(case))
+
+
+def track_violations(session: dict, result: dict, key: str, text_of) -> None:
+    """Give every finding a stable fingerprint and compare with the user's baseline for this workspace."""
+    everything = result["findings"] + result["deviated"]
+    bl.fingerprint_all(everything, text_of)
+    result["workspace_key"] = key
+    State.last[(session["user"], key)] = [dict(f) for f in result["findings"]]
+    while len(State.last) > 200:
+        State.last.pop(next(iter(State.last)))
+    previous = State.baselines.latest(session["user"], key)
+    result["baseline"] = None
+    if previous:
+        summary = bl.compare(result["findings"], previous["findings"])
+        summary["fixed_entries"] = summary["fixed_entries"][:200]
+        summary["saved"] = previous["saved"]
+        result["baseline"] = summary
+
+
+def rule_status() -> dict:
+    """Fixture-validation status per rule, computed once per server run (about 5 seconds)."""
+    with State._status_lock:
+        if State._rule_status is None:
+            State._rule_status = {r.rule: r.status for r in vr.validate()}
+        return State._rule_status
+
+
+def remember_run(session: dict, result: dict, body: dict, meta: dict) -> None:
+    """Keep what a compliance report needs about the last analysis of this workspace."""
+    key = result.get("workspace_key")
+    if not key:
+        return
+    text = str(body.get("deviations") or meta.get("project_deviations") or "")
+    try:
+        records = json.loads(text).get("deviations", []) if text.strip() else []
+    except ValueError:
+        records = []
+    m = re.search(r"\(rules ([0-9., ]+)\)", result.get("summary", ""))
+    cross = result.get("cross")
+    scope = {"Workspace": meta["name"], "Translation units analysed": meta["units"], "Lines of code (all analysed files)": meta["loc"],
+             "Language standard": str(body.get("std", "c99")), "Compiler profile": result.get("compiler", ""),
+             "Extra compiler flags": str(body.get("flags", "")) or "none", "Preprocessor defines": str(body.get("defines", "")) or "none",
+             "Cross-check": cross["tool"] if cross else "not run", "Deviation records supplied": len(records),
+             "Compile errors in the analysed code": "yes (results may be incomplete)" if result.get("compile_errors") else "no"}
+    tools = {"misra-checker": State.version, "front end": State.compilers["default"].version}
+    if cross:
+        tools["cppcheck"] = cross["tool"]
+    State.runs[(session["user"], key)] = {
+        "result": {"findings": result["findings"], "deviated": result["deviated"], "baseline": result.get("baseline"),
+                   "cross": {"tool": cross["tool"]} if cross else None},
+        "records": records, "not_assessed": re.findall(r"\d+\.\d+", m.group(1)) if m else [],
+        "scope": scope, "tools": tools, "project": meta["name"]}
+    while len(State.runs) > 100:
+        State.runs.pop(next(iter(State.runs)))
+
+
+def compliance_document(session: dict, key: str, fmt: str) -> tuple[bytes, str, str]:
+    run = State.runs.get((session["user"], key))
+    if run is None:
+        raise ValueError("run an analysis of this workspace first")
+    supported = []
+    if State.tools.get("cppcheck", {}).get("available"):
+        supported = sorted(cx.supported_rules(cx.find_misra()))
+    oracle = None
+    oracle_file = ROOT / "docs" / "validation" / "freertos-oracle.json"
+    if oracle_file.is_file():
+        data = json.loads(oracle_file.read_text())
+        oracle = {"name": "FreeRTOS-Kernel", "rules_with_findings": sum(
+            1 for v in data["rules"].values() if v.get("documented", 0) + v.get("unexplained", 0) + v.get("project-deviated", 0))}
+    doc = cm.build({"project": run["project"], "result": run["result"], "rules": load_rule_table(), "deviations": run["records"],
+                    "not_assessed": run["not_assessed"], "validation": rule_status(), "cppcheck_rules": supported,
+                    "scope": run["scope"], "tools": run["tools"], "oracle": oracle})
+    if fmt == "csv":
+        return cm.to_csv(doc).encode(), "text/csv", "csv"
+    if fmt == "json":
+        return cm.to_json(doc).encode(), "application/json", "json"
+    return cm.to_html(doc).encode(), "text/html; charset=utf-8", "html"
+
+
+def to_int(value, name: str) -> int:
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        raise ValueError(f"{name} must be a number") from None
+
+
+def handle_history_get(session: dict, path: str, query: dict) -> dict:
+    first = lambda k: (query.get(k) or [""])[0]  # noqa: E731
+    if path == "/api/projects":
+        return {"projects": State.history.projects()}
+    if path == "/api/history":
+        project = first("project")
+        if not hs.NAME_RE.match(project):
+            raise ValueError("bad project name")
+        return {"project": project, "runs": State.history.runs(project, first("branch") or None, min(to_int(first("limit") or 100, "limit"), 500))}
+    if path == "/api/history-run":
+        run = State.history.run(to_int(first("id"), "id"))
+        if run is None:
+            raise ValueError("no such run")
+        return run
+    diff = State.history.diff(to_int(first("older"), "older"), to_int(first("newer"), "newer"))
+    if diff is None:
+        raise ValueError("those runs cannot be compared")
+    return diff
+
+
+def publish_run(session: dict, body: dict) -> dict:
+    """Store a run from CI (findings in the body) or from the GUI (the last analysis of a workspace)."""
+    version = State.version
+    key = str(body.get("key", ""))
+    if key:
+        findings = State.last.get((session["user"], key))
+        if findings is None:
+            raise ValueError("run an analysis of this workspace first")
+        run = State.runs.get((session["user"], key)) or {}
+        deviated, source = len(run.get("result", {}).get("deviated", [])), "gui"
+    else:
+        findings, deviated, source = body.get("findings"), to_int(body.get("deviated", 0), "deviated"), "ci"
+        if not isinstance(findings, list):
+            raise ValueError("findings must be a list")
+        version = str(body.get("tool_version", ""))[:100]
+    stored = State.history.add_run(project=str(body.get("project", "")), branch=str(body.get("branch") or "main"),
+                                   commit=str(body.get("commit", "")), user=session["user"], source=source, tool_version=version,
+                                   findings=findings, deviated=deviated, note=str(body.get("note", "")))
+    State.audit.write(session["user"], "run_published", project=stored["project"], branch=stored["branch"], total=stored["total"],
+                      new=stored["new_count"], fixed=stored["fixed_count"])
+    return {"run": stored}
+
+
+def handle_baseline(session: dict, path: str, body: dict, query: dict) -> dict:
+    user = session["user"]
+    key = str(body.get("key") or (query.get("key") or [""])[0])
+    if not key or len(key) > 200:
+        raise ValueError("no workspace to track; run an analysis first")
+    if path == "/api/baseline":
+        latest = State.baselines.latest(user, key)
+        return {"key": key, "history": State.baselines.history(user, key),
+                "latest": latest["counts"] if latest else None}
+    if path == "/api/baseline/clear":
+        return {"cleared": State.baselines.clear(user, key)}
+    findings = State.last.get((user, key))
+    if findings is None:
+        raise ValueError("run an analysis of this workspace first")
+    version = subprocess.run([str(State.checker), "--version"], capture_output=True, text=True).stdout.strip()
+    saved = State.baselines.save(user, key, findings, version)
+    State.audit.write(user, "baseline_save", key=key, findings=len(findings))
+    return {"saved": saved["saved"], "counts": saved["counts"], "history": State.baselines.history(user, key)}
+
+
+def handle_triage(session: dict, path: str, body: dict) -> dict:
+    user, role = session["user"], session["role"]
+    if path == "/api/triage":
+        return {"case": create_triage(session, body)}
+    if path == "/api/triage/delete":
+        return {"deleted": State.triage.delete(str(body.get("id", "")), user, role)}
+    ids = {str(i) for i in body.get("ids", [])}
+    cases = [c for c in State.triage.visible(user, role) if not ids or c["id"] in ids][:60]
+    if path == "/api/triage/run":
+        results = []
+        for case in cases:
+            result = tr.run_case(str(State.checker), State.compiler, case)
+            if result["state"] != "skipped":
+                State.triage.update_state(case["id"], result["state"])
+            results.append({"id": case["id"], **result})
+        return {"results": results}
+    if path == "/api/triage/promote":
+        target = State.promote_dir
+        target.mkdir(parents=True, exist_ok=True)
+        written = []
+        for case in cases:
+            result = tr.run_case(str(State.checker), State.compiler, case)
+            prefix = {"false-positive": "fp", "false-negative": "fn", "true-positive": "tp"}[case["kind"]]
+            name = f"{prefix}-{case['rule'].replace('.', '-')}-{case['id'][:6]}"
+            promoted = {k: v for k, v in case.items() if k not in ("user", "fingerprint", "_path", "line_text")}
+            promoted.update(id=name, state="fixed" if result["ok"] else "open")
+            (target / f"{name}.json").write_text(json.dumps(promoted, indent=1) + "\n")
+            written.append({"id": name, "state": promoted["state"]})
+        return {"written": written, "directory": str(target)}
+    raise ValueError("unknown triage request")
+
+
+class Handler(BaseHTTPRequestHandler):
+    server_version = "misra-gui"
+    timeout = 120  # drop stalled connections
+
+    def log_message(self, fmt: str, *args) -> None:  # quiet
+        pass
+
+    # ---- helpers
+    def _host_ok(self) -> bool:
+        host = (self.headers.get("Host") or "").rsplit(":", 1)[0].strip("[]")
+        return host in State.allowed_hosts
+
+    def _origin_ok(self) -> bool:
+        origin = self.headers.get("Origin")
+        if not origin:
+            return True
+        return urlparse(origin).netloc == (self.headers.get("Host") or "")
+
+    def _send(self, status: int, body: bytes, ctype: str, headers: dict | None = None) -> None:
+        self.send_response(status)
+        self.send_header("Content-Type", ctype)
+        self.send_header("Content-Length", str(len(body)))
+        self.send_header("Cache-Control", "no-store")
+        self.send_header("X-Content-Type-Options", "nosniff")
+        self.send_header("X-Frame-Options", "DENY")
+        self.send_header("Referrer-Policy", "no-referrer")
+        self.send_header("Content-Security-Policy",
+                         "default-src 'self'; script-src 'self' 'unsafe-inline'; "
+                         "style-src 'self' 'unsafe-inline'; img-src 'self' data:; "
+                         "connect-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'")
+        for key, value in (headers or {}).items():
+            self.send_header(key, value)
+        self.end_headers()
+        self.wfile.write(body)
+
+    def _json(self, status: int, payload, headers: dict | None = None) -> None:
+        self._send(status, json.dumps(payload).encode(), "application/json", headers)
+
+    def _client(self) -> str:
+        return self.client_address[0]
+
+    def _session(self) -> dict | None:
+        if not State.require_auth:
+            return {"user": "local", "role": "admin", "csrf": "", "token": ""}
+        header = self.headers.get("Authorization") or ""
+        if header.startswith("Bearer "):          # API token (CI): no cookie, no CSRF
+            record = State.tokens.verify(header[7:].strip())
+            if record:
+                return {"user": "token:" + record["name"], "role": record["role"], "csrf": "", "token": "", "bearer": True}
+            return None
+        cookie = SimpleCookie(self.headers.get("Cookie") or "")
+        morsel = cookie.get(COOKIE)
+        return State.sessions.get(morsel.value if morsel else None)
+
+    def _authorize(self, method: str, path: str) -> dict | None:
+        """Return the session, or send the error response and return None."""
+        session = self._session()
+        if session is None:
+            self._json(401, {"error": "login required"})
+            return None
+        need = ROUTE_ROLE.get((method, path), "admin")
+        if auth.ROLES[session["role"]] < auth.ROLES[need]:
+            self._json(403, {"error": f"the {need} role is required"})
+            return None
+        if method == "POST" and State.require_auth and not session.get("bearer"):
+            if not secrets.compare_digest(self.headers.get("X-CSRF-Token") or "", session["csrf"]):
+                self._json(403, {"error": "bad CSRF token; reload the page"})
+                return None
+        return session
+
+    def _read_body(self, limit: int) -> bytes | None:
+        length = int(self.headers.get("Content-Length") or 0)
+        if length > limit:
+            self._json(413, {"error": "request too large"})
+            return None
+        return self.rfile.read(length)
+
+    # ---- GET
+    def do_GET(self) -> None:  # noqa: N802
+        if not self._host_ok():
+            return self._json(403, {"error": "bad host"})
+        url = urlparse(self.path)
+        query = parse_qs(url.query)
+        if url.path == "/":
+            return self._send(200, INDEX.read_bytes(), "text/html; charset=utf-8")
+        if url.path == "/api/me":
+            session = self._session()
+            if session is None:
+                return self._json(401, {"error": "login required", "auth": State.require_auth})
+            return self._json(200, {"user": session["user"], "role": session["role"],
+                                    "csrf": session["csrf"], "auth": State.require_auth,
+                                    "db_paths": bool(State.db_roots) and session["role"] == "admin",
+                                    "tools": State.tools})
+        session = self._authorize("GET", url.path)
+        if session is None:
+            return None
+        try:
+            if url.path == "/api/rules":
+                return self._json(200, {"rules": load_rule_table(),
+                                        "version": subprocess.run(
+                                            [str(State.checker), "--version"],
+                                            capture_output=True, text=True).stdout.strip()})
+            if url.path == "/api/compilers":
+                return self._json(200, {"compilers": [c.describe() for c in State.compilers.values()]})
+            if url.path == "/api/validate":
+                rule = (query.get("rule") or [""])[0]
+                if not re.fullmatch(r"\d+\.\d+", rule):
+                    return self._json(400, {"error": "bad rule id"})
+                return self._json(200, validate_one(rule, with_source=True))
+            if url.path == "/api/validate-all":
+                results = [validate_one(r, with_source=False)
+                           for r in sorted(vr.list_rules(State.checker), key=vr.rule_sort_key)]
+                return self._json(200, {"results": results})
+            if url.path == "/api/file":
+                return self._json(200, {"source": read_project_file(
+                    session, (query.get("project") or [""])[0], (query.get("path") or [""])[0])})
+            if url.path in ("/api/projects", "/api/history", "/api/history-run", "/api/history-diff"):
+                return self._json(200, handle_history_get(session, url.path, query))
+            if url.path == "/api/compliance":
+                fmt = (query.get("format") or ["html"])[0]
+                if fmt not in ("html", "csv", "json"):
+                    return self._json(400, {"error": "format must be html, csv or json"})
+                data, ctype, ext = compliance_document(session, (query.get("key") or [""])[0], fmt)
+                stem = re.sub(r"[^A-Za-z0-9_.-]", "_", State.runs[(session["user"], (query.get("key") or [""])[0])]["project"])
+                return self._send(200, data, ctype, {"Content-Disposition": f'attachment; filename="compliance-{stem}.{ext}"'})
+            if url.path == "/api/baseline":
+                return self._json(200, handle_baseline(session, url.path, {}, query))
+            if url.path == "/api/triage":
+                cases = State.triage.visible(session["user"], session["role"])
+                return self._json(200, {"cases": [tg.public(c) for c in cases], "summary": tg.summarize(cases)})
+            if url.path == "/api/triage-export":
+                return self._send(200, State.triage.export_zip(session["user"], session["role"]), "application/zip",
+                                  {"Content-Disposition": 'attachment; filename="triage-cases.zip"'})
+            if url.path == "/api/project-zip":
+                pid = (query.get("project") or [""])[0]
+                data = project_zip(session, pid)
+                name = re.sub(r"[^A-Za-z0-9_.-]", "_", State.projects[pid].name.rsplit(".", 1)[0]) + "-edited.zip"
+                return self._send(200, data, "application/zip",
+                                  {"Content-Disposition": f'attachment; filename="{name}"'})
+            if url.path == "/api/samples":
+                samples = [{"name": name, "rule": rule, "kind": kind,
+                            "code": srcs[0].read_text(errors="replace")}
+                           for rule, entries in sorted(State.cases.items(), key=lambda kv: vr.rule_sort_key(kv[0]))
+                           for name, kind, srcs in entries if kind == "bad" and len(srcs) == 1]
+                return self._json(200, {"samples": samples})
+        except Exception as exc:  # report to the UI rather than dropping the connection
+            return self._json(400, {"error": str(exc)})
+        return self._json(404, {"error": "not found"})
+
+    # ---- POST
+    def do_POST(self) -> None:  # noqa: N802
+        if not self._host_ok() or not self._origin_ok():
+            return self._json(403, {"error": "bad host or origin"})
+        url = urlparse(self.path)
+        if url.path == "/api/login":
+            return self._login()
+        if url.path == "/api/logout":
+            session = self._session()
+            if session and State.require_auth:
+                State.sessions.delete(session["token"])
+                State.audit.write(session["user"], "logout", client=self._client())
+            return self._json(200, {"ok": True}, {"Set-Cookie": self._cookie("", 0)})
+        if (("POST", url.path)) not in ROUTE_ROLE:
+            return self._json(404, {"error": "not found"})
+        session = self._authorize("POST", url.path)
+        if session is None:
+            return None
+        raw = self._read_body(MAX_ZIP if url.path == "/api/project" else MAX_RUN_BODY if url.path == "/api/runs" else MAX_BODY)
+        if raw is None:
+            return None
+        try:
+            if url.path.startswith("/api/triage"):
+                return self._json(200, handle_triage(session, url.path, json.loads(raw or b"{}")))
+            if url.path == "/api/runs":
+                return self._json(200, publish_run(session, json.loads(raw or b"{}")))
+            if url.path == "/api/projects/delete":
+                name = str(json.loads(raw or b"{}").get("name", ""))
+                State.audit.write(session["user"], "project_deleted", name=name)
+                return self._json(200, {"deleted": State.history.delete_project(name)})
+            if url.path.startswith("/api/baseline"):
+                return self._json(200, handle_baseline(session, url.path, json.loads(raw or b"{}"), {}))
+            if url.path == "/api/file":
+                q = parse_qs(url.query)
+                return self._json(200, write_project_file(session, (q.get("project") or [""])[0],
+                                                          (q.get("path") or [""])[0], raw.decode("utf-8", "replace")))
+            if url.path == "/api/project":
+                name = (parse_qs(url.query).get("name") or ["project.zip"])[0][:100]
+                project = create_project(session["user"], name, raw)
+                State.audit.write(session["user"], "project_upload", name=name,
+                                  c_files=len(project.c_files), h_files=len(project.h_files))
+                return self._json(200, project.describe())
+            body = json.loads(raw or b"{}")
+            deviations = str(body.get("deviations", ""))
+            if body.get("project"):
+                result = analyze_project(session, str(body["project"]), str(body.get("std", "c99")),
+                                         str(body.get("defines", "")), str(body.get("includes", "")),
+                                         deviations, str(body.get("compiler", "default")),
+                                         str(body.get("flags", "")), bool(body.get("cppcheck")))
+                mode = "project"
+                proj = project_for(session, str(body["project"]))
+                cache: dict = {}
+
+                def project_text(file: str, line: int, _p=proj, _c=cache) -> str:
+                    if file not in _c:
+                        try:
+                            _c[file] = project_member(_p, file).read_text(errors="replace").split("\n")
+                        except (OSError, ValueError):
+                            _c[file] = []
+                    return _c[file][line - 1] if 0 < line <= len(_c[file]) else ""
+                track_violations(session, result, "project:" + proj.name, project_text)
+                loc = 0
+                for rel in proj.c_files + proj.h_files:
+                    try:
+                        loc += (proj.root / rel).read_bytes().count(b"\n")
+                    except OSError:
+                        pass
+                remember_run(session, result, body, {"name": proj.name, "units": len(proj.c_files), "loc": loc,
+                                                     "project_deviations": proj.deviations})
+            elif body.get("compile_commands"):
+                if session["role"] != "admin":
+                    return self._json(403, {"error": "the admin role is required"})
+                result = analyze_database(str(body["compile_commands"]), deviations)
+                mode = "database"
+            else:
+                files = body.get("files") or [{"name": "input.c", "code": str(body.get("code", ""))}]
+                result = analyze_files(files, str(body.get("std", "c99")), deviations,
+                                       str(body.get("compiler", "default")), str(body.get("flags", "")),
+                                       bool(body.get("cppcheck")))
+                mode = "files"
+                by_name = {str(f.get("name")): str(f.get("code", "")).split("\n") for f in files}
+                track_violations(session, result, "files:" + ",".join(sorted(by_name)),
+                                 lambda file, line: (by_name.get(file) or [""])[line - 1] if 0 < line <= len(by_name.get(file) or []) else "")
+                remember_run(session, result, body, {"name": "pasted files (" + ", ".join(sorted(by_name)) + ")",
+                                                     "units": sum(1 for n in by_name if n.endswith(".c")),
+                                                     "loc": sum(len(v) for v in by_name.values())})
+            State.audit.write(session["user"], "analyze", mode=mode, compiler=result.get("compiler", ""),
+                              cppcheck=bool(body.get("cppcheck")),
+                              findings=len(result["findings"]),
+                              deviated=len(result["deviated"]), elapsed_ms=result["elapsed_ms"])
+            return self._json(200, result)
+        except subprocess.TimeoutExpired:
+            return self._json(504, {"error": "analysis timed out"})
+        except Exception as exc:
+            return self._json(400, {"error": str(exc)})
+
+    def _cookie(self, value: str, max_age: int) -> str:
+        flags = "; Secure" if State.secure_cookie else ""
+        return f"{COOKIE}={value}; Path=/; HttpOnly; SameSite=Strict; Max-Age={max_age}{flags}"
+
+    def _login(self) -> None:
+        raw = self._read_body(4096)
+        if raw is None:
+            return None
+        try:
+            body = json.loads(raw or b"{}")
+            name, password = str(body.get("username", "")), str(body.get("password", ""))
+        except ValueError:
+            return self._json(400, {"error": "bad request"})
+        wait = State.limiter.locked_for(self._client(), name)
+        if wait:
+            State.audit.write(name, "login_locked", client=self._client())
+            return self._json(429, {"error": f"too many failed attempts; try again in {wait} s"})
+        role = State.users.verify(name, password)
+        if role is None:
+            State.limiter.failed(self._client(), name)
+            State.audit.write(name, "login_failed", client=self._client())
+            return self._json(401, {"error": "invalid user name or password"})
+        State.limiter.succeeded(self._client(), name)
+        session = State.sessions.create(name, role)
+        State.audit.write(name, "login", client=self._client(), role=role)
+        return self._json(200, {"user": name, "role": role, "csrf": session["csrf"]},
+                          {"Set-Cookie": self._cookie(session["token"], auth.SESSION_MAX_SECONDS)})
+
+
+def bootstrap_admin(data_dir: Path) -> None:
+    """First start: make sure an administrator exists."""
+    if not State.users.is_empty():
+        return
+    password = os.environ.get("MISRA_GUI_ADMIN_PASSWORD")
+    generated = not password
+    password = password or secrets.token_urlsafe(15)
+    State.users.add("admin", password, "admin")
+    State.audit.write("system", "bootstrap_admin")
+    if generated:
+        print("=" * 60)
+        print(f"First start: created user 'admin' with password: {password}")
+        print(f"(stored hashed in {data_dir / 'users.json'}; change it with --add-user admin --role admin)")
+        print("=" * 60, flush=True)
+    else:
+        print("First start: created user 'admin' from MISRA_GUI_ADMIN_PASSWORD", flush=True)
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser(description=__doc__.split("\n")[0])
+    parser.add_argument("--host", default="127.0.0.1",
+                        help="bind address (0.0.0.0 only inside a container whose port is published to loopback, or behind TLS)")
+    parser.add_argument("--port", type=int, default=8765)
+    parser.add_argument("--checker", type=Path, default=None)
+    parser.add_argument("--no-browser", action="store_true")
+    parser.add_argument("--data-dir", type=Path,
+                        default=Path(os.environ.get("MISRA_GUI_DATA", Path.home() / ".misra-gui")),
+                        help="users file and audit log (env MISRA_GUI_DATA)")
+    parser.add_argument("--no-auth", action="store_true", help="disable login (loopback only)")
+    parser.add_argument("--allowed-host", action="append", default=[],
+                        help="extra Host header value to accept (needed when not used via localhost)")
+    parser.add_argument("--db-root", action="append", type=Path, default=[],
+                        help="directory under which admins may analyze server-side compile databases")
+    parser.add_argument("--compiler", action="append", default=[], metavar="ID=PATH",
+                        help="make a project compiler selectable (repeatable; env MISRA_GUI_COMPILERS=id=path;id=path). "
+                             "Compilers found on PATH (gcc, arm-none-eabi-gcc, ...) are offered automatically.")
+    parser.add_argument("--promote-dir", type=Path, default=ROOT / "tests" / "triage",
+                        help="where admins promote triage cases to become regression tests")
+    parser.add_argument("--tls-cert", type=Path)
+    parser.add_argument("--tls-key", type=Path)
+    parser.add_argument("--add-user", metavar="NAME")
+    parser.add_argument("--role", choices=list(auth.ROLES), default="analyst")
+    parser.add_argument("--remove-user", metavar="NAME")
+    parser.add_argument("--list-users", action="store_true")
+    parser.add_argument("--create-token", metavar="NAME", help="create an API token for CI (printed once)")
+    parser.add_argument("--token-role", choices=list(hs.TOKEN_ROLES), default="analyst")
+    parser.add_argument("--revoke-token", metavar="NAME")
+    parser.add_argument("--list-tokens", action="store_true")
+    args = parser.parse_args()
+
+    State.triage = tg.TriageStore(args.data_dir / "triage")
+    State.baselines = bl.BaselineStore(args.data_dir / "baselines")
+    State.history = hs.HistoryStore(args.data_dir / "history.db")
+    State.tokens = hs.TokenStore(args.data_dir / "tokens.json")
+    State.promote_dir = args.promote_dir
+    State.users = auth.UserStore(args.data_dir / "users.json")
+    State.audit = auth.AuditLog(args.data_dir / "audit.log")
+    if args.create_token or args.revoke_token or args.list_tokens:
+        try:
+            if args.create_token:
+                print(State.tokens.create(args.create_token, args.token_role))
+                print(f"token '{args.create_token}' ({args.token_role}) created; it is shown only now", file=sys.stderr)
+                State.audit.write("cli", "token_create", name=args.create_token, role=args.token_role)
+            if args.revoke_token:
+                ok = State.tokens.revoke(args.revoke_token)
+                State.audit.write("cli", "token_revoke", name=args.revoke_token, revoked=ok)
+                print("revoked" if ok else "no such token")
+            if args.list_tokens:
+                for rec in State.tokens.list():
+                    print(f"{rec['name']}\t{rec['role']}\tcreated {rec['created']}\tlast used {rec['last_used'] or 'never'}")
+        except ValueError as exc:
+            print(f"error: {exc}", file=sys.stderr)
+            return 2
+        return 0
+    if args.add_user or args.remove_user or args.list_users:
+        try:
+            if args.add_user:
+                State.users.add(args.add_user, auth.read_password(), args.role)
+                State.audit.write("cli", "user_add", name=args.add_user, role=args.role)
+                print(f"user '{args.add_user}' saved with role {args.role}")
+            if args.remove_user:
+                removed = State.users.remove(args.remove_user)
+                State.audit.write("cli", "user_remove", name=args.remove_user, removed=removed)
+                print("removed" if removed else "no such user")
+            if args.list_users:
+                for name, role in sorted(State.users.names().items()):
+                    print(f"{name}\t{role}")
+        except ValueError as exc:
+            print(f"error: {exc}", file=sys.stderr)
+            return 2
+        return 0
+
+    loopback = args.host in ("127.0.0.1", "localhost", "::1")
+    if args.no_auth and not loopback:
+        print("error: --no-auth is only allowed when bound to a loopback address", file=sys.stderr)
+        return 2
+    State.require_auth = not args.no_auth
+    State.allowed_hosts |= set(args.allowed_host)
+    State.db_roots = [p.resolve() for p in args.db_root]
+    if args.no_auth:
+        State.db_roots = State.db_roots or [Path.home().resolve()]
+        print("WARNING: login is disabled; anyone who can reach this port has full access.")
+    else:
+        bootstrap_admin(args.data_dir)
+
+    State.checker = args.checker or vr.find_checker()
+    State.compiler = vr.find_clang()
+    State.cases = vr.discover_cases()
+    extra = {}
+    entries = list(args.compiler) + [e for e in os.environ.get("MISRA_GUI_COMPILERS", "").split(";") if e]
+    for entry in entries:
+        identifier, _, path = entry.partition("=")
+        if not re.fullmatch(r"[A-Za-z0-9_.+-]{1,40}", identifier) or not path or not Path(path).is_file():
+            print(f"error: --compiler expects ID=PATH to an existing file, got '{entry}'", file=sys.stderr)
+            return 2
+        extra[identifier] = path
+    State.version = subprocess.run([str(State.checker), "--version"], capture_output=True, text=True).stdout.strip()
+    State.tools = {"cppcheck": cx.status()}
+    State.compilers = cp.discover(State.compiler, extra)
+    print("compilers: " + ", ".join(f"{c.id}{'' if c.usable else ' (unusable)'}" for c in State.compilers.values()), flush=True)
+
+    server = ThreadingHTTPServer((args.host, args.port), Handler)
+    scheme = "http"
+    if args.tls_cert and args.tls_key:
+        context = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
+        context.minimum_version = ssl.TLSVersion.TLSv1_2
+        context.load_cert_chain(args.tls_cert, args.tls_key)
+        server.socket = context.wrap_socket(server.socket, server_side=True)
+        State.secure_cookie, scheme = True, "https"
+    url = f"{scheme}://127.0.0.1:{args.port}/"
+    print(f"misra-gui serving {url} (checker: {State.checker}, login {'off' if args.no_auth else 'on'})", flush=True)
+    if not args.no_browser:
+        webbrowser.open(url)
+    try:
+        server.serve_forever()
+    except KeyboardInterrupt:
+        pass
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

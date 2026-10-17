@@ -44,3 +44,6 @@ secrets*
 /licensed/
 /customer-code/
 /proprietary-corpora/
+/models/
+/workspace/
+__pycache__/

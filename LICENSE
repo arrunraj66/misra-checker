@@ -1,0 +1,27 @@
+MISRA Checker and Controlled Converter - Proprietary Commercial License
+
+Copyright (c) 2026 arrunraj66. All rights reserved.
+
+This software and its source code are proprietary and confidential. No right
+to use, copy, modify, merge, publish, distribute, sublicense, host as a
+service, or sell copies is granted except under a separate written commercial
+licence agreement with the copyright holder.
+
+Evaluation use, if any, is limited to internal, non-production assessment and
+requires written permission from the copyright holder.
+
+This software is provided "as is", without warranty of any kind. It is not
+qualified or certified for use in safety-related systems unless a separate
+qualification package is delivered under a signed agreement. Output of the
+analyzer and converter is evidence for human review and does not by itself
+establish MISRA compliance.
+
+This licence does not grant any rights to MISRA guideline text. MISRA is a
+trademark of its owner; guideline content must be obtained under a licence
+from the MISRA consortium.
+
+Third-party components (LLVM/Clang under Apache-2.0 with LLVM exceptions) remain
+under their own licences.
+
+NOTE: this is a placeholder licence text. Have qualified legal counsel review
+and replace it before any commercial distribution.

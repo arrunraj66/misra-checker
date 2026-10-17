@@ -1,0 +1,1 @@
+#define fn(x) (x)

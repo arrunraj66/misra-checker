@@ -1,0 +1,99 @@
+# Rule 2.4
+
+**Category:** Advisory · **Decidability:** Decidable · **Scope:** System · **Topic:** Unused and unreachable code
+
+## What the detector reports
+
+Reports a struct, union or enum tag declared in the main file that is never used as a type.
+
+Detection contract: Report a named struct, union or enum tag declared in the main file that is never referred to as a type.
+
+## Known limits
+
+A tag used only inside a macro that is never expanded is reported. Anonymous types are not tags.
+
+## Tested cases
+
+8 of 8 pass.
+
+| Kind | Case | Result |
+|---|---|---|
+| Compliant (must stay silent) | tag used for an object | pass |
+| Compliant (must stay silent) | tag used through a typedef | pass |
+| Compliant (must stay silent) | an anonymous struct has no tag | pass |
+| Violation (must be reported) | unused struct tag | pass |
+| Violation (must be reported) | unused enum tag | pass |
+| Violation (must be reported) | unused union tag | pass |
+| Compliant (must stay silent) | a tag used only through a pointer declaration | pass |
+| Compliant (must stay silent) | a tag used in a cast | pass |
+
+## Case sources
+
+### Compliant (must stay silent): tag used for an object
+
+`main.c`
+
+```c
+struct point { int x; int y; };
+struct point origin;
+```
+
+### Compliant (must stay silent): tag used through a typedef
+
+`main.c`
+
+```c
+typedef struct node { struct node *next; } node_t;
+node_t head;
+```
+
+### Compliant (must stay silent): an anonymous struct has no tag
+
+`main.c`
+
+```c
+struct { int a; } anon;
+```
+
+### Violation (must be reported): unused struct tag
+
+`main.c`
+
+```c
+struct unused_tag { int a; }; /*@V*/
+```
+
+### Violation (must be reported): unused enum tag
+
+`main.c`
+
+```c
+enum unused_enum { A, B }; /*@V*/
+```
+
+### Violation (must be reported): unused union tag
+
+`main.c`
+
+```c
+union unused_union { int i; float f; }; /*@V*/
+```
+
+### Compliant (must stay silent): a tag used only through a pointer declaration
+
+`main.c`
+
+```c
+struct opaque;
+struct opaque *handle;
+```
+
+### Compliant (must stay silent): a tag used in a cast
+
+`main.c`
+
+```c
+struct data { int a; };
+int f(void *p) { return ((struct data *)p)->a; }
+```
+

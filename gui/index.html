@@ -1,0 +1,1600 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>MISRA Checker</title>
+<style>
+:root {
+  --bg:#f3f5f8; --surface:#ffffff; --surface-2:#f8f9fb; --text:#171c24; --muted:#5d6775; --line:#dde2e9;
+  --accent:#2457d6; --accent-ink:#ffffff; --accent-soft:#e7eefc;
+  --pass:#16794c; --fail:#c62a35; --warn:#946200; --none:#6b7380;
+  --mandatory:#c62a35; --required:#b45309; --advisory:#2457d6;
+  --hit-mandatory:rgba(198,42,53,.13); --hit-required:rgba(180,83,9,.14); --hit-advisory:rgba(36,87,214,.12);
+  --editor-bg:#fcfcfd; --gutter-bg:#f1f3f6; --shadow:0 1px 2px rgba(16,24,40,.06),0 1px 3px rgba(16,24,40,.08);
+  --mono:ui-monospace,SFMono-Regular,"JetBrains Mono",Menlo,Consolas,monospace;
+}
+:root[data-theme="dark"] {
+  --bg:#0c1016; --surface:#141a22; --surface-2:#10151c; --text:#e5eaf1; --muted:#97a2b2; --line:#283240;
+  --accent:#6ea0ff; --accent-ink:#0b1220; --accent-soft:#182540;
+  --pass:#43c27a; --fail:#ff6b72; --warn:#e3b341; --none:#8a94a3;
+  --mandatory:#ff6b72; --required:#f0a35e; --advisory:#7fb0ff;
+  --hit-mandatory:rgba(255,107,114,.16); --hit-required:rgba(240,163,94,.16); --hit-advisory:rgba(127,176,255,.15);
+  --editor-bg:#0f141b; --gutter-bg:#121821; --shadow:0 1px 2px rgba(0,0,0,.4);
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg:#0c1016; --surface:#141a22; --surface-2:#10151c; --text:#e5eaf1; --muted:#97a2b2; --line:#283240;
+    --accent:#6ea0ff; --accent-ink:#0b1220; --accent-soft:#182540;
+    --pass:#43c27a; --fail:#ff6b72; --warn:#e3b341; --none:#8a94a3;
+    --mandatory:#ff6b72; --required:#f0a35e; --advisory:#7fb0ff;
+    --hit-mandatory:rgba(255,107,114,.16); --hit-required:rgba(240,163,94,.16); --hit-advisory:rgba(127,176,255,.15);
+    --editor-bg:#0f141b; --gutter-bg:#121821; --shadow:0 1px 2px rgba(0,0,0,.4);
+  }
+}
+* { box-sizing:border-box; }
+[hidden] { display:none !important; }
+html, body { height:100%; }
+body { margin:0; background:var(--bg); color:var(--text); display:flex; flex-direction:column;
+  font:14px/1.5 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif; }
+button, input, select, textarea { font:inherit; color:inherit; }
+:focus-visible { outline:2px solid var(--accent); outline-offset:1px; }
+
+/* ---- app bar */
+.appbar { display:flex; align-items:center; gap:20px; padding:0 20px; height:52px; flex:none;
+  background:var(--surface); border-bottom:1px solid var(--line); }
+.brand { display:flex; align-items:center; gap:10px; font-weight:650; letter-spacing:.2px; }
+.logo { width:26px; height:26px; border-radius:7px; background:var(--accent); color:var(--accent-ink);
+  display:grid; place-items:center; font:700 12px/1 var(--mono); }
+.brand small { font-weight:500; color:var(--muted); }
+.nav { display:flex; gap:2px; height:100%; }
+.nav button { background:none; border:0; border-bottom:2px solid transparent; padding:0 14px; cursor:pointer;
+  color:var(--muted); height:100%; }
+.nav button:hover { color:var(--text); }
+.nav button[aria-selected="true"] { color:var(--text); border-bottom-color:var(--accent); font-weight:600; }
+.spacer { flex:1; }
+.iconbtn { background:none; border:1px solid var(--line); border-radius:8px; width:34px; height:34px; cursor:pointer;
+  color:var(--muted); display:grid; place-items:center; }
+.iconbtn:hover { color:var(--text); background:var(--surface-2); }
+
+@media (max-width:980px) {
+  .appbar { height:auto; flex-wrap:wrap; padding:8px 12px; gap:6px 12px; }
+  .nav { order:3; flex:1 0 100%; height:40px; overflow-x:auto; overflow-y:hidden; }
+  .nav button { white-space:nowrap; padding:0 12px; }
+  .brand small { display:none; }
+  .spacer { display:none; }
+  .userbox { margin-left:auto; }
+  main { padding:12px; }
+  .editor { min-height:300px; }
+  .pane { min-height:0; }
+}
+/* ---- layout */
+main { flex:1; min-height:0; padding:16px 20px; display:flex; }
+.view { flex:1; min-width:0; min-height:0; display:flex; flex-direction:column; }
+.view[hidden] { display:none; }
+.split { flex:1; min-height:0; display:grid; grid-template-columns:minmax(0,1.05fr) minmax(0,1fr); gap:16px; }
+@media (max-width:980px) { .split { grid-template-columns:1fr; } main { overflow:auto; } .view { min-height:auto; } .pane { min-height:420px; } }
+.pane { background:var(--surface); border:1px solid var(--line); border-radius:12px; box-shadow:var(--shadow);
+  display:flex; flex-direction:column; min-height:0; min-width:0; overflow:hidden; }
+.pane-head { display:flex; align-items:center; gap:8px; padding:10px 12px; border-bottom:1px solid var(--line);
+  flex-wrap:wrap; background:var(--surface-2); }
+.pane-title { font-weight:600; margin-right:auto; }
+.pane-body { flex:1; min-height:0; overflow:auto; }
+
+/* ---- controls */
+.btn { display:inline-flex; align-items:center; gap:6px; padding:6px 12px; border-radius:8px; cursor:pointer;
+  border:1px solid var(--line); background:var(--surface); white-space:nowrap; }
+.btn:hover { background:var(--surface-2); }
+.btn.primary { background:var(--accent); border-color:var(--accent); color:var(--accent-ink); font-weight:600; }
+.btn.primary:hover { filter:brightness(1.08); }
+.btn:disabled { opacity:.55; cursor:default; }
+.btn.small { padding:3px 9px; font-size:13px; }
+select, input[type=search], input[type=text] { padding:6px 10px; border-radius:8px; border:1px solid var(--line);
+  background:var(--surface); min-width:0; }
+kbd { font:11px var(--mono); border:1px solid var(--line); border-bottom-width:2px; border-radius:4px; padding:0 5px;
+  color:var(--muted); background:var(--surface-2); }
+.btn.primary kbd { color:inherit; background:rgba(255,255,255,.18); border-color:rgba(255,255,255,.35); }
+
+/* ---- file tabs */
+.ftabs { display:flex; gap:2px; padding:6px 8px 0; background:var(--surface-2); border-bottom:1px solid var(--line);
+  overflow-x:auto; flex:none; }
+.ftab { display:inline-flex; align-items:center; gap:8px; padding:5px 12px; cursor:pointer; white-space:nowrap;
+  border:1px solid transparent; border-bottom:0; border-radius:8px 8px 0 0; color:var(--muted); font-size:13px; }
+.ftab:hover { color:var(--text); }
+.ftab.active { background:var(--editor-bg); border-color:var(--line); color:var(--text); margin-bottom:-1px;
+  padding-bottom:6px; }
+.ftab .cnt { font-size:11px; padding:0 6px; border-radius:9px; background:var(--accent-soft); color:var(--accent); }
+.ftab .x { opacity:.5; } .ftab .x:hover { opacity:1; color:var(--fail); }
+
+/* ---- editor */
+.editor { flex:1; min-height:0; display:flex; position:relative; background:var(--editor-bg);
+  font:13px/20px var(--mono); overflow:hidden; }
+.gutter { flex:none; width:56px; background:var(--gutter-bg); border-right:1px solid var(--line);
+  overflow:hidden; position:relative; user-select:none; }
+.gutter-inner, .backdrop-inner { position:absolute; left:0; right:0; top:8px; will-change:transform; }
+.gl { height:20px; padding-right:8px; text-align:right; color:var(--muted); position:relative; }
+.gl.has { font-weight:700; }
+.gl.has::before { content:""; position:absolute; left:8px; top:6px; width:8px; height:8px; border-radius:50%; }
+.gl.mandatory::before { background:var(--mandatory); } .gl.required::before { background:var(--required); }
+.gl.advisory::before { background:var(--advisory); }
+.gl.stale { opacity:.45; }
+.edit-wrap { position:relative; flex:1; min-width:0; }
+.backdrop { position:absolute; inset:0; overflow:hidden; pointer-events:none; }
+.bl { height:20px; }
+.bl.mandatory { background:var(--hit-mandatory); } .bl.required { background:var(--hit-required); }
+.bl.advisory { background:var(--hit-advisory); }
+.bl.flash { animation:flash 1.4s ease-out; }
+@keyframes flash { from { box-shadow:inset 0 0 0 2px var(--accent); } to { box-shadow:inset 0 0 0 2px transparent; } }
+textarea.code { position:absolute; inset:0; width:100%; height:100%; padding:8px 12px; margin:0; border:0; resize:none;
+  background:transparent; color:var(--text); font:13px/20px var(--mono); white-space:pre; overflow:auto; tab-size:4;
+  outline:none; caret-color:var(--accent); }
+.empty-hint { position:absolute; left:14px; top:10px; color:var(--muted); pointer-events:none; max-width:420px; font:13px/1.5 system-ui,sans-serif; }
+.empty-hint[hidden] { display:none; }
+
+.projbar { padding:8px 12px; border-bottom:1px solid var(--line); background:var(--surface-2); display:flex;
+  flex-direction:column; gap:6px; flex:none; }
+.projbar[hidden] { display:none; }
+.projhead { display:flex; align-items:center; gap:10px; flex-wrap:wrap; }
+.projopts { display:grid; grid-template-columns:1fr 1fr; gap:6px; }
+.projopts input, .projbar > input { width:100%; }
+.pj-files { max-height:150px; overflow:auto; border:1px solid var(--line); border-radius:8px; background:var(--surface); }
+.pj-file { display:flex; align-items:center; gap:8px; padding:2px 10px; cursor:pointer; font:12.5px var(--mono); }
+.pj-file:hover { background:var(--surface-2); } .pj-file.active { background:var(--accent-soft); }
+.pj-file .path { flex:1; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.tag { font:600 10px system-ui,sans-serif; text-transform:uppercase; letter-spacing:.4px; padding:0 6px; border-radius:6px;
+  border:1px solid var(--line); color:var(--muted); }
+.cnt-pill { font:600 11px system-ui,sans-serif; padding:0 7px; border-radius:9px; background:var(--accent-soft); color:var(--accent); }
+#sample { max-width:170px; }
+.optbar { display:flex; gap:8px; align-items:center; flex-wrap:wrap; padding:8px 12px; border-bottom:1px solid var(--line); background:var(--surface-2); }
+.optbar input[type=text] { flex:1; min-width:160px; }
+.optbar select { max-width:230px; }
+.menu { position:relative; }
+.menu-list { position:absolute; right:0; top:calc(100% + 4px); z-index:12; min-width:230px; background:var(--surface); border:1px solid var(--line);
+  border-radius:10px; box-shadow:0 8px 24px rgba(0,0,0,.18); padding:4px; display:flex; flex-direction:column; }
+.menu-list button { background:none; border:0; text-align:left; padding:7px 10px; border-radius:6px; cursor:pointer; color:var(--text); }
+.menu-list button:hover:not(:disabled) { background:var(--accent-soft); }
+.menu-list button:disabled { opacity:.45; cursor:default; }
+.menu-list hr { border:0; border-top:1px solid var(--line); margin:4px 0; width:100%; }
+.foot { display:flex; gap:10px; align-items:center; padding:8px 12px; border-top:1px solid var(--line);
+  background:var(--surface-2); flex-wrap:wrap; }
+.foot input[type=text] { flex:1; min-width:200px; }
+
+/* ---- results */
+.cards { display:grid; grid-template-columns:repeat(auto-fit,minmax(96px,1fr)); gap:8px; padding:12px; }
+.card { border:1px solid var(--line); border-radius:10px; padding:8px 12px; background:var(--surface); }
+.card b { display:block; font-size:22px; line-height:1.2; }
+.card span { color:var(--muted); font-size:12px; text-transform:uppercase; letter-spacing:.5px; }
+.card.k-mandatory b { color:var(--mandatory); } .card.k-required b { color:var(--required); }
+.card.k-advisory b { color:var(--advisory); }
+.banner { margin:0 12px 10px; padding:9px 12px; border-radius:8px; border:1px solid; font-size:13px; }
+.banner[hidden] { display:none; }
+.banner.warn { color:var(--warn); border-color:var(--warn); background:color-mix(in srgb,var(--warn) 10%,transparent); }
+.banner.err { color:var(--fail); border-color:var(--fail); background:color-mix(in srgb,var(--fail) 9%,transparent); }
+.banner.ok { color:var(--pass); border-color:var(--pass); background:color-mix(in srgb,var(--pass) 9%,transparent); }
+.banner details pre { margin:6px 0 0; white-space:pre-wrap; font:12px/1.4 var(--mono); max-height:160px; overflow:auto; color:var(--text); }
+.toolbar { display:flex; gap:6px; align-items:center; flex-wrap:wrap; padding:0 12px 10px; }
+.toolbar input[type=search] { flex:1; min-width:140px; }
+.chip { display:inline-flex; align-items:center; gap:6px; padding:3px 10px; border-radius:999px; cursor:pointer;
+  border:1px solid var(--line); font-size:12px; user-select:none; background:var(--surface); }
+.chip i { width:8px; height:8px; border-radius:50%; display:inline-block; }
+.chip.off { opacity:.4; }
+.chip.k-mandatory i { background:var(--mandatory); } .chip.k-required i { background:var(--required); }
+.chip.k-advisory i { background:var(--advisory); }
+table { width:100%; border-collapse:collapse; }
+th, td { text-align:left; padding:7px 12px; border-top:1px solid var(--line); vertical-align:top; }
+th { font-size:12px; color:var(--muted); font-weight:600; text-transform:uppercase; letter-spacing:.4px;
+  position:sticky; top:0; background:var(--surface-2); z-index:1; border-top:0; border-bottom:1px solid var(--line); }
+th.sortable { cursor:pointer; user-select:none; } th.sortable:hover { color:var(--text); }
+tbody tr.clickable { cursor:pointer; } tbody tr.clickable:hover, tbody tr.sel { background:var(--accent-soft); }
+td.loc { font:12.5px var(--mono); color:var(--muted); white-space:nowrap; }
+.sev { display:inline-flex; align-items:center; gap:6px; font-size:12px; font-weight:600; }
+.sev i { width:8px; height:8px; border-radius:50%; display:inline-block; }
+.sev.mandatory { color:var(--mandatory); } .sev.mandatory i { background:var(--mandatory); }
+.sev.required { color:var(--required); } .sev.required i { background:var(--required); }
+.sev.advisory { color:var(--advisory); } .sev.advisory i { background:var(--advisory); }
+.rulecode { font:600 13px var(--mono); }
+.sub { color:var(--muted); font-size:12px; }
+.badge { display:inline-block; padding:1px 9px; border-radius:999px; font-size:12px; font-weight:600; border:1px solid currentColor; white-space:nowrap; }
+.PASS { color:var(--pass); } .FAIL { color:var(--fail); } .PARTIAL { color:var(--warn); } .UNTESTED { color:var(--none); }
+.empty { padding:36px 20px; text-align:center; color:var(--muted); }
+.empty b { display:block; color:var(--text); font-size:15px; margin-bottom:4px; }
+.spin { display:inline-block; width:14px; height:14px; border:2px solid var(--line); border-top-color:var(--accent);
+  border-radius:50%; animation:s .7s linear infinite; vertical-align:-2px; }
+@keyframes s { to { transform:rotate(360deg); } }
+
+/* ---- rules view */
+.bar { display:flex; height:10px; border-radius:6px; overflow:hidden; background:var(--line); margin:0 12px 12px; }
+.bar span { display:block; height:100%; }
+.bar .PASS { background:var(--pass); } .bar .PARTIAL { background:var(--warn); } .bar .FAIL { background:var(--fail); }
+.case { border:1px solid var(--line); border-radius:10px; margin:0 12px 12px; overflow:hidden; }
+.case-head { display:flex; gap:8px; align-items:center; padding:7px 10px; background:var(--surface-2); flex-wrap:wrap; }
+.codeblock { margin:0; padding:8px 0; overflow:auto; max-height:280px; font:12.5px/1.5 var(--mono); background:var(--editor-bg); }
+.codeblock .ln { display:block; padding:0 12px 0 0; white-space:pre; }
+.codeblock .ln::before { content:attr(data-n); display:inline-block; width:3em; text-align:right; margin-right:12px; color:var(--muted); }
+.detail-title { padding:14px 12px 4px; font-size:16px; font-weight:650; }
+.detail-meta { padding:0 12px 10px; color:var(--muted); font-size:13px; }
+
+/* ---- status bar */
+.statusbar { flex:none; display:flex; gap:16px; align-items:center; padding:5px 20px; font-size:12px; color:var(--muted);
+  background:var(--surface); border-top:1px solid var(--line); flex-wrap:wrap; }
+.statusbar .grow { flex:1; }
+.login-screen { position:fixed; inset:0; z-index:20; display:grid; place-items:center; background:var(--bg); padding:16px; }
+.login-screen[hidden] { display:none; }
+.login-card { width:100%; max-width:360px; background:var(--surface); border:1px solid var(--line); border-radius:14px;
+  box-shadow:var(--shadow); padding:24px; display:flex; flex-direction:column; gap:12px; }
+.login-card h1 { margin:0; font-size:18px; display:flex; align-items:center; gap:10px; }
+.login-card label { display:flex; flex-direction:column; gap:4px; font-size:13px; color:var(--muted); }
+.login-card input { padding:9px 10px; font-size:14px; color:var(--text); }
+.userbox { display:flex; align-items:center; gap:10px; font-size:14px; color:var(--text); }
+.userbox[hidden] { display:none; }
+.userbox .avatar { width:30px; height:30px; border-radius:50%; background:var(--accent); color:var(--accent-ink);
+  display:grid; place-items:center; font-weight:700; font-size:13px; flex:none; }
+.userbox .who { display:flex; flex-direction:column; line-height:1.15; }
+.userbox .who b { color:var(--text); font-weight:650; }
+.userbox .who small { color:var(--text); opacity:.72; font-size:11.5px; text-transform:capitalize; letter-spacing:.2px; }
+tr.dev td { opacity:.62; } tr.dev td:first-child { opacity:1; }
+.xtag { display:inline-block; font:600 11px system-ui,sans-serif; padding:1px 8px; border-radius:999px; border:1px solid currentColor; white-space:nowrap; }
+.xtag.both { color:var(--pass); } .xtag.ours-only { color:var(--muted); } .xtag.cppcheck-only { color:var(--warn); }
+.hproj { padding:10px 12px; border-top:1px solid var(--line); cursor:pointer; }
+.hproj:hover { background:var(--surface-2); } .hproj.sel { background:var(--accent-soft); box-shadow:inset 3px 0 0 var(--accent); }
+.hproj b { font-size:14px; } .hproj .sub { display:flex; gap:10px; flex-wrap:wrap; }
+.up { color:var(--fail); } .down { color:var(--pass); }
+.chart { width:100%; height:auto; display:block; }
+.chart .axis { stroke:var(--line); stroke-width:1; } .chart text { fill:var(--muted); font:9px system-ui,sans-serif; }
+.chart .l-total { stroke:var(--advisory); fill:none; stroke-width:2; } .chart .l-block { stroke:var(--required); fill:none; stroke-width:2; }
+.chart .l-mand { stroke:var(--mandatory); fill:none; stroke-width:2; }
+.legend { display:flex; gap:14px; font-size:12px; color:var(--muted); padding:0 12px 6px; flex-wrap:wrap; }
+.legend i { display:inline-block; width:10px; height:10px; border-radius:2px; margin-right:5px; vertical-align:-1px; }
+.newtag { font:700 10px system-ui,sans-serif; text-transform:uppercase; padding:0 6px; border-radius:6px; margin-left:6px;
+  background:var(--accent); color:var(--accent-ink); }
+.chip.st-new { color:var(--accent); }
+.vbtn { background:none; border:1px solid var(--line); border-radius:6px; cursor:pointer; padding:0 6px; font-size:12px; color:var(--muted); }
+.vbtn:hover { color:var(--text); background:var(--surface-2); }
+.vtag { font:600 10px system-ui,sans-serif; text-transform:uppercase; padding:0 6px; border-radius:6px; border:1px solid currentColor; margin-right:4px; }
+.vtag.false-positive { color:var(--fail); } .vtag.true-positive { color:var(--pass); } .vtag.false-negative { color:var(--warn); }
+.login-card textarea, .login-card select { padding:8px 10px; border-radius:8px; border:1px solid var(--line); background:var(--surface); color:var(--text); font:inherit; }
+.modal { z-index:30; }
+.cmp-grid { flex:1; min-height:0; display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:12px; }
+@media (max-width:1100px) { .cmp-grid { grid-template-columns:1fr; } }
+.cmp-grid .pane { min-height:260px; }
+.crow { display:grid; grid-template-columns:auto 1fr auto; gap:8px; align-items:baseline; padding:5px 12px; border-top:1px solid var(--line);
+  cursor:pointer; font-size:13px; }
+.crow:hover { background:var(--surface-2); }
+.crow.hl { background:var(--accent-soft); box-shadow:inset 3px 0 0 var(--accent); }
+.crow .where { font:12px var(--mono); color:var(--muted); white-space:nowrap; }
+.crow .what { overflow:hidden; text-overflow:ellipsis; }
+.crow.diff .where { color:var(--warn); }
+.cmp-toolbar { display:flex; gap:10px; align-items:center; flex-wrap:wrap; margin-bottom:10px; }
+.cmp-detail { margin-top:12px; flex:none; max-height:42vh; }
+.excerpt { margin:0; font:12.5px/1.5 var(--mono); background:var(--editor-bg); overflow:auto; padding:6px 0; }
+.excerpt .ln { display:block; white-space:pre; padding:0 12px; }
+.excerpt .ln::before { content:attr(data-n); display:inline-block; width:3.2em; text-align:right; margin-right:12px; color:var(--muted); }
+.excerpt .ln.target { background:var(--hit-required); }
+.sevc-error { color:var(--fail); } .sevc-warning { color:var(--warn); } .sevc-style, .sevc-performance, .sevc-portability { color:var(--muted); }
+.xnote { padding:0 12px 10px; color:var(--muted); font-size:12.5px; }
+.chip.x-both i, .chip.x-ours-only i, .chip.x-cppcheck-only i { background:currentColor; }
+.chip.x-both { color:var(--pass); } .chip.x-cppcheck-only { color:var(--warn); }
+.devtag { font:600 10px system-ui,sans-serif; text-transform:uppercase; letter-spacing:.4px; padding:0 6px; border-radius:6px;
+  border:1px solid var(--pass); color:var(--pass); margin-left:6px; }
+.toast { position:fixed; bottom:44px; left:50%; transform:translateX(-50%); background:var(--text); color:var(--bg);
+  padding:8px 16px; border-radius:8px; font-size:13px; opacity:0; transition:opacity .2s; pointer-events:none; z-index:10; }
+.toast.show { opacity:1; }
+</style>
+</head>
+<body>
+<header class="appbar">
+  <div class="brand"><span class="logo">M</span><span>MISRA Checker <small id="ver"></small></span></div>
+  <nav class="nav" role="tablist">
+    <button role="tab" id="nav-analyze" aria-selected="true" data-view="analyze">Analyze</button>
+    <button role="tab" id="nav-compare" aria-selected="false" data-view="compare">Compare</button>
+    <button role="tab" id="nav-history" aria-selected="false" data-view="history">History</button>
+    <button role="tab" id="nav-triage" aria-selected="false" data-view="triage">Triage</button>
+    <button role="tab" id="nav-rules" aria-selected="false" data-view="rules">Rules &amp; validation</button>
+  </nav>
+  <span class="spacer"></span>
+  <div class="userbox" id="userbox" hidden><span class="avatar" id="u-avatar" aria-hidden="true"></span>
+    <span class="who"><b id="u-name"></b><small id="u-role"></small></span>
+    <button class="btn small" id="logout">Log out</button></div>
+  <button class="iconbtn" id="theme" title="Toggle light / dark theme" aria-label="Toggle theme">◐</button>
+</header>
+
+<div class="login-screen" id="login" hidden>
+  <form class="login-card" id="login-form" autocomplete="on">
+    <h1><span class="logo">M</span>MISRA Checker</h1>
+    <label>User name<input id="l-user" name="username" autocomplete="username" required autofocus></label>
+    <label>Password<input id="l-pass" name="password" type="password" autocomplete="current-password" required></label>
+    <div class="banner err" id="l-error" hidden style="margin:0"></div>
+    <button class="btn primary" type="submit" id="l-submit" style="justify-content:center">Sign in</button>
+    <span class="sub">Accounts are created by an administrator.</span>
+  </form>
+</div>
+
+<div class="login-screen modal" id="tri-dialog" hidden>
+  <form class="login-card" id="tri-form">
+    <h1 id="tri-title">Triage</h1>
+    <label>Verdict<select id="tri-kind"><option value="false-positive">False positive: the checker is wrong here</option><option value="true-positive">True positive: the violation is real</option><option value="false-negative">Missed violation: the checker should report this</option></select></label>
+    <label>Rule<input id="tri-rule" list="tri-rules-list" required pattern="[0-9]+\.[0-9]+" placeholder="e.g. 17.4"></label>
+    <datalist id="tri-rules-list"></datalist>
+    <label>File<input id="tri-file" readonly></label>
+    <label>Line<input id="tri-line" type="number" min="1" required></label>
+    <label>Why? (optional)<textarea id="tri-note" rows="3" maxlength="2000" placeholder="What is wrong, or what rule text decides it?"></textarea></label>
+    <div class="banner err" id="tri-error" hidden style="margin:0"></div>
+    <div style="display:flex;gap:8px"><button class="btn primary" type="submit" style="flex:1;justify-content:center">Save</button>
+      <button class="btn" type="button" id="tri-cancel">Cancel</button></div>
+    <span class="sub">The code, compiler settings and your verdict are saved so the case can be replayed against the checker later.</span>
+  </form>
+</div>
+
+<main>
+  <section class="view" id="view-analyze">
+    <div class="split">
+      <div class="pane">
+        <div class="pane-head">
+          <span class="pane-title">Source</span>
+          <select id="sample" aria-label="Load sample"><option value="">Samples…</option></select>
+          <label class="btn" title="Add .c / .h files">Add files<input type="file" id="file" accept=".c,.h,text/plain" multiple hidden></label>
+          <label class="btn" title="Upload a whole project as a .zip (sources, headers, libraries)">Upload zip<input type="file" id="zip" accept=".zip,application/zip" hidden></label>
+          <button class="btn primary" id="run"><span id="run-label">Analyze</span> <kbd>Ctrl ↵</kbd></button>
+        </div>
+        <div class="optbar">
+          <select id="std" aria-label="Language standard" title="Language standard"><option>c99</option><option>c90</option><option>c11</option><option>c17</option><option>gnu99</option><option>gnu11</option><option>gnu17</option></select>
+          <select id="compiler" aria-label="Project compiler" title="Compiler your project is built with"><option value="default">Compiler: default (Clang)</option></select>
+          <input type="text" id="cflags" placeholder="Compiler flags, e.g. -mcpu=cortex-m4 -mthumb -DSTM32F4" aria-label="Compiler flags">
+          <label class="chip" id="xwrap" title="Also run cppcheck's MISRA add-on on the same files and compare"><input type="checkbox" id="xcheck"> Cross-check with cppcheck</label>
+          <label class="btn small" title="JSON file of approved deviation records">Deviations…<input type="file" id="devfile" accept=".json,application/json" hidden></label>
+          <span class="chip" id="devchip" hidden></span>
+          <button class="btn small" id="miss-btn" title="Report a violation the checker did not find (false negative)">+ Missed violation</button>
+        </div>
+        <div class="projbar" id="projbar" hidden>
+          <div class="projhead"><b id="pj-name"></b><span class="sub" id="pj-meta"></span>
+            <span class="sub" id="pj-save"></span>
+            <button class="btn small" id="pj-new" style="margin-left:auto" title="Add a new .c or .h file to the project">New file</button>
+            <a class="btn small" id="pj-download" title="Download the project with your edits">Download</a>
+            <button class="btn small" id="pj-close">Remove project</button></div>
+          <div class="projopts">
+            <input type="text" id="pj-defs" placeholder="Defines, e.g. STM32F4 DEBUG=1" aria-label="Preprocessor defines">
+            <input type="text" id="pj-incs" placeholder="Extra include dirs (relative, comma separated)" aria-label="Extra include directories">
+          </div>
+          <input type="search" id="pj-filter" placeholder="Filter project files" aria-label="Filter project files">
+          <div class="pj-files" id="pj-files"></div>
+        </div>
+        <div class="ftabs" id="filetabs" role="tablist"></div>
+        <div class="editor" id="editor">
+          <div class="gutter"><div class="gutter-inner" id="gutter"></div></div>
+          <div class="edit-wrap">
+            <div class="backdrop"><div class="backdrop-inner" id="backdrop"></div></div>
+            <textarea class="code" id="code" spellcheck="false" autocomplete="off" aria-label="C source code"></textarea>
+            <div class="empty-hint" id="hint">Paste C code, load a sample, or add files. Several files are analyzed together, which also enables the whole-program rules.</div>
+          </div>
+        </div>
+        <div class="foot" id="dbrow" hidden>
+          <input type="text" id="db" placeholder="Or analyze an existing project: path to compile_commands.json / build directory" aria-label="Compile database path">
+          <button class="btn" id="rundb">Analyze project</button>
+        </div>
+      </div>
+
+      <div class="pane">
+        <div class="pane-head">
+          <span class="pane-title">Results</span>
+          <button class="btn small" id="exp-publish" disabled title="Share this result in the team's project history">Publish</button>
+          <div class="menu" id="exp-menu">
+            <button class="btn small" id="exp-toggle" disabled aria-haspopup="true" aria-expanded="false">Export ▾</button>
+            <div class="menu-list" id="exp-list" hidden role="menu">
+              <button id="exp-comp-html" role="menuitem" disabled title="Guideline Compliance Summary, deviation register and enforcement plan (printable)">Compliance report (HTML)</button>
+              <button id="exp-comp-csv" role="menuitem" disabled title="One row per rule: status and counts">Guideline summary (CSV)</button>
+              <hr>
+              <button id="exp-report" role="menuitem" disabled>Findings report (HTML)</button>
+              <button id="exp-sarif" role="menuitem" disabled>SARIF</button>
+              <button id="exp-csv" role="menuitem" disabled>Findings (CSV)</button>
+              <button id="exp-json" role="menuitem" disabled>Findings (JSON)</button>
+            </div>
+          </div>
+        </div>
+        <div class="pane-body" id="result">
+          <div class="empty"><b>No analysis yet</b>Run an analysis to see findings here. Press Ctrl+Enter.</div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section class="view" id="view-compare" hidden>
+    <div class="cmp-toolbar">
+      <button class="btn primary" id="cmp-run">Analyze with all three</button>
+      <label class="chip"><input type="checkbox" id="cmp-diff"> Only differences</label>
+      <span class="sub" id="cmp-note">Runs misra-checker, cppcheck's MISRA add-on and cppcheck's own checks on the current source and puts them side by side.</span>
+    </div>
+    <div class="cards" id="cmp-cards" style="padding:0 0 10px"></div>
+    <div class="cmp-grid">
+      <div class="pane"><div class="pane-head"><span class="pane-title">misra-checker</span><span class="sub" id="cmp-n1"></span></div><div class="pane-body" id="cmp-ours"></div></div>
+      <div class="pane"><div class="pane-head"><span class="pane-title">cppcheck · MISRA add-on</span><span class="sub" id="cmp-n2"></span></div><div class="pane-body" id="cmp-misra"></div></div>
+      <div class="pane"><div class="pane-head"><span class="pane-title">cppcheck · own checks</span><span class="sub" id="cmp-n3"></span></div><div class="pane-body" id="cmp-native"></div></div>
+    </div>
+    <div class="pane cmp-detail" id="cmp-detail" hidden></div>
+  </section>
+
+  <section class="view" id="view-history" hidden>
+    <div class="split" style="grid-template-columns:minmax(0,1fr) minmax(0,2fr)">
+      <div class="pane">
+        <div class="pane-head"><span class="pane-title">Projects</span><button class="btn small" id="h-refresh">Refresh</button></div>
+        <div class="pane-body" id="h-projects"></div>
+        <div class="foot"><span class="sub">CI publishes runs with <code>misra_ci.py --publish</code> and an API token; see docs/central-history.md.</span></div>
+      </div>
+      <div class="pane">
+        <div class="pane-head"><span class="pane-title" id="h-title">Select a project</span>
+          <select id="h-branch" aria-label="Branch" hidden></select>
+          <button class="btn small" id="h-delete" hidden>Delete project</button></div>
+        <div class="pane-body" id="h-detail"><div class="empty"><b>Nothing selected</b>Pick a project to see how its violations change over time.</div></div>
+      </div>
+    </div>
+  </section>
+
+  <section class="view" id="view-triage" hidden>
+    <div class="split" style="grid-template-columns:minmax(0,1.6fr) minmax(0,1fr)">
+      <div class="pane">
+        <div class="pane-head">
+          <span class="pane-title">Triage cases</span>
+          <select id="tri-filter-kind" aria-label="Verdict"><option value="">All verdicts</option><option value="false-positive">False positives</option><option value="false-negative">Missed violations</option><option value="true-positive">True positives</option></select>
+          <button class="btn" id="tri-run" title="Replay every case against the current checker">Re-run all</button>
+          <button class="btn" id="tri-export">Export</button>
+          <button class="btn primary" id="tri-promote" hidden title="Copy the cases into the repository's tests/triage as regression tests">Promote to tests</button>
+        </div>
+        <div class="pane-body"><table>
+          <thead><tr><th>Verdict</th><th>Rule</th><th>Where</th><th>Note</th><th>Now</th><th></th></tr></thead>
+          <tbody id="tri-body"></tbody></table><div id="tri-empty"></div></div>
+      </div>
+      <div class="pane">
+        <div class="pane-head"><span class="pane-title">Per rule</span><span class="sub">what your verdicts say about each rule</span></div>
+        <div class="pane-body"><table>
+          <thead><tr><th>Rule</th><th>True</th><th>False pos.</th><th>Missed</th><th>Precision</th></tr></thead>
+          <tbody id="tri-rules"></tbody></table></div>
+      </div>
+    </div>
+  </section>
+
+  <section class="view" id="view-rules" hidden>
+    <div class="split" style="grid-template-columns:minmax(0,1.1fr) minmax(0,1fr)">
+      <div class="pane">
+        <div class="pane-head">
+          <span class="pane-title">Rule catalog</span>
+          <input type="search" id="filter" placeholder="Search rule or topic" aria-label="Search rules">
+          <select id="fcat" aria-label="Category"><option value="">All categories</option><option>Mandatory</option><option>Required</option><option>Advisory</option></select>
+          <select id="fstat" aria-label="Status"><option value="">All statuses</option><option>PASS</option><option>PARTIAL</option><option>FAIL</option><option>UNTESTED</option></select>
+          <button class="btn primary" id="valall">Validate all</button>
+        </div>
+        <div class="cards" id="vsummary"></div>
+        <div class="bar" id="vbar"></div>
+        <div class="pane-body"><table>
+          <thead><tr><th>Rule</th><th>Category</th><th>Topic</th><th>Fixtures</th><th>Your verdicts</th><th></th></tr></thead>
+          <tbody id="rulebody"></tbody></table></div>
+      </div>
+      <div class="pane">
+        <div class="pane-head"><span class="pane-title">Rule detail</span></div>
+        <div class="pane-body" id="detail"><div class="empty"><b>Select a rule</b>See its fixtures, run its validation, or open a violating example in the analyzer.</div></div>
+      </div>
+    </div>
+  </section>
+</main>
+
+<footer class="statusbar">
+  <span id="st-run">Ready</span>
+  <span class="grow"></span>
+  <span>Engineering fixture checks only. Not a MISRA compliance claim and no substitute for independent validation or tool qualification.</span>
+</footer>
+<div class="toast" id="toast" role="status"></div>
+
+<script>
+"use strict";
+const $ = (id) => document.getElementById(id);
+const el = (tag, props = {}, ...kids) => {
+  const e = Object.assign(document.createElement(tag), props);
+  kids.forEach((k) => e.append(k));
+  return e;
+};
+let csrf = "", me = null;
+async function api(path, opts = {}) {
+  const headers = { ...(opts.headers || {}) };
+  if (csrf && (opts.method || "GET") !== "GET") headers["X-CSRF-Token"] = csrf;
+  const r = await fetch(path, { ...opts, headers, credentials: "same-origin" });
+  const data = await r.json();
+  if (r.status === 401 && me) { showLogin("Your session has expired. Please sign in again."); }
+  if (!r.ok) throw new Error(data.error || r.statusText);
+  return data;
+}
+const store = {
+  get(k, d) { try { const v = localStorage.getItem(k); return v === null ? d : JSON.parse(v); } catch { return d; } },
+  set(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); } catch { /* storage unavailable */ } },
+};
+let toastTimer = null;
+function toast(msg) {
+  const t = $("toast"); t.textContent = msg; t.classList.add("show");
+  clearTimeout(toastTimer); toastTimer = setTimeout(() => t.classList.remove("show"), 2200);
+}
+const LH = 20;
+const SEVS = ["mandatory", "required", "advisory"];
+const cap = (s) => s.charAt(0).toUpperCase() + s.slice(1);
+
+// ---- theme
+function applyTheme(t) { if (t) document.documentElement.dataset.theme = t; }
+applyTheme(store.get("theme", null));
+$("theme").addEventListener("click", () => {
+  const dark = document.documentElement.dataset.theme
+    ? document.documentElement.dataset.theme === "dark"
+    : window.matchMedia && matchMedia("(prefers-color-scheme: dark)").matches;
+  const next = dark ? "light" : "dark"; applyTheme(next); store.set("theme", next);
+});
+
+// ---- views
+const VIEWS = ["analyze", "compare", "history", "triage", "rules"];
+function showView(name) {
+  for (const v of VIEWS) {
+    $("view-" + v).hidden = v !== name;
+    $("nav-" + v).setAttribute("aria-selected", String(v === name));
+  }
+  if (name === "compare") renderCompare();
+  if (name === "triage") loadTriage();
+  if (name === "history") loadHistory();
+}
+document.querySelectorAll(".nav button").forEach((b) => b.addEventListener("click", () => showView(b.dataset.view)));
+
+// ---- workspace state
+const DEFAULT_FILES = [{ name: "input.c", code: "" }];
+let files = store.get("files", DEFAULT_FILES);
+if (!Array.isArray(files) || !files.length) files = DEFAULT_FILES.map((f) => ({ ...f }));
+let active = Math.max(0, Math.min(store.get("active", 0), files.length - 1));
+let lastRes = null, stale = false;
+let sortKey = "loc", sortDir = 1, selectedFinding = null;
+const sevOff = new Set(); let findQuery = "";
+const statusOff = new Set();
+const crossOff = new Set();
+let rules = [];
+let project = null, viewPath = null;
+let deviationsText = "", deviationCount = 0;
+const devOff = { v: false };
+const libOff = { v: false };
+
+function saveFiles() { store.set("files", files); store.set("active", active); }
+function findingsFor(name) { return lastRes && (lastRes.sources || lastRes.project) ? lastRes.findings.filter((f) => f.file === name) : []; }
+
+// ---- editor (textarea over a highlight backdrop, with a gutter)
+let renderQueued = false;
+function queueEditorRender() {
+  if (renderQueued) return;
+  renderQueued = true;
+  requestAnimationFrame(() => { renderQueued = false; renderEditorLines(); });
+}
+function worstSeverity(list) { return SEVS.find((s) => list.some((f) => f.category === s)); }
+function currentFileName() { return project ? viewPath : files[active].name; }
+function renderEditorLines() {
+  const code = $("code").value, count = code.split("\n").length;
+  const byLine = new Map();
+  findingsFor(currentFileName()).forEach((f) => {
+    if (!byLine.has(f.line)) byLine.set(f.line, []);
+    byLine.get(f.line).push(f);
+  });
+  const gutter = $("gutter"), backdrop = $("backdrop");
+  gutter.replaceChildren(); backdrop.replaceChildren();
+  const gf = document.createDocumentFragment(), bf = document.createDocumentFragment();
+  for (let n = 1; n <= count; n++) {
+    const hits = byLine.get(n), sev = hits ? worstSeverity(hits) : null;
+    const g = el("div", { className: "gl" + (sev ? ` has ${sev}` : "") + (sev && stale ? " stale" : "") }, String(n));
+    if (hits) g.title = hits.map((f) => `Rule ${f.rule}: ${f.message}`).join("\n");
+    gf.append(g);
+    const b = el("div", { className: "bl" + (sev && !stale ? " " + sev : "") });
+    b.dataset.n = String(n);
+    bf.append(b);
+  }
+  gutter.append(gf); backdrop.append(bf);
+  $("hint").hidden = code.length > 0;
+  syncScroll();
+}
+function syncScroll() {
+  const t = $("code").scrollTop;
+  $("gutter").style.transform = `translateY(${-t}px)`;
+  $("backdrop").style.transform = `translateY(${-t}px)`;
+}
+$("code").addEventListener("scroll", syncScroll);
+$("code").addEventListener("input", () => {
+  if (project) { scheduleProjectSave(); }
+  else { files[active].code = $("code").value; saveFiles(); }
+  if (lastRes) { stale = true; markStale(); }
+  queueEditorRender();
+});
+$("code").addEventListener("keydown", (e) => {
+  if (e.key === "Tab" && !e.ctrlKey && !e.metaKey && !e.altKey) {
+    e.preventDefault();
+    const ta = e.target;
+    ta.setRangeText("    ", ta.selectionStart, ta.selectionEnd, "end");
+    ta.dispatchEvent(new Event("input"));
+  }
+});
+function jumpTo(line) {
+  const ta = $("code"), lines = ta.value.split("\n");
+  let offset = 0;
+  for (let i = 0; i < Math.min(line - 1, lines.length); i++) offset += lines[i].length + 1;
+  ta.focus();
+  ta.setSelectionRange(offset, offset + (lines[line - 1] || "").length);
+  ta.scrollTop = Math.max(0, (line - 4) * LH);
+  syncScroll();
+  const b = $("backdrop").children[line - 1];
+  if (b) { b.classList.remove("flash"); void b.offsetWidth; b.classList.add("flash"); }
+}
+
+// ---- file tabs
+function renderTabs() {
+  const box = $("filetabs");
+  box.replaceChildren();
+  files.forEach((f, i) => {
+    const n = findingsFor(f.name).length;
+    const t = el("span", { className: "ftab" + (i === active ? " active" : ""), role: "tab" }, f.name);
+    if (n && !stale) t.append(el("span", { className: "cnt" }, String(n)));
+    t.addEventListener("click", () => selectFile(i));
+    if (files.length > 1) {
+      const x = el("span", { className: "x", title: "Remove file" }, "×");
+      x.addEventListener("click", (ev) => {
+        ev.stopPropagation(); files.splice(i, 1);
+        active = Math.max(0, Math.min(active > i ? active - 1 : active, files.length - 1));
+        saveFiles(); selectFile(active);
+      });
+      t.append(x);
+    }
+    box.append(t);
+  });
+  const add = el("span", { className: "ftab", title: "New empty file" }, "+");
+  add.addEventListener("click", () => {
+    const name = (prompt("File name (e.g. util.c or util.h)", "file" + (files.length + 1) + ".c") || "").trim();
+    if (!name) return;
+    if (!/^[A-Za-z0-9_][A-Za-z0-9_.-]{0,63}\.[ch]$/.test(name) || files.some((f) => f.name === name)) {
+      toast("Use a unique name ending in .c or .h"); return;
+    }
+    files.push({ name, code: "" }); selectFile(files.length - 1);
+  });
+  box.append(add);
+}
+function selectFile(i) {
+  active = i; $("code").value = files[i].code; $("code").scrollTop = 0;
+  saveFiles(); renderTabs(); renderEditorLines();
+}
+function setSingle(code, name = "input.c") { if (project) { project = null; viewPath = null; setProjectUi(false); } files = [{ name, code }]; lastRes = null; stale = false; renderResult(); selectFile(0); }
+
+// ---- findings helpers
+function ruleCategory(rule) { const r = rules.find((x) => x.id === rule); return r ? r.category.toLowerCase() : "advisory"; }
+function topicOf(rule) { const r = rules.find((x) => x.id === rule); return r ? r.topic : ""; }
+function visibleFindings() {
+  if (!lastRes) return [];
+  const q = findQuery.toLowerCase();
+  const crossOnly = ((lastRes.cross || {}).cppcheck_only_findings || []).map((c) => ({
+    ...c, col: 0, category: ruleCategory(c.rule), key: "cppcheck",
+    message: "reported only by cppcheck" + (c.message ? ": " + c.message : "") }));
+  const pool = lastRes.findings.concat(devOff.v ? [] : (lastRes.deviated || []).map((d) => ({ ...d, deviated: true })), crossOnly);
+  const rows = pool.filter((x) => !sevOff.has(x.category) && !(libOff.v && x.library) && !crossOff.has(x.cross) && !statusOff.has(x.status) &&
+    (!q || `${x.rule} ${x.message} ${topicOf(x.rule)} ${x.file}`.toLowerCase().includes(q)));
+  const ruleNum = (r) => r.split(".").map(Number);
+  const cmp = {
+    loc: (a, b) => a.file.localeCompare(b.file) || a.line - b.line || a.col - b.col,
+    rule: (a, b) => ruleNum(a.rule)[0] - ruleNum(b.rule)[0] || ruleNum(a.rule)[1] - ruleNum(b.rule)[1] || a.line - b.line,
+    sev: (a, b) => SEVS.indexOf(a.category) - SEVS.indexOf(b.category) || a.line - b.line,
+  }[sortKey];
+  return rows.sort((a, b) => sortDir * cmp(a, b));
+}
+const sevTag = (c) => el("span", { className: "sev " + c }, el("i"), cap(c));
+
+// ---- exports
+function download(name, text, type) {
+  const a = el("a", { href: URL.createObjectURL(new Blob([text], { type })), download: name });
+  document.body.append(a); a.click(); a.remove();
+}
+function exportCsv() {
+  const q = (v) => '"' + String(v).replace(/"/g, '""') + '"';
+  download("misra-findings.csv", ["file,line,column,rule,category,check,topic,origin,cppcheck,status,fingerprint",
+    ...visibleFindings().map((x) => [x.file, x.line, x.col, x.rule, x.category, x.message, topicOf(x.rule), x.library ? "library" : "project", x.cross || "", x.status || "", x.fp || ""].map(q).join(","))].join("\n"), "text/csv");
+}
+function exportJson() { download("misra-findings.json", JSON.stringify(visibleFindings(), null, 2), "application/json"); }
+function exportReport() {
+  const esc = (s) => String(s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+  const rows = lastRes.findings.slice().sort((a, b) => a.file.localeCompare(b.file) || a.line - b.line);
+  const counts = SEVS.map((s) => `${cap(s)}: ${rows.filter((r) => r.category === s).length}`).join(" &middot; ");
+  const html = `<!doctype html><html lang="en"><head><meta charset="utf-8"><title>MISRA analysis report</title>
+<style>body{font:14px/1.5 system-ui,sans-serif;margin:32px;color:#171c24}h1{font-size:20px}table{border-collapse:collapse;width:100%}
+th,td{border:1px solid #dde2e9;padding:6px 10px;text-align:left}th{background:#f3f5f8}td.m{font-family:monospace}
+.note{margin-top:24px;color:#5d6775;font-size:12px}</style></head><body>
+<h1>MISRA C:2012 analysis report</h1>
+<p>Generated ${esc(new Date().toLocaleString())} &middot; ${esc($("ver").textContent)} &middot; ${esc(lastRes.summary || "")}</p>
+<p>${rows.length} finding(s) &mdash; ${counts}</p>
+${lastRes.cross ? `<p>Cross-check with ${esc(lastRes.cross.tool)} (covers ${lastRes.cross.rules_covered} rules): ${lastRes.cross.agree} confirmed, ${lastRes.cross.ours_only} only by misra-checker, ${lastRes.cross.cppcheck_only} only by cppcheck, ${lastRes.cross.not_comparable} without a counterpart. A difference means one of the tools should be checked; cppcheck is not ground truth.</p>` : ""}
+<table><thead><tr><th>Location</th><th>Rule</th><th>Category</th><th>Check</th><th>Topic</th>${lastRes.cross ? "<th>cppcheck</th>" : ""}</tr></thead><tbody>
+${rows.map((r) => `<tr><td class="m">${esc(r.file)}:${r.line}:${r.col}</td><td>${esc(r.rule)}</td><td>${esc(r.category)}</td><td>${esc(r.message)}</td><td>${esc(topicOf(r.rule))}</td>${lastRes.cross ? `<td>${esc(r.cross || "")}</td>` : ""}</tr>`).join("")}
+${((lastRes.cross || {}).cppcheck_only_findings || []).map((r) => `<tr><td class="m">${esc(r.file)}:${r.line}</td><td>${esc(r.rule)}</td><td>${esc(ruleCategory(r.rule))}</td><td>reported only by cppcheck</td><td>${esc(topicOf(r.rule))}</td><td>cppcheck-only</td></tr>`).join("")}
+</tbody></table>
+<p class="note">Produced by an engineering tool whose detectors are validated only against internal fixtures. This report is not a MISRA compliance claim and does not replace independent validation or tool qualification.</p>
+</body></html>`;
+  download("misra-report.html", html, "text/html");
+}
+function downloadCompliance(format) {
+  if (!lastRes || !lastRes.workspace_key) { toast("Run an analysis first"); return; }
+  const a = el("a", { href: `/api/compliance?key=${encodeURIComponent(lastRes.workspace_key)}&format=${format}` });
+  document.body.append(a); a.click(); a.remove();
+}
+$("exp-toggle").addEventListener("click", (e) => {
+  e.stopPropagation();
+  const open = $("exp-list").hidden;
+  $("exp-list").hidden = !open;
+  $("exp-toggle").setAttribute("aria-expanded", String(open));
+});
+document.addEventListener("click", (e) => { if (!e.target.closest || !e.target.closest("#exp-menu")) { $("exp-list").hidden = true; $("exp-toggle").setAttribute("aria-expanded", "false"); } });
+$("exp-list").addEventListener("click", () => { $("exp-list").hidden = true; });
+$("exp-comp-html").addEventListener("click", () => downloadCompliance("html"));
+$("exp-comp-csv").addEventListener("click", () => downloadCompliance("csv"));
+$("exp-csv").addEventListener("click", exportCsv);
+$("exp-json").addEventListener("click", exportJson);
+$("exp-report").addEventListener("click", exportReport);
+$("exp-sarif").addEventListener("click", () => {
+  if (lastRes && lastRes.sarif) download("misra-results.sarif", lastRes.sarif, "application/sarif+json");
+  else toast("No SARIF available for this run");
+});
+
+// ---- results rendering
+function card(n, label, kind) { return el("div", { className: "card" + (kind && n ? " k-" + kind : "") }, el("b", {}, String(n)), el("span", {}, label)); }
+
+function markStale() {
+  const b = $("stale-banner");
+  if (b) b.hidden = !stale;
+  renderTabs();
+}
+function renderResult() {
+  const box = $("result"), res = lastRes;
+  box.replaceChildren();
+  ["exp-toggle", "exp-csv", "exp-json", "exp-report", "exp-sarif"].forEach((id) => { $(id).disabled = !res; });
+  ["exp-comp-html", "exp-comp-csv", "exp-publish"].forEach((id) => { $(id).disabled = !(res && res.workspace_key); });
+  if (!res) { box.append(el("div", { className: "empty" }, el("b", {}, "No analysis yet"), "Run an analysis to see findings here. Press Ctrl+Enter.")); return; }
+
+  const all = res.findings;
+  const counts = Object.fromEntries(SEVS.map((s) => [s, all.filter((x) => x.category === s).length]));
+  box.append(el("div", { className: "cards" }, card(all.length, "Findings"),
+    card(new Set(all.map((x) => x.rule)).size, "Rules hit"),
+    ...SEVS.filter((s) => counts[s]).map((s) => card(counts[s], s, s)),
+    ...((res.deviated || []).length ? [card(res.deviated.length, "Deviated")] : []),
+    ...(res.baseline ? [card(res.baseline.new, "new", "mandatory"), card(res.baseline.unchanged, "unchanged"), card(res.baseline.fixed, "fixed", "pass")] : []),
+    ...(res.cross ? [card(res.cross.agree, "cppcheck agrees", "pass"), card(res.cross.ours_only, "only here"), card(res.cross.cppcheck_only, "only cppcheck")] : [])));
+  if (res.cross) {
+    box.append(el("div", { className: "xnote" },
+      `Cross-check with ${res.cross.tool}: its MISRA add-on implements ${res.cross.rules_covered} of the ${rules.length || 143} rules, ` +
+      `so ${res.cross.not_comparable} finding(s) have no counterpart. cppcheck is not ground truth: a difference means one of the two tools should be looked at.`));
+    (res.cross.notes || []).forEach((n) => box.append(el("div", { className: "banner warn" }, n)));
+  }
+  (res.deviation_notes || []).forEach((n) => box.append(el("div", { className: "banner warn" }, n)));
+
+  const staleBanner = el("div", { className: "banner warn", id: "stale-banner" }, "The code changed since this analysis. Run it again to refresh the results.");
+  staleBanner.hidden = !stale;
+  box.append(staleBanner);
+  box.append(baselineBlock(res));
+  if (res.error) box.append(el("div", { className: "banner err" }, res.error));
+  if (res.compile_errors) {
+    if ((res.missing_headers || []).length) {
+      box.append(el("div", { className: "banner err" },
+        el("b", {}, "Missing header file(s): "), res.missing_headers.join(", "),
+        el("div", { className: "sub", style: "margin-top:4px;color:inherit" },
+          "The compiler stops reading further #include lines at the first missing header, so types such as uint32_t can be unknown and the rest of the file is only partly analysed. Upload the folder that contains the header (for example the Drivers/ and CMSIS folders of an STM32 project), or add its folder to Extra include dirs.")));
+    }
+    box.append(el("div", { className: "banner warn" }, "The code has compile errors. Every other rule was still checked on the recovered code, but results near the errors may be incomplete.",
+      el("details", {}, el("summary", {}, "Compiler messages"), el("pre", {}, res.compiler_output))));
+  }
+  if (res.summary && /inconclusive/.test(res.summary) && res.sources && res.sources.length < 2) {
+    box.append(el("div", { className: "banner ok" }, "Tip: whole-program rules need at least two source files. Add more files to enable them."));
+  }
+  if (!all.length) {
+    if (!res.error) box.append(el("div", { className: "empty" }, el("b", {}, "No findings"), "None of the implemented rules reported a violation."));
+    return;
+  }
+
+  const bar = el("div", { className: "toolbar" });
+  SEVS.filter((s) => counts[s]).forEach((s) => {
+    const chip = el("span", { className: `chip k-${s}` + (sevOff.has(s) ? " off" : ""), role: "button", tabIndex: 0, title: "Toggle " + s }, el("i"), `${cap(s)} ${counts[s]}`);
+    const toggle = () => { sevOff.has(s) ? sevOff.delete(s) : sevOff.add(s); renderResult(); };
+    chip.addEventListener("click", toggle);
+    chip.addEventListener("keydown", (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); toggle(); } });
+    bar.append(chip);
+  });
+  if ((res.deviated || []).length) {
+    const dc = el("span", { className: "chip" + (devOff.v ? " off" : ""), role: "button", tabIndex: 0, title: "Show or hide findings covered by deviations" }, `Deviated ${res.deviated.length}`);
+    dc.addEventListener("click", () => { devOff.v = !devOff.v; renderResult(); });
+    bar.append(dc);
+  }
+  if (res.baseline) {
+    [["new", "New since baseline", res.baseline.new], ["unchanged", "Unchanged", res.baseline.unchanged]].forEach(([key, label, n]) => {
+      const sc = el("span", { className: `chip st-${key}` + (statusOff.has(key) ? " off" : ""), role: "button", tabIndex: 0 }, el("i"), `${label} ${n}`);
+      sc.addEventListener("click", () => { statusOff.has(key) ? statusOff.delete(key) : statusOff.add(key); renderResult(); });
+      bar.append(sc);
+    });
+  }
+  if (res.cross) {
+    [["both", "Confirmed by cppcheck", res.cross.agree], ["ours-only", "Only misra-checker", res.cross.ours_only],
+     ["cppcheck-only", "Only cppcheck", res.cross.cppcheck_only]].forEach(([key, label, n]) => {
+      const xc = el("span", { className: `chip x-${key}` + (crossOff.has(key) ? " off" : ""), role: "button", tabIndex: 0 }, el("i"), `${label} ${n}`);
+      xc.addEventListener("click", () => { crossOff.has(key) ? crossOff.delete(key) : crossOff.add(key); renderResult(); });
+      bar.append(xc);
+    });
+  }
+  const libCount = all.filter((x) => x.library).length;
+  if (libCount) {
+    const lc = el("span", { className: "chip" + (libOff.v ? " off" : ""), role: "button", tabIndex: 0, title: "Show or hide findings in library / vendor code" }, `Libraries ${libCount}`);
+    lc.addEventListener("click", () => { libOff.v = !libOff.v; renderResult(); });
+    bar.append(lc);
+  }
+  const q = el("input", { type: "search", placeholder: "Filter findings", value: findQuery });
+  q.setAttribute("aria-label", "Filter findings");
+  q.addEventListener("input", () => { findQuery = q.value; renderTable(); });
+  bar.append(q);
+  box.append(bar, el("div", { id: "ftable" }));
+  renderTable();
+  if (res.summary) box.append(el("div", { className: "sub", style: "padding:10px 12px" }, res.summary + (res.compiler ? ` Compiler profile: ${res.compiler}.` : "")));
+}
+// ---- baseline: what is new since the last saved state
+function baselineBlock(res) {
+  const wrap = el("div", { className: "xnote", style: "display:flex;gap:8px;flex-wrap:wrap;align-items:center" });
+  if (!res.workspace_key) return wrap;
+  const b = res.baseline;
+  if (b) {
+    const gate = (b.new_by_category.required || 0) + (b.new_by_category.mandatory || 0);
+    wrap.append(el("span", {}, `Baseline from ${new Date(b.saved).toLocaleString()}: `), el("b", {}, `${b.new} new`),
+      `, ${b.unchanged} unchanged, ${b.fixed} fixed. `,
+      gate ? el("span", { className: "badge FAIL", title: "A CI gate on required and mandatory rules would fail" }, `${gate} new required/mandatory`)
+           : el("span", { className: "badge PASS" }, "no new required/mandatory"));
+  } else {
+    wrap.append("No baseline yet. Save one to see from now on what is new, unchanged or fixed.");
+  }
+  const save = el("button", { className: "btn small", title: "Remember these findings as the reference state" }, b ? "Update baseline" : "Save as baseline");
+  save.addEventListener("click", async () => {
+    try {
+      await api("/api/baseline/save", { method: "POST", body: JSON.stringify({ key: res.workspace_key }) });
+      res.findings.forEach((f) => { f.status = "unchanged"; });
+      res.baseline = { saved: new Date().toISOString(), new: 0, unchanged: res.findings.length, fixed: 0, new_by_category: {}, fixed_entries: [] };
+      toast("Baseline saved");
+      renderResult();
+    } catch (e) { toast(e.message); }
+  });
+  wrap.append(save);
+  if (b) {
+    const clear = el("button", { className: "btn small" }, "Clear");
+    clear.addEventListener("click", async () => {
+      try { await api("/api/baseline/clear", { method: "POST", body: JSON.stringify({ key: res.workspace_key }) });
+        res.baseline = null; res.findings.forEach((f) => { delete f.status; }); renderResult(); } catch (e) { toast(e.message); }
+    });
+    wrap.append(clear);
+    if (b.fixed_entries && b.fixed_entries.length) {
+      wrap.append(el("details", { style: "flex-basis:100%" }, el("summary", {}, `Fixed since the baseline (${b.fixed})`),
+        ...b.fixed_entries.map((e) => el("div", { className: "sub" }, `${e.file}:${e.line}  Rule ${e.rule}  ${e.text}`))));
+    }
+  }
+  return wrap;
+}
+
+function renderTable() {
+  const rows = visibleFindings(), body = el("tbody");
+  const th = (label, key) => {
+    const h = el("th", { className: "sortable", scope: "col" }, label + (sortKey === key ? (sortDir > 0 ? " ▲" : " ▼") : ""));
+    h.addEventListener("click", () => { sortDir = sortKey === key ? -sortDir : 1; sortKey = key; renderTable(); });
+    return h;
+  };
+  rows.forEach((x) => {
+    const base = x.file.split("/").pop();
+    const tr = el("tr", { className: "clickable" + (selectedFinding === x ? " sel" : "") + (x.deviated ? " dev" : "") },
+      el("td", {}, sevTag(x.category), ...(x.status === "new" && lastRes.baseline ? [el("span", { className: "newtag", title: "Not in the saved baseline" }, "new")] : []),
+        ...(x.deviated ? [el("span", { className: "devtag", title: "Covered by deviation " + x.deviation }, x.deviation)] : [])),
+      el("td", {}, el("div", { className: "rulecode" }, x.rule), el("div", { className: "sub" }, topicOf(x.rule))),
+      el("td", {}, x.message),
+      ...(lastRes.cross ? [el("td", {}, x.cross && x.cross !== "not-comparable"
+        ? el("span", { className: "xtag " + x.cross, title: x.cross === "both" ? "cppcheck reports the same rule on this line" : x.cross === "ours-only" ? "cppcheck does not report it" : "cppcheck reports it, misra-checker does not" },
+          x.cross === "both" ? "✓ cppcheck" : x.cross === "ours-only" ? "only here" : "only cppcheck")
+        : el("span", { className: "sub" }, "—"))] : []),
+      el("td", { className: "loc", title: x.file }, `${project ? x.file : base}:${x.line}${x.col ? ":" + x.col : ""}`),
+      verdictCell(x));
+    tr.addEventListener("click", () => {
+      selectedFinding = x;
+      if (project) {
+        openProjectFile(x.file).then(() => jumpTo(x.line));
+      } else {
+        const idx = files.findIndex((f) => f.name === x.file);
+        if (idx >= 0) { if (idx !== active) selectFile(idx); jumpTo(x.line); }
+      }
+      renderTable();
+    });
+    body.append(tr);
+  });
+  const t = el("table", {}, el("thead", {}, el("tr", {}, th("Severity", "sev"), th("Rule", "rule"), el("th", {}, "Check"), ...(lastRes.cross ? [el("th", {}, "cppcheck")] : []), th("Location", "loc"), el("th", {}, "Verdict"))), body);
+  $("ftable").replaceChildren(t, ...(rows.length ? [] : [el("div", { className: "empty" }, "No findings match the current filter.")]));
+}
+
+// ---- analyze
+async function analyze(payload, sources) {
+  const btns = [$("run"), $("rundb")];
+  btns.forEach((b) => (b.disabled = true));
+  $("st-run").replaceChildren(el("span", { className: "spin" }), " Analyzing…");
+  $("result").replaceChildren(el("div", { className: "empty" }, el("span", { className: "spin" }), " Analyzing…"));
+  try {
+    lastRes = await api("/api/analyze", { method: "POST", body: JSON.stringify(payload) });
+    lastRes.sources = sources; stale = false; selectedFinding = null;
+    $("st-run").textContent = `Last run: ${lastRes.findings.length} finding(s) in ${(lastRes.elapsed_ms / 1000).toFixed(2)} s`;
+  } catch (e) {
+    lastRes = { findings: [], summary: "", error: e.message, sources };
+    $("st-run").textContent = "Analysis failed";
+  } finally { btns.forEach((b) => (b.disabled = false)); }
+  renderResult(); renderTabs(); renderEditorLines();
+  if (project) renderProjectFiles();
+  if (!$("view-compare").hidden) renderCompare();
+}
+function runCode() {
+  if (project) { runProject(); return; }
+  const used = files.filter((f) => f.code.trim());
+  if (!used.length) { toast("Nothing to analyze yet"); return; }
+  const payload = used.map((f) => ({ name: f.name, code: f.code }));
+  analyze({ files: payload, std: $("std").value, deviations: deviationsText, ...compilerChoice() }, payload);
+}
+$("run").addEventListener("click", runCode);
+document.addEventListener("keydown", (e) => {
+  if ((e.ctrlKey || e.metaKey) && e.key === "Enter" && !$("view-analyze").hidden) { e.preventDefault(); runCode(); }
+});
+$("rundb").addEventListener("click", () => {
+  const p = $("db").value.trim();
+  if (p) analyze({ compile_commands: p, deviations: deviationsText }, null);  // uses the flags in its own database
+});
+$("file").addEventListener("change", async (e) => {
+  let last = null;
+  if (project) { project = null; viewPath = null; setProjectUi(false); }
+  for (const f of e.target.files) {
+    const code = await f.text();
+    const name = f.name.replace(/[^A-Za-z0-9_.-]/g, "_");
+    const existing = files.findIndex((x) => x.name === name);
+    if (existing >= 0) { files[existing].code = code; last = existing; }
+    else if (files.length === 1 && !files[0].code.trim()) { files[0] = { name, code }; last = 0; }
+    else { files.push({ name, code }); last = files.length - 1; }
+  }
+  e.target.value = "";
+  if (last !== null) { lastRes = null; stale = false; renderResult(); selectFile(last); }
+});
+// ---- deviations
+function renderDevChip() {
+  const chip = $("devchip");
+  chip.hidden = !deviationsText;
+  if (!deviationsText) return;
+  chip.replaceChildren(`Deviations: ${deviationCount} record(s) `);
+  const x = el("span", { className: "x", title: "Remove", style: "cursor:pointer;margin-left:6px" }, "×");
+  x.addEventListener("click", () => { deviationsText = ""; deviationCount = 0; renderDevChip(); });
+  chip.append(x);
+}
+$("devfile").addEventListener("change", async (e) => {
+  const f = e.target.files[0];
+  e.target.value = "";
+  if (!f) return;
+  const text = await f.text();
+  try {
+    const parsed = JSON.parse(text);
+    if (!parsed || !Array.isArray(parsed.deviations)) throw new Error('needs a "deviations" array');
+    deviationsText = text; deviationCount = parsed.deviations.length;
+    toast("Deviations loaded. Run the analysis again to apply them.");
+  } catch (err) { deviationsText = ""; deviationCount = 0; toast("Not a valid deviation file: " + err.message); }
+  renderDevChip();
+});
+
+// ---- project (zip) mode
+function setProjectUi(on) {
+  $("projbar").hidden = !on;
+  $("filetabs").hidden = on;
+  $("code").readOnly = false;
+  $("run-label").textContent = on ? "Analyze project" : "Analyze";
+}
+function renderProjectFiles() {
+  const q = $("pj-filter").value.toLowerCase(), box = $("pj-files");
+  box.replaceChildren();
+  const counts = {};
+  if (lastRes && lastRes.project) lastRes.findings.forEach((f) => { counts[f.file] = (counts[f.file] || 0) + 1; });
+  project.files.filter((f) => !q || f.path.toLowerCase().includes(q))
+    .sort((a, b) => (counts[b.path] || 0) - (counts[a.path] || 0) || a.path.localeCompare(b.path))
+    .forEach((f) => {
+      const row = el("div", { className: "pj-file" + (f.path === viewPath ? " active" : ""), title: f.path },
+        el("span", { className: "path" }, f.path));
+      if (f.library) row.append(el("span", { className: "tag" }, "lib"));
+      if (counts[f.path]) row.append(el("span", { className: "cnt-pill" }, String(counts[f.path])));
+      row.addEventListener("click", () => openProjectFile(f.path));
+      box.append(row);
+    });
+}
+// ---- editing project files: autosave to the server, flushed before opening another file or analysing
+let saveTimer = null, savePath = null, saveInFlight = Promise.resolve();
+function scheduleProjectSave() {
+  savePath = viewPath;
+  $("pj-save").textContent = "Unsaved changes…";
+  clearTimeout(saveTimer);
+  saveTimer = setTimeout(flushProjectSave, 700);
+}
+function flushProjectSave() {
+  clearTimeout(saveTimer); saveTimer = null;
+  if (!project || savePath === null) return saveInFlight;
+  const path = savePath, text = $("code").value, id = project.id;
+  savePath = null;
+  $("pj-save").textContent = "Saving…";
+  saveInFlight = saveInFlight.then(() => api(`/api/file?project=${encodeURIComponent(id)}&path=${encodeURIComponent(path)}`,
+    { method: "POST", body: text, headers: { "Content-Type": "text/plain" } }))
+    .then(() => { $("pj-save").textContent = "Saved"; })
+    .catch((e) => { $("pj-save").textContent = "Not saved"; toast("Could not save " + path + ": " + e.message); });
+  return saveInFlight;
+}
+$("pj-new").addEventListener("click", async () => {
+  const name = (prompt("New file path inside the project (for example src/util.c or inc/util.h)", "src/new_file.c") || "").trim();
+  if (!name) return;
+  try {
+    await flushProjectSave();
+    const data = await api(`/api/file?project=${encodeURIComponent(project.id)}&path=${encodeURIComponent(name)}`,
+      { method: "POST", body: "", headers: { "Content-Type": "text/plain" } });
+    project = { ...project, ...data.project };
+    renderProjectFiles();
+    await openProjectFile(name);
+    toast("File created");
+  } catch (e) { toast(e.message); }
+});
+$("pj-download").addEventListener("click", async (e) => {
+  e.preventDefault();
+  await flushProjectSave();
+  const a = el("a", { href: `/api/project-zip?project=${encodeURIComponent(project.id)}` });
+  document.body.append(a); a.click(); a.remove();
+});
+
+let openTicket = 0;
+async function openProjectFile(path) {
+  await flushProjectSave();
+  const ticket = ++openTicket;
+  try {
+    const data = await api(`/api/file?project=${encodeURIComponent(project.id)}&path=${encodeURIComponent(path)}`);
+    // A newer open supersedes this one, and text typed while the file was loading must not be overwritten.
+    if (ticket !== openTicket || savePath !== null || saveTimer !== null) return;
+    viewPath = path;
+    $("code").value = data.source; $("code").scrollTop = 0;
+    files[active] = files[active] || { name: "input.c", code: "" };
+    renderProjectFiles(); renderEditorLines();
+  } catch (e) { toast(e.message); }
+}
+function leaveProject() {
+  project = null; viewPath = null; lastRes = null; stale = false;
+  setProjectUi(false); renderResult(); selectFile(Math.min(active, files.length - 1));
+}
+$("pj-close").addEventListener("click", leaveProject);
+$("pj-filter").addEventListener("input", () => project && renderProjectFiles());
+$("zip").addEventListener("change", async (e) => {
+  const f = e.target.files[0];
+  e.target.value = "";
+  if (!f) return;
+  $("st-run").replaceChildren(el("span", { className: "spin" }), ` Uploading ${f.name}…`);
+  try {
+    const data = await api("/api/project?name=" + encodeURIComponent(f.name), { method: "POST", body: f });
+    project = data; viewPath = null; lastRes = null; stale = false;
+    $("pj-name").textContent = data.name;
+    $("pj-meta").textContent = `${data.c_files} C files · ${data.h_files} headers · ${data.library_files} in library folders`;
+    setProjectUi(true); renderResult(); renderProjectFiles();
+    const first = data.files.find((x) => x.kind === "c" && !x.library) || data.files[0];
+    await openProjectFile(first.path);
+    $("st-run").textContent = `Project loaded: ${data.name}`;
+    toast("Project loaded. Click Analyze project.");
+  } catch (err) { $("st-run").textContent = "Upload failed"; toast(err.message); }
+});
+async function runProject() {
+  const incs = $("pj-incs").value.split(/[,\n]+/).map((x) => x.trim()).filter(Boolean).join("\n");
+  const prev = project;
+  await flushProjectSave();
+  await analyze({ project: prev.id, std: $("std").value, defines: $("pj-defs").value, includes: incs, deviations: deviationsText, ...compilerChoice() }, null);
+  if (project) renderProjectFiles();
+}
+
+let samples = [];
+$("sample").addEventListener("change", (e) => {
+  const s = samples[e.target.value];
+  if (s) setSingle(s.code, "input.c");
+  e.target.value = "";
+});
+
+// ---- rules & validation
+let results = {}, selected = null;
+const statusOf = (id) => (results[id] ? results[id].status : "UNTESTED");
+function badge(status) { return el("span", { className: "badge " + status }, status); }
+
+function renderRules() {
+  const q = $("filter").value.toLowerCase(), cat = $("fcat").value, st = $("fstat").value;
+  const body = $("rulebody");
+  body.replaceChildren();
+  rules.forEach((r) => {
+    const status = statusOf(r.id);
+    if (cat && r.category !== cat) return;
+    if (st && status !== st) return;
+    if (q && !`${r.id} ${r.topic}`.toLowerCase().includes(q)) return;
+    const btn = el("button", { className: "btn small" }, "Validate");
+    btn.addEventListener("click", (ev) => { ev.stopPropagation(); validateRule(r.id, btn); });
+    const tr = el("tr", { className: "clickable" + (selected === r.id ? " sel" : "") },
+      el("td", {}, el("span", { className: "rulecode" }, r.id)),
+      el("td", {}, sevTag(r.category.toLowerCase())),
+      el("td", {}, r.topic),
+      el("td", {}, badge(status)),
+      el("td", { className: "sub" }, fieldText(r.id)),
+      el("td", {}, btn));
+    tr.addEventListener("click", () => { selected = r.id; showDetail(r.id); renderRules(); });
+    body.append(tr);
+  });
+  const counts = { PASS: 0, PARTIAL: 0, FAIL: 0, UNTESTED: 0 };
+  rules.forEach((r) => { counts[statusOf(r.id)]++; });
+  $("vsummary").replaceChildren(card(rules.length, "Rules"), card(counts.PASS, "Pass"), card(counts.PARTIAL, "Partial"),
+    card(counts.FAIL, "Fail"), card(counts.UNTESTED, "Untested"));
+  $("vbar").replaceChildren(...["PASS", "PARTIAL", "FAIL"].map((k) => {
+    const s = el("span", { className: k, title: `${k}: ${counts[k]}` }); s.style.width = `${(counts[k] / Math.max(1, rules.length)) * 100}%`; return s;
+  }));
+}
+async function validateRule(id, btn) {
+  if (btn) { btn.disabled = true; btn.textContent = "…"; }
+  try {
+    results[id] = await api("/api/validate?rule=" + encodeURIComponent(id));
+    selected = id; showDetail(id);
+  } catch (e) {
+    $("detail").replaceChildren(el("div", { className: "banner err", style: "margin:12px" }, e.message));
+  }
+  renderRules();
+}
+function plainCode(source) {
+  const pre = el("pre", { className: "codeblock" });
+  source.replace(/\n$/, "").split("\n").forEach((text, i) => { const s = el("span", { className: "ln" }, text || " "); s.dataset.n = String(i + 1); pre.append(s); });
+  return pre;
+}
+function showDetail(id) {
+  const r = rules.find((x) => x.id === id), res = results[id], box = $("detail");
+  box.replaceChildren(el("div", { className: "detail-title" }, `Rule ${id}`),
+    el("div", { className: "detail-meta" }, `${r.topic} · ${r.category} · ${r.decidability} · ${r.scope}`));
+  if (!res || !res.cases || !res.cases.length || !res.cases[0].files) {
+    if (res && res.cases && !res.cases.length) box.append(el("div", { className: "banner warn" }, "This rule has no fixtures."));
+    else {
+      const b = el("button", { className: "btn primary", style: "margin:0 12px" }, "Validate this rule");
+      b.addEventListener("click", () => validateRule(id, b));
+      box.append(b);
+    }
+    return;
+  }
+  box.append(el("div", { style: "padding:0 12px 12px" }, badge(res.status), " ", el("span", { className: "sub" }, res.note || "")));
+  res.cases.forEach((c) => {
+    const head = el("div", { className: "case-head" },
+      el("span", { className: "badge " + (c.passed ? "PASS" : "FAIL") }, c.passed ? "ok" : "error"),
+      el("b", {}, `${c.kind === "bad" ? "Violating" : "Compliant"} · ${c.name}`),
+      el("span", { className: "sub" }, c.detail));
+    if (c.files.length === 1) {
+      const open = el("button", { className: "btn small", style: "margin-left:auto" }, "Open in analyzer");
+      open.addEventListener("click", () => { setSingle(c.files[0].source); showView("analyze"); });
+      head.append(open);
+    }
+    const wrap = el("div", { className: "case" }, head);
+    c.files.forEach((f) => { if (c.files.length > 1) wrap.append(el("div", { className: "sub", style: "padding:4px 10px" }, f.name)); wrap.append(plainCode(f.source)); });
+    box.append(wrap);
+  });
+}
+$("valall").addEventListener("click", async () => {
+  const b = $("valall");
+  b.disabled = true; b.replaceChildren(el("span", { className: "spin" }), " Validating…");
+  try {
+    (await api("/api/validate-all")).results.forEach((r) => { results[r.rule] = r; });
+    renderRules(); if (selected) showDetail(selected);
+    toast("All rules validated");
+  } catch (e) { $("detail").replaceChildren(el("div", { className: "banner err", style: "margin:12px" }, e.message)); }
+  b.disabled = false; b.textContent = "Validate all";
+});
+["filter", "fcat", "fstat"].forEach((i) => $(i).addEventListener("input", renderRules));
+
+// ---- history: shared projects, runs and trends
+let hProjects = [], hProject = null, hBranch = "", hRuns = [];
+const svg = (tag, attrs = {}, ...kids) => {
+  const e = document.createElementNS("http://www.w3.org/2000/svg", tag);
+  Object.entries(attrs).forEach(([k, v]) => e.setAttribute(k, String(v)));
+  kids.forEach((k) => e.append(k));
+  return e;
+};
+async function loadHistory() {
+  try { hProjects = (await api("/api/projects")).projects; } catch { hProjects = []; }
+  renderHistory();
+  if (hProject && hProjects.some((p) => p.name === hProject)) await selectProject(hProject, hBranch);
+}
+function delta(n, goodWhenDown = true) {
+  if (!n) return el("span", { className: "sub" }, "no change");
+  return el("span", { className: (n > 0) === goodWhenDown ? "up" : "down" }, `${n > 0 ? "+" : ""}${n}`);
+}
+function renderHistory() {
+  const box = $("h-projects");
+  box.replaceChildren();
+  hProjects.forEach((p) => {
+    const l = p.latest, blocking = l ? l.mandatory + l.required : 0;
+    const row = el("div", { className: "hproj" + (p.name === hProject ? " sel" : "") },
+      el("b", {}, p.name),
+      el("div", { className: "sub" }, `${p.runs} run(s)`, l ? ` · latest ${l.total} findings` : "", l ? ` · ${blocking} required/mandatory` : ""),
+      l ? el("div", { className: "sub" }, "since the previous run: ", el("span", {}, `${l.new_count} new`), el("span", {}, `${l.fixed_count} fixed`)) : "");
+    row.addEventListener("click", () => selectProject(p.name, ""));
+    box.append(row);
+  });
+  if (!hProjects.length) box.append(el("div", { className: "empty" }, el("b", {}, "No projects yet"),
+    "Use Publish in the results, or publish from CI with misra_ci.py --publish."));
+}
+async function selectProject(name, branch) {
+  hProject = name; hBranch = branch || "";
+  const project = hProjects.find((p) => p.name === name);
+  try { hRuns = (await api(`/api/history?project=${encodeURIComponent(name)}&branch=${encodeURIComponent(hBranch)}`)).runs; } catch { hRuns = []; }
+  $("h-title").textContent = name;
+  const sel = $("h-branch");
+  sel.hidden = !(project && project.branches.length > 1);
+  sel.replaceChildren(el("option", { value: "" }, "All branches"), ...(project ? project.branches : []).map((b) => el("option", { value: b }, b)));
+  sel.value = hBranch;
+  $("h-delete").hidden = !(me && me.role === "admin");
+  renderHistory(); renderProjectDetail();
+}
+function trendChart(runs) {
+  const W = 640, H = 170, L = 38, R = 10, T = 10, B = 24;
+  const top = Math.max(1, ...runs.map((r) => r.total));
+  const x = (i) => L + (runs.length === 1 ? (W - L - R) / 2 : (i * (W - L - R)) / (runs.length - 1));
+  const y = (v) => T + (H - T - B) * (1 - v / top);
+  const line = (cls, pick) => svg("polyline", { class: cls, points: runs.map((r, i) => `${x(i)},${y(pick(r))}`).join(" ") });
+  const root = svg("svg", { viewBox: `0 0 ${W} ${H}`, class: "chart", role: "img", "aria-label": "Violations per run" });
+  (top >= 4 ? [0, 0.5, 1] : [0, 1]).forEach((f) => {
+    root.append(svg("line", { class: "axis", x1: L, x2: W - R, y1: y(top * f), y2: y(top * f) }),
+      svg("text", { x: 4, y: y(top * f) + 3 }, String(Math.round(top * f))));
+  });
+  root.append(line("l-total", (r) => r.total), line("l-block", (r) => r.mandatory + r.required), line("l-mand", (r) => r.mandatory));
+  runs.forEach((r, i) => root.append(svg("circle", { cx: x(i), cy: y(r.total), r: 3.5, fill: "var(--advisory)" },
+    svg("title", {}, `run ${r.id} · ${r.created.slice(0, 16).replace("T", " ")} · ${r.total} findings (${r.new_count} new, ${r.fixed_count} fixed)`))));
+  root.append(svg("text", { x: L, y: H - 6 }, runs[0].created.slice(0, 10)), svg("text", { x: W - R - 60, y: H - 6 }, runs[runs.length - 1].created.slice(0, 10)));
+  return root;
+}
+function renderProjectDetail() {
+  const box = $("h-detail");
+  box.replaceChildren();
+  if (!hRuns.length) { box.append(el("div", { className: "empty" }, "No runs for this selection.")); return; }
+  const last = hRuns[hRuns.length - 1], prev = hRuns[hRuns.length - 2];
+  box.append(el("div", { className: "cards" }, card(last.total, "findings"), card(last.mandatory + last.required, "required + mandatory"),
+    card(last.new_count, "new in latest run", "mandatory"), card(last.fixed_count, "fixed in latest run", "pass"),
+    card(prev ? last.total - prev.total : 0, "change vs previous run")));
+  box.append(trendChart(hRuns));
+  box.append(el("div", { className: "legend" }, el("span", {}, el("i", { style: "background:var(--advisory)" }), "all findings"),
+    el("span", {}, el("i", { style: "background:var(--required)" }), "required + mandatory"), el("span", {}, el("i", { style: "background:var(--mandatory)" }), "mandatory")));
+  const body = el("tbody");
+  hRuns.slice().reverse().forEach((r) => {
+    const tr = el("tr", { className: "clickable" },
+      el("td", {}, String(r.id)), el("td", { className: "sub" }, r.created.slice(0, 16).replace("T", " ")), el("td", {}, r.branch),
+      el("td", { className: "loc" }, (r.commit_id || "").slice(0, 8) || "—"), el("td", {}, String(r.total)),
+      el("td", {}, `${r.mandatory}/${r.required}/${r.advisory}`), el("td", {}, delta(r.new_count)), el("td", {}, delta(-r.fixed_count)),
+      el("td", { className: "sub" }, r.source === "ci" ? "CI" : r.submitted_by));
+    tr.addEventListener("click", () => showRun(r));
+    body.append(tr);
+  });
+  box.append(el("table", {}, el("thead", {}, el("tr", {}, ...["Run", "When", "Branch", "Commit", "Total", "M/R/A", "New", "Fixed", "By"].map((h) => el("th", {}, h)))), body),
+    el("div", { id: "h-run" }));
+}
+async function showRun(r) {
+  const area = $("h-run");
+  area.replaceChildren(el("div", { className: "empty" }, "Loading…"));
+  try {
+    const parts = [];
+    if (r.prev_run) {
+      const d = await api(`/api/history-diff?older=${r.prev_run}&newer=${r.id}`);
+      parts.push(el("h3", { style: "padding:0 12px" }, `Run ${r.id} compared with run ${r.prev_run}`),
+        el("div", { className: "xnote" }, `${d.new.length} new, ${d.fixed.length} fixed, ${d.unchanged} unchanged`),
+        ...d.new.slice(0, 200).map((f) => el("div", { className: "crow" }, el("span", { className: "newtag" }, "new"), el("span", { className: "what" }, `${f.rule}  ${f.message}`), el("span", { className: "where" }, `${f.file}:${f.line}`))),
+        ...d.fixed.slice(0, 200).map((f) => el("div", { className: "crow" }, el("span", { className: "vtag true-positive" }, "fixed"), el("span", { className: "what" }, `${f.rule}  ${f.message}`), el("span", { className: "where" }, `${f.file}:${f.line}`))));
+    } else {
+      const run = await api(`/api/history-run?id=${r.id}`);
+      parts.push(el("h3", { style: "padding:0 12px" }, `Run ${r.id}: first run of this branch`),
+        ...run.findings.slice(0, 200).map((f) => el("div", { className: "crow" }, sevTag(f.category), el("span", { className: "what" }, `${f.rule}  ${f.message}`), el("span", { className: "where" }, `${f.file}:${f.line}`))));
+    }
+    area.replaceChildren(...parts);
+  } catch (e) { area.replaceChildren(el("div", { className: "banner err" }, e.message)); }
+}
+$("h-branch").addEventListener("change", () => selectProject(hProject, $("h-branch").value));
+$("h-refresh").addEventListener("click", loadHistory);
+$("h-delete").addEventListener("click", async () => {
+  if (!hProject || !confirm(`Delete project "${hProject}" and all its runs?`)) return;
+  try { await api("/api/projects/delete", { method: "POST", body: JSON.stringify({ name: hProject }) }); hProject = null; $("h-title").textContent = "Select a project"; $("h-detail").replaceChildren(); loadHistory(); }
+  catch (e) { toast(e.message); }
+});
+$("exp-publish").addEventListener("click", async () => {
+  if (!lastRes || !lastRes.workspace_key) { toast("Run an analysis first"); return; }
+  const suggestion = (project ? project.name.replace(/\.zip$/i, "") : "my-project").replace(/[^A-Za-z0-9_.-]/g, "_").slice(0, 60);
+  const name = (prompt("Project name in the shared history", store.get("pubProject", suggestion)) || "").trim();
+  if (!name) return;
+  const branch = (prompt("Branch or label", store.get("pubBranch", "local")) || "").trim() || "local";
+  try {
+    const r = await api("/api/runs", { method: "POST", body: JSON.stringify({ key: lastRes.workspace_key, project: name, branch }) });
+    store.set("pubProject", name); store.set("pubBranch", branch);
+    toast(`Published as run ${r.run.id}: ${r.run.new_count} new, ${r.run.fixed_count} fixed since the previous run`);
+  } catch (e) { toast(e.message); }
+});
+
+// ---- triage: verdicts on findings and missed violations
+let triageCases = [], triageSummary = {}, triageFp = "";
+const KIND_LABEL = { "false-positive": "FP", "true-positive": "TP", "false-negative": "missed" };
+function fieldText(rule) {
+  const r = triageSummary[rule];
+  if (!r) return "—";
+  return [r.true_positive && `${r.true_positive} TP`, r.false_positive && `${r.false_positive} FP`, r.false_negative && `${r.false_negative} missed`].filter(Boolean).join(" · ");
+}
+async function loadTriage() {
+  try {
+    const data = await api("/api/triage");
+    triageCases = data.cases; triageSummary = data.summary;
+  } catch { triageCases = []; triageSummary = {}; }
+  renderTriage();
+  if (typeof renderRules === "function") renderRules();
+  if (lastRes && $("ftable")) renderTable();
+}
+function verdictsFor(x) {
+  // A fingerprint follows the violation when the code around it changes; older cases fall back to the line.
+  return triageCases.filter((c) => (c.fp && x.fp) ? c.fp === x.fp : (c.file === x.file && c.rule === x.rule && c.line === x.line));
+}
+function verdictCell(x) {
+  const td = el("td", {});
+  if (x.cross === "cppcheck-only") {
+    const b = el("button", { className: "vbtn", title: "cppcheck reports this and misra-checker does not: record it as a missed violation" }, "+ missed");
+    b.addEventListener("click", (ev) => { ev.stopPropagation(); openTriage({ kind: "false-negative", rule: x.rule, file: x.file, line: x.line, note: "Also reported by cppcheck." }); });
+    td.append(b);
+    return td;
+  }
+  verdictsFor(x).forEach((c) => td.append(el("span", { className: "vtag " + c.kind, title: c.note || "" }, KIND_LABEL[c.kind])));
+  for (const [kind, label, tip] of [["true-positive", "✓", "True positive: the violation is real"], ["false-positive", "✗", "False positive: the checker is wrong"]]) {
+    const b = el("button", { className: "vbtn", title: tip }, label);
+    b.addEventListener("click", (ev) => { ev.stopPropagation(); openTriage({ kind, rule: x.rule, file: x.file, line: x.line, fp: x.fp }); });
+    td.append(b);
+  }
+  return td;
+}
+function cursorLine() { const ta = $("code"); return ta.value.slice(0, ta.selectionStart).split("\n").length; }
+function openTriage(v) {
+  $("tri-title").textContent = v.kind === "false-negative" ? "Report a missed violation" : "Record a verdict";
+  $("tri-kind").value = v.kind; $("tri-rule").value = v.rule || ""; $("tri-file").value = v.file;
+  $("tri-line").value = v.line; $("tri-note").value = v.note || "";
+  triageFp = v.fp || "";
+  $("tri-error").hidden = true;
+  $("tri-dialog").hidden = false;
+  (v.rule ? $("tri-note") : $("tri-rule")).focus();
+}
+function triageSources() {
+  if (project) return { project: project.id, defines: $("pj-defs").value, includes: $("pj-incs").value.split(/[,\n]+/).map((x) => x.trim()).filter(Boolean).join("\n") };
+  const used = (lastRes && lastRes.sources) || files.filter((f) => f.code.trim()).map((f) => ({ name: f.name, code: f.code }));
+  return { files: used.map((f) => ({ name: f.name, code: f.code })) };
+}
+$("miss-btn").addEventListener("click", () => {
+  const name = currentFileName();
+  if (!name) { toast("Open a file first"); return; }
+  openTriage({ kind: "false-negative", rule: "", file: name, line: cursorLine() });
+});
+$("tri-cancel").addEventListener("click", () => { $("tri-dialog").hidden = true; });
+$("tri-form").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  try {
+    if (project) await flushProjectSave();
+    const body = { kind: $("tri-kind").value, rule: $("tri-rule").value.trim(), file: $("tri-file").value, line: Number($("tri-line").value),
+      note: $("tri-note").value, fp: triageFp, std: $("std").value, compiler: $("compiler").value, flags: $("cflags").value, ...triageSources() };
+    await api("/api/triage", { method: "POST", body: JSON.stringify(body) });
+    $("tri-dialog").hidden = true;
+    toast(body.kind === "false-negative" ? "Missed violation recorded" : "Verdict recorded");
+    await loadTriage();
+  } catch (err) { $("tri-error").hidden = false; $("tri-error").textContent = err.message; }
+});
+function renderTriage() {
+  const kind = $("tri-filter-kind").value, body = $("tri-body");
+  body.replaceChildren();
+  triageCases.filter((c) => !kind || c.kind === kind).forEach((c) => {
+    const del = el("button", { className: "vbtn", title: "Delete this case" }, "✕");
+    del.addEventListener("click", async () => { await api("/api/triage/delete", { method: "POST", body: JSON.stringify({ id: c.id }) }); loadTriage(); });
+    body.append(el("tr", {},
+      el("td", {}, el("span", { className: "vtag " + c.kind }, KIND_LABEL[c.kind])),
+      el("td", {}, el("span", { className: "rulecode" }, c.rule)),
+      el("td", { className: "loc", title: c.file }, `${c.file.split("/").pop()}:${c.line}`),
+      el("td", { className: "sub", title: c.note }, (c.note || c.line_text || "").slice(0, 90)),
+      el("td", {}, el("span", { className: "badge " + (c.state === "fixed" ? "PASS" : "PARTIAL"), title: c.state === "fixed" ? "The checker now behaves as you labelled" : "The checker still behaves differently from your label: a defect or gap to fix" }, c.state === "fixed" ? "as labelled" : "open")),
+      el("td", {}, del)));
+  });
+  $("tri-empty").replaceChildren(...(triageCases.length ? [] : [el("div", { className: "empty" }, el("b", {}, "No cases yet"),
+    "Use ✓ / ✗ next to a finding, or “+ Missed violation” above the editor.")]));
+  const rulesBody = $("tri-rules");
+  rulesBody.replaceChildren(...Object.entries(triageSummary).map(([rule, r]) => el("tr", {},
+    el("td", {}, el("span", { className: "rulecode" }, rule)), el("td", {}, String(r.true_positive)), el("td", {}, String(r.false_positive)),
+    el("td", {}, String(r.false_negative)), el("td", {}, r.precision === null ? "—" : `${Math.round(r.precision * 100)}%`))));
+  $("tri-promote").hidden = !(me && me.role === "admin");
+}
+$("tri-filter-kind").addEventListener("input", renderTriage);
+$("tri-run").addEventListener("click", async () => {
+  const b = $("tri-run"); b.disabled = true; b.textContent = "Running…";
+  try {
+    const res = await api("/api/triage/run", { method: "POST", body: "{}" });
+    const fixed = res.results.filter((r) => r.state === "fixed").length, open = res.results.filter((r) => r.state === "open").length;
+    toast(`${fixed} behave as labelled, ${open} still open`);
+    await loadTriage();
+  } catch (e) { toast(e.message); }
+  b.disabled = false; b.textContent = "Re-run all";
+});
+$("tri-export").addEventListener("click", () => { const a = el("a", { href: "/api/triage-export" }); document.body.append(a); a.click(); a.remove(); });
+$("tri-promote").addEventListener("click", async () => {
+  if (!confirm("Copy all cases into the repository's tests/triage folder as regression tests?")) return;
+  try { const r = await api("/api/triage/promote", { method: "POST", body: "{}" }); toast(`${r.written.length} case(s) written to ${r.directory}`); await loadTriage(); }
+  catch (e) { toast(e.message); }
+});
+
+// ---- compare view: misra-checker | cppcheck MISRA add-on | cppcheck own checks
+let cmpKey = null;
+const sourceCache = new Map();
+async function sourceOf(file) {
+  if (project) {
+    const k = project.id + ":" + file;
+    if (!sourceCache.has(k)) sourceCache.set(k, (await api(`/api/file?project=${encodeURIComponent(project.id)}&path=${encodeURIComponent(file)}`)).source);
+    return sourceCache.get(k);
+  }
+  const f = (lastRes && lastRes.sources || []).find((x) => x.name === file) || files.find((x) => x.name === file);
+  return f ? f.code : "";
+}
+const keyOf = (x) => `${x.file}:${x.line}`;
+function crow(x, extra) {
+  const row = el("div", { className: "crow" + (cmpKey === keyOf(x) ? " hl" : "") + (extra.diff ? " diff" : "") },
+    extra.left, el("span", { className: "what", title: extra.what }, extra.what),
+    el("span", { className: "where" }, `${x.file.split("/").pop()}:${x.line}`));
+  row.dataset.key = keyOf(x);
+  row.addEventListener("click", () => { cmpKey = keyOf(x); renderCompare(); });
+  return row;
+}
+function renderCompare() {
+  const res = lastRes, cross = res && res.cross;
+  const cards = $("cmp-cards");
+  ["cmp-ours", "cmp-misra", "cmp-native"].forEach((id) => $(id).replaceChildren());
+  $("cmp-detail").hidden = true;
+  if (!res || !cross) {
+    cards.replaceChildren();
+    ["cmp-n1", "cmp-n2", "cmp-n3"].forEach((id) => { $(id).textContent = ""; });
+    $("cmp-ours").append(el("div", { className: "empty" }, el("b", {}, res ? "No cppcheck data for this run" : "Nothing analysed yet"),
+      "Press “Analyze with all three”. Edit the source in the Analyze tab first if you like."));
+    return;
+  }
+  const onlyDiff = $("cmp-diff").checked;
+  const ours = res.findings.concat(res.deviated || []).filter((f) => !onlyDiff || f.cross === "ours-only");
+  const misra = cross.cppcheck_misra.filter((m) => !onlyDiff || !m.also_ours);
+  const native = cross.native;
+  cards.replaceChildren(card(cross.agree, "agree", "pass"), card(cross.ours_only, "only misra-checker"), card(cross.cppcheck_only, "only cppcheck MISRA"),
+    card(cross.not_comparable, "no counterpart"), card(native.length, "cppcheck own checks"));
+  $("cmp-n1").textContent = `${ours.length}`; $("cmp-n2").textContent = `${misra.length}`; $("cmp-n3").textContent = `${native.length}`;
+  ours.forEach((f) => $("cmp-ours").append(crow(f, { diff: f.cross === "ours-only", left: sevTag(f.category),
+    what: `${f.rule}  ${f.message}${f.cross === "both" ? "  ✓" : ""}` })));
+  misra.forEach((m) => $("cmp-misra").append(crow(m, { diff: !m.also_ours, left: sevTag(ruleCategory(m.rule)),
+    what: `${m.rule}  ${topicOf(m.rule)}${m.also_ours ? "  ✓" : ""}` })));
+  native.forEach((n) => $("cmp-native").append(crow(n, { diff: false, left: el("span", { className: "sev sevc-" + n.severity }, n.severity),
+    what: `${n.id}: ${n.message}` })));
+  ["cmp-ours", "cmp-misra", "cmp-native"].forEach((id) => {
+    if (!$(id).children.length) $(id).append(el("div", { className: "empty" }, "Nothing reported."));
+  });
+  if (cmpKey) showCompareDetail();
+}
+async function showCompareDetail() {
+  const [file, lineText] = [cmpKey.slice(0, cmpKey.lastIndexOf(":")), cmpKey.slice(cmpKey.lastIndexOf(":") + 1)];
+  const line = Number(lineText), res = lastRes, cross = res.cross;
+  const box = $("cmp-detail");
+  box.hidden = false;
+  const at = (x) => x.file === file && x.line === line;
+  const lists = [
+    ["misra-checker", res.findings.concat(res.deviated || []).filter(at).map((f) => `${f.rule}  ${f.message}`)],
+    ["cppcheck · MISRA add-on", cross.cppcheck_misra.filter(at).map((m) => `${m.rule}  ${topicOf(m.rule)}`)],
+    ["cppcheck · own checks", cross.native.filter(at).map((n) => `${n.severity} ${n.id}: ${n.message}`)],
+  ];
+  let text = "";
+  try { text = await sourceOf(file); } catch { /* source not available */ }
+  const all = text.split("\n"), from = Math.max(1, line - 4), to = Math.min(all.length, line + 4);
+  const pre = el("pre", { className: "excerpt" });
+  for (let n = from; n <= to; n++) { const l = el("span", { className: "ln" + (n === line ? " target" : "") }, all[n - 1] || " "); l.dataset.n = String(n); pre.append(l); }
+  box.replaceChildren(el("div", { className: "pane-head" }, el("span", { className: "pane-title" }, `${file}:${line}`),
+    el("button", { className: "btn small", onclick: () => { cmpKey = null; renderCompare(); } }, "Close")),
+    pre,
+    el("div", { style: "display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px;padding:8px 12px" },
+      ...lists.map(([title, items]) => el("div", {}, el("b", {}, title), ...(items.length ? items.map((t) => el("div", { className: "sub" }, t)) : [el("div", { className: "sub" }, "—")])))));
+  document.querySelectorAll(`.crow[data-key="${cmpKey}"]`).forEach((r) => r.classList.add("hl"));
+}
+$("cmp-diff").addEventListener("change", renderCompare);
+$("cmp-run").addEventListener("click", async () => {
+  const box = $("xcheck");
+  if (box.disabled) { toast("cppcheck is not installed on the server"); return; }
+  box.checked = true; store.set("xcheck", true);
+  if (project) await runProject(); else runCode();
+});
+
+// ---- project compiler
+function compilerChoice() {
+  return { compiler: $("compiler").value, flags: $("cflags").value, cppcheck: $("xcheck").checked && !$("xcheck").disabled };
+}
+async function loadCompilers() {
+  const sel = $("compiler");
+  try {
+    const list = (await api("/api/compilers")).compilers;
+    sel.replaceChildren(...list.map((c) => {
+      const o = el("option", { value: c.id }, (c.id === "default" ? "Compiler: " : "") + (c.usable ? c.label : `${c.id} (unavailable)`));
+      o.disabled = !c.usable;
+      o.title = c.usable ? c.label : c.reason;
+      return o;
+    }));
+    const saved = store.get("compiler", "default");
+    if (list.some((c) => c.id === saved && c.usable)) sel.value = saved;
+  } catch { /* the default option stays */ }
+  $("cflags").value = store.get("cflags", "");
+}
+$("xcheck").addEventListener("change", () => store.set("xcheck", $("xcheck").checked));
+$("compiler").addEventListener("change", () => store.set("compiler", $("compiler").value));
+$("cflags").addEventListener("input", () => store.set("cflags", $("cflags").value));
+
+// ---- login / startup
+function showUser() {
+  $("userbox").hidden = !(me && me.auth);
+  if (me) {
+    $("u-name").textContent = me.user; $("u-role").textContent = me.role;
+    $("u-avatar").textContent = (me.user || "?").charAt(0).toUpperCase();
+  }
+  $("dbrow").hidden = !(me && me.db_paths);
+  const tool = me && me.tools && me.tools.cppcheck;
+  $("xcheck").disabled = !(tool && tool.available);
+  $("xwrap").title = tool && tool.available ? `Also run ${tool.version}'s MISRA add-on on the same files and compare (covers ${tool.rules_covered} rules)`
+    : "cppcheck is not installed on the server";
+  if (tool && tool.available) $("xcheck").checked = store.get("xcheck", false);
+}
+function showLogin(message) {
+  me = null; csrf = "";
+  showUser();
+  $("login").hidden = false;
+  const err = $("l-error");
+  err.hidden = !message; err.textContent = message || "";
+  $("l-pass").value = "";
+  $("l-user").focus();
+}
+$("login-form").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const btn = $("l-submit");
+  btn.disabled = true;
+  try {
+    const r = await fetch("/api/login", { method: "POST", credentials: "same-origin",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ username: $("l-user").value, password: $("l-pass").value }) });
+    const data = await r.json();
+    if (!r.ok) throw new Error(data.error || r.statusText);
+    csrf = data.csrf;
+    me = (await (await fetch("/api/me", { credentials: "same-origin" })).json());
+    $("login").hidden = true;
+    $("l-pass").value = "";
+    showUser();
+    await startApp();
+  } catch (err) {
+    $("l-error").hidden = false; $("l-error").textContent = err.message; $("l-pass").value = "";
+  } finally { btn.disabled = false; }
+});
+$("logout").addEventListener("click", async () => {
+  try { await api("/api/logout", { method: "POST", body: "{}" }); } catch { /* already signed out */ }
+  lastRes = null; project = null; viewPath = null; setProjectUi(false); renderResult();
+  showLogin();
+});
+
+let started = false;
+async function startApp() {
+  selectFile(active);
+  if (started) return;
+  await loadCompilers();
+  try {
+    const data = await api("/api/rules");
+    rules = data.rules; $("ver").textContent = data.version;
+    $("tri-rules-list").replaceChildren(...rules.map((r) => el("option", { value: r.id }, r.topic)));
+    renderRules();
+    loadTriage();
+    samples = (await api("/api/samples")).samples;
+    const sel = $("sample");
+    samples.forEach((s, i) => sel.append(el("option", { value: String(i) }, `Rule ${s.rule} · ${s.name}`)));
+    started = true;
+  } catch (e) {
+    $("result").replaceChildren(el("div", { className: "banner err", style: "margin:12px" }, e.message));
+  }
+}
+(async function boot() {
+  try {
+    const r = await fetch("/api/me", { credentials: "same-origin" });
+    const data = await r.json();
+    if (r.ok) { me = data; csrf = data.csrf || ""; showUser(); await startApp(); }
+    else showLogin();
+  } catch (e) { showLogin("Cannot reach the server: " + e.message); }
+})();
+</script>
+</body>
+</html>

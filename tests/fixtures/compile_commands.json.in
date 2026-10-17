@@ -38,5 +38,35 @@
     "directory": "@MISRA_RULE_15_2_FIXTURE_DIR@",
     "file": "@MISRA_RULE_15_2_FIXTURE_DIR@/macro_backward.c",
     "arguments": ["@CLANG_EXECUTABLE@", "-std=c99", "-c", "@MISRA_RULE_15_2_FIXTURE_DIR@/macro_backward.c"]
+  },
+  {
+    "directory": "@MISRA_RULE_15_3_FIXTURE_DIR@",
+    "file": "@MISRA_RULE_15_3_FIXTURE_DIR@/compliant.c",
+    "arguments": ["@CLANG_EXECUTABLE@", "-std=c99", "-c", "@MISRA_RULE_15_3_FIXTURE_DIR@/compliant.c"]
+  },
+  {
+    "directory": "@MISRA_RULE_15_3_FIXTURE_DIR@",
+    "file": "@MISRA_RULE_15_3_FIXTURE_DIR@/into_block.c",
+    "arguments": ["@CLANG_EXECUTABLE@", "-std=c99", "-c", "@MISRA_RULE_15_3_FIXTURE_DIR@/into_block.c"]
+  },
+  {
+    "directory": "@MISRA_RULE_15_3_FIXTURE_DIR@",
+    "file": "@MISRA_RULE_15_3_FIXTURE_DIR@/sibling_block.c",
+    "arguments": ["@CLANG_EXECUTABLE@", "-std=c99", "-c", "@MISRA_RULE_15_3_FIXTURE_DIR@/sibling_block.c"]
+  },
+  {
+    "directory": "@MISRA_RULE_15_4_FIXTURE_DIR@",
+    "file": "@MISRA_RULE_15_4_FIXTURE_DIR@/compliant.c",
+    "arguments": ["@CLANG_EXECUTABLE@", "-std=c99", "-c", "@MISRA_RULE_15_4_FIXTURE_DIR@/compliant.c"]
+  },
+  {
+    "directory": "@MISRA_RULE_15_4_FIXTURE_DIR@",
+    "file": "@MISRA_RULE_15_4_FIXTURE_DIR@/two_breaks.c",
+    "arguments": ["@CLANG_EXECUTABLE@", "-std=c99", "-c", "@MISRA_RULE_15_4_FIXTURE_DIR@/two_breaks.c"]
+  },
+  {
+    "directory": "@MISRA_RULE_15_4_FIXTURE_DIR@",
+    "file": "@MISRA_RULE_15_4_FIXTURE_DIR@/break_and_goto.c",
+    "arguments": ["@CLANG_EXECUTABLE@", "-std=c99", "-c", "@MISRA_RULE_15_4_FIXTURE_DIR@/break_and_goto.c"]
   }
 ]

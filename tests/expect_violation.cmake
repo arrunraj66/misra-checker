@@ -1,8 +1,12 @@
+set(file_args "")
+if(DEFINED SOURCE)
+  set(file_args --file "${SOURCE}")
+endif()
 execute_process(
   COMMAND
     "${CHECKER}" analyze
     --compile-commands "${DATABASE}"
-    --file "${SOURCE}"
+    ${file_args}
   RESULT_VARIABLE checker_result
   OUTPUT_VARIABLE checker_output
   ERROR_VARIABLE checker_error

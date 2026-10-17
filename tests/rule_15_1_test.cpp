@@ -29,7 +29,7 @@ int main() {
   misra::AnalysisContext violating_context;
   violating_context.control_flow.goto_statements.push_back(
       {{"example.c", 7U, 3U}, {"example.c", 10U, 1U}, true, false,
-       false});
+       false, true});
   const misra::RuleEvaluation violating = rule->evaluate(violating_context);
   require(violating.status == misra::EvaluationStatus::Complete,
           "violating evaluation must complete");
