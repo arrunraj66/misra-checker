@@ -80,7 +80,7 @@ globalThis.fetch = async (url, opts = {}) => {
 const origCreate = document.createElement;
 document.createElement = (tag) => {
   const n = origCreate(tag);
-  if (tag === "a") n.click = function () { downloads.push(this.download); };
+  if (tag === "a") n.click = function () { downloads.push(this.download || this.href); };
   return n;
 };
 
@@ -161,6 +161,13 @@ const loop = new GLib.MainLoop(null, false);
   api.setCmpKey("a.c:5");
   await api.showCompareDetail();
   expect("selecting a line opens the detail panel", document.getElementById("cmp-detail").hidden === false);
+
+  // compliance documents: enabled when the analysis has a workspace, and fetched for that workspace
+  expect("compliance buttons are enabled after an analysis", document.getElementById("exp-comp-html").disabled === false);
+  document.getElementById("exp-comp-html").handlers.click();
+  document.getElementById("exp-comp-csv").handlers.click();
+  expect("compliance downloads name the workspace and format",
+    downloads.includes("/api/compliance?key=files%3Aa.c&format=html") && downloads.includes("/api/compliance?key=files%3Aa.c&format=csv"), downloads.join());
 
   // exports
   api.exportCsv(); api.exportJson(); api.exportReport();

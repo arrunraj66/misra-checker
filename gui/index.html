@@ -342,7 +342,9 @@ tr.dev td { opacity:.62; } tr.dev td:first-child { opacity:1; }
       <div class="pane">
         <div class="pane-head">
           <span class="pane-title">Results</span>
-          <button class="btn small" id="exp-report" disabled>Report</button>
+          <button class="btn small" id="exp-comp-html" disabled title="Guideline Compliance Summary, deviation register and enforcement plan (HTML, printable)">Compliance report</button>
+          <button class="btn small" id="exp-comp-csv" disabled title="One row per rule: status and counts">Summary CSV</button>
+          <button class="btn small" id="exp-report" disabled>Findings</button>
           <button class="btn small" id="exp-sarif" disabled>SARIF</button>
           <button class="btn small" id="exp-csv" disabled>CSV</button>
           <button class="btn small" id="exp-json" disabled>JSON</button>
@@ -649,6 +651,13 @@ ${((lastRes.cross || {}).cppcheck_only_findings || []).map((r) => `<tr><td class
 </body></html>`;
   download("misra-report.html", html, "text/html");
 }
+function downloadCompliance(format) {
+  if (!lastRes || !lastRes.workspace_key) { toast("Run an analysis first"); return; }
+  const a = el("a", { href: `/api/compliance?key=${encodeURIComponent(lastRes.workspace_key)}&format=${format}` });
+  document.body.append(a); a.click(); a.remove();
+}
+$("exp-comp-html").addEventListener("click", () => downloadCompliance("html"));
+$("exp-comp-csv").addEventListener("click", () => downloadCompliance("csv"));
 $("exp-csv").addEventListener("click", exportCsv);
 $("exp-json").addEventListener("click", exportJson);
 $("exp-report").addEventListener("click", exportReport);
@@ -669,6 +678,7 @@ function renderResult() {
   const box = $("result"), res = lastRes;
   box.replaceChildren();
   ["exp-csv", "exp-json", "exp-report", "exp-sarif"].forEach((id) => { $(id).disabled = !res; });
+  ["exp-comp-html", "exp-comp-csv"].forEach((id) => { $(id).disabled = !(res && res.workspace_key); });
   if (!res) { box.append(el("div", { className: "empty" }, el("b", {}, "No analysis yet"), "Run an analysis to see findings here. Press Ctrl+Enter.")); return; }
 
   const all = res.findings;

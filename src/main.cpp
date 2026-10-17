@@ -143,11 +143,13 @@ int main(int argc, char* argv[]) {
     std::vector<misra::ReportRow> ordered;
     std::size_t completed_rules = 0U;
     std::size_t inconclusive_rules = 0U;
+    std::string inconclusive_ids;
     for (const auto& rule : registry.rules()) {
       const misra::RuleEvaluation evaluation =
           rule->evaluate(frontend_result.context);
       if (evaluation.status == misra::EvaluationStatus::Inconclusive) {
         ++inconclusive_rules;
+        inconclusive_ids += (inconclusive_ids.empty() ? "" : ", ") + std::string{rule->descriptor().id};
         continue;
       }
       if (evaluation.status != misra::EvaluationStatus::Complete) {
@@ -195,6 +197,9 @@ int main(int argc, char* argv[]) {
     sarif_options.tool_version = std::string{kVersion};
     sarif_options.source_root = source_root;
     sarif_options.compile_errors = compile_errors;
+    if (inconclusive_rules != 0U) {
+      sarif_options.notes.push_back("Not assessed (needs at least two translation units): rules " + inconclusive_ids);
+    }
     const bool sarif_needed = (format == "sarif") || !sarif_out.empty();
     const std::string sarif = sarif_needed ? misra::to_sarif(outcome, sarif_options) : std::string{};
     if (!sarif_out.empty()) {
@@ -238,7 +243,7 @@ int main(int argc, char* argv[]) {
     if (inconclusive_rules != 0U) {
       text << inconclusive_rules
            << " whole-program rule(s) inconclusive: analyze at least two "
-              "translation units together.\n";
+              "translation units together (rules " << inconclusive_ids << ").\n";
     }
     if (!outcome.active.empty()) {
       return 1;

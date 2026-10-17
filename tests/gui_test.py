@@ -4,6 +4,7 @@ import http.client
 import io
 import json
 import os
+import re
 import socket
 import subprocess
 import sys
@@ -338,6 +339,25 @@ with tempfile.TemporaryDirectory() as data_dir:
         status, cleared, _ = bob.call("POST", "/api/baseline/clear", {"key": key})
         status, r4, _ = check_code(bob, bcode2)
         check("clearing removes the baseline", cleared["cleared"] and r4["baseline"] is None, r4.get("baseline"))
+
+        # ---- compliance documents
+        status, page, hdr = bob.call("GET", f"/api/compliance?key={key}&format=html")
+        text = page.decode() if isinstance(page, bytes) else str(page)
+        check("html report is served", status == 200 and "Guideline Compliance Summary" in text and "Guideline Enforcement Plan" in text, (status, text[:200]))
+        check("html report lists every rule twice (summary and plan)", len(re.findall(r"<tr><td class='m'>\d+\.\d+</td>", text)) >= 286)
+        check("html report has the disclaimer", "not a statement that the software complies" in text)
+        check("html report states the tool versions", "misra-checker" in text and "Language standard" in text)
+        status, csv_text, _ = bob.call("GET", f"/api/compliance?key={key}&format=csv")
+        check("csv has a row for every rule", status == 200 and len(csv_text.decode().strip().splitlines()) == 144, status)
+        status, js, _ = bob.call("GET", f"/api/compliance?key={key}&format=json")
+        check("json report parses", status == 200 and len(js["summary"]) == 143 and "verdict" in js, status)
+        check("a bad format is rejected", bob.call("GET", f"/api/compliance?key={key}&format=pdf")[0] == 400)
+        check("an unknown workspace is rejected", bob.call("GET", "/api/compliance?key=files:none.c")[0] == 400)
+        check("a viewer cannot generate reports", carol.call("GET", f"/api/compliance?key={key}")[0] == 403)
+        check("anonymous cannot generate reports", anon.call("GET", f"/api/compliance?key={key}")[0] == 401)
+        status, page, _ = bob.call("GET", "/api/compliance?key=project:p.zip&format=html")
+        text = page.decode() if isinstance(page, bytes) else str(page)
+        check("project report carries the zip's deviation register", status == 200 and "p.zip" in text and "D1" in text and "unused" in text, text[:300])
 
         # ---- cppcheck cross-verification
         status, me2, _ = bob.call("GET", "/api/me")

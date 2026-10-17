@@ -25,6 +25,7 @@ import ssl
 import subprocess
 import sys
 import tempfile
+import threading
 import time
 import uuid
 import webbrowser
@@ -42,6 +43,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 import auth  # noqa: E402
 import compiler_profiles as cp  # noqa: E402
 import baseline as bl  # noqa: E402
+import compliance as cm  # noqa: E402
 import cppcheck_cross as cx  # noqa: E402
 import triage as tg  # noqa: E402
 import triage_runner as tr  # noqa: E402
@@ -74,7 +76,7 @@ ROUTE_ROLE = {
     ("POST", "/api/project"): "analyst", ("POST", "/api/file"): "analyst",
     ("GET", "/api/project-zip"): "analyst",
     ("GET", "/api/triage"): "analyst", ("GET", "/api/triage-export"): "analyst",
-    ("GET", "/api/baseline"): "analyst", ("POST", "/api/baseline/save"): "analyst",
+    ("GET", "/api/compliance"): "analyst", ("GET", "/api/baseline"): "analyst", ("POST", "/api/baseline/save"): "analyst",
     ("POST", "/api/baseline/clear"): "analyst",
     ("POST", "/api/triage"): "analyst", ("POST", "/api/triage/delete"): "analyst",
     ("POST", "/api/triage/run"): "analyst", ("POST", "/api/triage/promote"): "admin",
@@ -90,6 +92,10 @@ class State:
     triage: tg.TriageStore
     baselines: bl.BaselineStore
     last: dict = {}
+    runs: dict = {}
+    version: str = ""
+    _rule_status: dict | None = None
+    _status_lock = threading.Lock()
     promote_dir: Path = ROOT / "tests" / "triage"
     cases: dict
     users: auth.UserStore
@@ -516,6 +522,66 @@ def track_violations(session: dict, result: dict, key: str, text_of) -> None:
         result["baseline"] = summary
 
 
+def rule_status() -> dict:
+    """Fixture-validation status per rule, computed once per server run (about 5 seconds)."""
+    with State._status_lock:
+        if State._rule_status is None:
+            State._rule_status = {r.rule: r.status for r in vr.validate()}
+        return State._rule_status
+
+
+def remember_run(session: dict, result: dict, body: dict, meta: dict) -> None:
+    """Keep what a compliance report needs about the last analysis of this workspace."""
+    key = result.get("workspace_key")
+    if not key:
+        return
+    text = str(body.get("deviations") or meta.get("project_deviations") or "")
+    try:
+        records = json.loads(text).get("deviations", []) if text.strip() else []
+    except ValueError:
+        records = []
+    m = re.search(r"\(rules ([0-9., ]+)\)", result.get("summary", ""))
+    cross = result.get("cross")
+    scope = {"Workspace": meta["name"], "Translation units analysed": meta["units"], "Lines of code (all analysed files)": meta["loc"],
+             "Language standard": str(body.get("std", "c99")), "Compiler profile": result.get("compiler", ""),
+             "Extra compiler flags": str(body.get("flags", "")) or "none", "Preprocessor defines": str(body.get("defines", "")) or "none",
+             "Cross-check": cross["tool"] if cross else "not run", "Deviation records supplied": len(records),
+             "Compile errors in the analysed code": "yes (results may be incomplete)" if result.get("compile_errors") else "no"}
+    tools = {"misra-checker": State.version, "front end": State.compilers["default"].version}
+    if cross:
+        tools["cppcheck"] = cross["tool"]
+    State.runs[(session["user"], key)] = {
+        "result": {"findings": result["findings"], "deviated": result["deviated"], "baseline": result.get("baseline"),
+                   "cross": {"tool": cross["tool"]} if cross else None},
+        "records": records, "not_assessed": re.findall(r"\d+\.\d+", m.group(1)) if m else [],
+        "scope": scope, "tools": tools, "project": meta["name"]}
+    while len(State.runs) > 100:
+        State.runs.pop(next(iter(State.runs)))
+
+
+def compliance_document(session: dict, key: str, fmt: str) -> tuple[bytes, str, str]:
+    run = State.runs.get((session["user"], key))
+    if run is None:
+        raise ValueError("run an analysis of this workspace first")
+    supported = []
+    if State.tools.get("cppcheck", {}).get("available"):
+        supported = sorted(cx.supported_rules(cx.find_misra()))
+    oracle = None
+    oracle_file = ROOT / "docs" / "validation" / "freertos-oracle.json"
+    if oracle_file.is_file():
+        data = json.loads(oracle_file.read_text())
+        oracle = {"name": "FreeRTOS-Kernel", "rules_with_findings": sum(
+            1 for v in data["rules"].values() if v.get("documented", 0) + v.get("unexplained", 0) + v.get("project-deviated", 0))}
+    doc = cm.build({"project": run["project"], "result": run["result"], "rules": load_rule_table(), "deviations": run["records"],
+                    "not_assessed": run["not_assessed"], "validation": rule_status(), "cppcheck_rules": supported,
+                    "scope": run["scope"], "tools": run["tools"], "oracle": oracle})
+    if fmt == "csv":
+        return cm.to_csv(doc).encode(), "text/csv", "csv"
+    if fmt == "json":
+        return cm.to_json(doc).encode(), "application/json", "json"
+    return cm.to_html(doc).encode(), "text/html; charset=utf-8", "html"
+
+
 def handle_baseline(session: dict, path: str, body: dict, query: dict) -> dict:
     user = session["user"]
     key = str(body.get("key") or (query.get("key") or [""])[0])
@@ -678,6 +744,13 @@ class Handler(BaseHTTPRequestHandler):
             if url.path == "/api/file":
                 return self._json(200, {"source": read_project_file(
                     session, (query.get("project") or [""])[0], (query.get("path") or [""])[0])})
+            if url.path == "/api/compliance":
+                fmt = (query.get("format") or ["html"])[0]
+                if fmt not in ("html", "csv", "json"):
+                    return self._json(400, {"error": "format must be html, csv or json"})
+                data, ctype, ext = compliance_document(session, (query.get("key") or [""])[0], fmt)
+                stem = re.sub(r"[^A-Za-z0-9_.-]", "_", State.runs[(session["user"], (query.get("key") or [""])[0])]["project"])
+                return self._send(200, data, ctype, {"Content-Disposition": f'attachment; filename="compliance-{stem}.{ext}"'})
             if url.path == "/api/baseline":
                 return self._json(200, handle_baseline(session, url.path, {}, query))
             if url.path == "/api/triage":
@@ -757,6 +830,14 @@ class Handler(BaseHTTPRequestHandler):
                             _c[file] = []
                     return _c[file][line - 1] if 0 < line <= len(_c[file]) else ""
                 track_violations(session, result, "project:" + proj.name, project_text)
+                loc = 0
+                for rel in proj.c_files + proj.h_files:
+                    try:
+                        loc += (proj.root / rel).read_bytes().count(b"\n")
+                    except OSError:
+                        pass
+                remember_run(session, result, body, {"name": proj.name, "units": len(proj.c_files), "loc": loc,
+                                                     "project_deviations": proj.deviations})
             elif body.get("compile_commands"):
                 if session["role"] != "admin":
                     return self._json(403, {"error": "the admin role is required"})
@@ -771,6 +852,9 @@ class Handler(BaseHTTPRequestHandler):
                 by_name = {str(f.get("name")): str(f.get("code", "")).split("\n") for f in files}
                 track_violations(session, result, "files:" + ",".join(sorted(by_name)),
                                  lambda file, line: (by_name.get(file) or [""])[line - 1] if 0 < line <= len(by_name.get(file) or []) else "")
+                remember_run(session, result, body, {"name": "pasted files (" + ", ".join(sorted(by_name)) + ")",
+                                                     "units": sum(1 for n in by_name if n.endswith(".c")),
+                                                     "loc": sum(len(v) for v in by_name.values())})
             State.audit.write(session["user"], "analyze", mode=mode, compiler=result.get("compiler", ""),
                               cppcheck=bool(body.get("cppcheck")),
                               findings=len(result["findings"]),
@@ -903,6 +987,7 @@ def main() -> int:
             print(f"error: --compiler expects ID=PATH to an existing file, got '{entry}'", file=sys.stderr)
             return 2
         extra[identifier] = path
+    State.version = subprocess.run([str(State.checker), "--version"], capture_output=True, text=True).stdout.strip()
     State.tools = {"cppcheck": cx.status()}
     State.compilers = cp.discover(State.compiler, extra)
     print("compilers: " + ", ".join(f"{c.id}{'' if c.usable else ' (unusable)'}" for c in State.compilers.values()), flush=True)

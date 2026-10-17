@@ -159,6 +159,11 @@ Each project can be analysed as its own compiler (GCC, `arm-none-eabi-gcc`, ...)
 target, system headers and version macros. Pick it in the GUI or use
 `scripts/make_compile_db.py --compiler ...`; see [docs/compilers.md](docs/compilers.md).
 
+## Compliance reports
+
+Guideline Compliance Summary, deviation register and Guideline Enforcement Plan as a printable HTML
+report or CSV, from the results header. See [docs/compliance-reports.md](docs/compliance-reports.md).
+
 ## Baselines and the CI gate
 
 Violations get a stable fingerprint, so a saved baseline shows what is *new*, *unchanged* or *fixed*

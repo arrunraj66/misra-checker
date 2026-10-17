@@ -256,6 +256,10 @@ if(BUILD_TESTING)
     )
   endif()
   add_test(
+    NAME compliance
+    COMMAND "${Python3_EXECUTABLE}" -I "${CMAKE_CURRENT_SOURCE_DIR}/tests/compliance_test.py"
+  )
+  add_test(
     NAME baseline
     COMMAND
       "${Python3_EXECUTABLE}" -I "${CMAKE_CURRENT_SOURCE_DIR}/tests/baseline_test.py"
