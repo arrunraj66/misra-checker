@@ -1,0 +1,91 @@
+# Rule 12.4
+
+**Category:** Advisory · **Decidability:** Decidable · **Scope:** SingleTranslationUnit · **Topic:** Expressions
+
+## What the detector reports
+
+Reports a constant unsigned addition, subtraction, multiplication or shift whose exact result does not fit the type (wrap-around).
+
+Detection contract: Report a constant unsigned addition, subtraction, multiplication or shift whose exact result does not fit the type.
+
+## Known limits
+
+Only constant addition, subtraction and multiplication are evaluated. Shifts are not (whether bits shifted out of an unsigned value count as wrap-around is undecided, and the ~0u << n mask idiom is accepted).
+
+- **False negative:** a left shift that discards bits (whether this is wrap-around is undecided; shifts are not evaluated) (documented limit)
+
+## Tested cases
+
+6 of 7 pass.
+
+| Kind | Case | Result |
+|---|---|---|
+| Compliant (must stay silent) | results that fit | pass |
+| Violation (must be reported) | unsigned subtraction below zero | pass |
+| Violation (must be reported) | unsigned addition past the maximum | pass |
+| Violation (must be reported) | unsigned multiplication overflow | pass |
+| Compliant (must stay silent) | a signed expression and a result that fits | pass |
+| Compliant (must stay silent) | the common mask idiom that shifts bits out of an all-ones value | pass |
+| Known false negative (not detected yet) | a left shift that discards bits (whether this is wrap-around is undecided; shifts are not evaluated) | documented limit |
+
+## Case sources
+
+### Compliant (must stay silent): results that fit
+
+`main.c`
+
+```c
+unsigned int a = 5U - 3U;
+unsigned int b = 0xFFFFFFFFU - 1U;
+unsigned int c = 1U << 31;
+```
+
+### Violation (must be reported): unsigned subtraction below zero
+
+`main.c`
+
+```c
+unsigned int a = 0U - 1U; /*@V*/
+```
+
+### Violation (must be reported): unsigned addition past the maximum
+
+`main.c`
+
+```c
+unsigned int b = 0xFFFFFFFFU + 1U; /*@V*/
+```
+
+### Violation (must be reported): unsigned multiplication overflow
+
+`main.c`
+
+```c
+unsigned int c = 0x10000U * 0x10000U; /*@V*/
+```
+
+### Compliant (must stay silent): a signed expression and a result that fits
+
+`main.c`
+
+```c
+int a = 2147483646 + 1;
+unsigned int b = 4000000000U + 200000000U;
+```
+
+### Compliant (must stay silent): the common mask idiom that shifts bits out of an all-ones value
+
+`main.c`
+
+```c
+unsigned int mask = ~0u << 6;
+```
+
+### Known false negative (not detected yet): a left shift that discards bits (whether this is wrap-around is undecided; shifts are not evaluated)
+
+`main.c`
+
+```c
+unsigned int a = 0x80000000U << 1; /*@V*/
+```
+

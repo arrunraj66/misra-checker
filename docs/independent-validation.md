@@ -45,7 +45,7 @@ compliant), so it is used only as supporting evidence.
 
 | | First run | After fixes |
 |---|---|---|
-| Findings in rules not deviated project-wide that the authors do not document | 123 | 14 |
+| Findings in rules not deviated project-wide that the authors do not document | 123 | 18 |
 | Documented deviations in compiled code that the checker detects | 32 of 37 | 32 of 37 (86%) |
 
 (The first run also included `heap_3.c`, which wraps `malloc`/`free` and is outside the
@@ -59,6 +59,7 @@ authors' analysed scope; it was dropped. Its Rule 21.3 findings were among the 1
 | 11.1 | 0 | 0 | 0 | 2 | 0 | 2 | 0 |
 | 11.3 | 18 | 11 | 7 | 11 | 11 | 0 | 1 |
 | 11.5 | 20 | 20 | 0 | 20 | 20 | 0 | 11 |
+| 2.2 | 4 | Redundant initializations such as `TCB_t * pxTCB = NULL;` that are overwritten before any read. Probably true under the strict reading of dead code; Coverity does not report them. Undecided. |
 | 13.5 | 2 | 0 | 2 | 0 | 0 | 0 | 0 |
 | 14.3 | 0 | 0 | 0 | 2 | 0 | 2 | 0 |
 | 18.1 | 0 | 0 | 0 | 1 | 0 | 1 | 0 |
@@ -83,7 +84,7 @@ under `tests/fixtures/obs`:
 | 20.1 | An `#include` inside an inactive `#if` group was reported, and inactive code counted as code before an include. | `r20_1_inactive_ok` |
 | 20.9 | Integer suffixes in `#if` conditions (`1U`) were read as undefined identifiers. | `r20_9_suffix_ok` |
 
-## Still open (14 unexplained findings, 5 missed deviations)
+## Still open (18 unexplained findings, 5 missed deviations)
 
 These are **not** claimed to be correct. Each needs a decision from the independent
 reviewer against the licensed rule text.

@@ -1,13 +1,19 @@
 {
-  "findings": 571,
+  "findings": 575,
   "documented": 32,
   "project_deviated": 525,
-  "unexplained": 14,
+  "unexplained": 18,
   "markers": 61,
   "markers_detected": 32,
   "markers_missed": 5,
   "markers_inactive": 24,
   "rules": {
+    "2.2": {
+      "project-deviated": 0,
+      "documented": 0,
+      "detected": 0,
+      "unexplained": 4
+    },
     "2.5": {
       "project-deviated": 16,
       "documented": 0,

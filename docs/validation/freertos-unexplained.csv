@@ -1,6 +1,10 @@
 rule,file,line,check,source
-8.6,event_groups.c,154,misra-c2012-8.6-no-definition,pxEventBits = ( EventGroup_t * ) pvPortMalloc( sizeof( EventGroup_t ) );
-8.6,event_groups.c,687,misra-c2012-8.6-no-definition,vPortFree( pxEventBits );
+2.2,event_groups.c,556,misra-c2012-2.2-dead-code,BaseType_t xMatchFound = pdFAIL;
+2.2,stream_buffer.c,826,misra-c2012-2.2-dead-code,size_t xMaxReportedSpace = 0;
+2.2,tasks.c,3593,misra-c2012-2.2-dead-code,TaskFunction_t pxIdleTaskFunction = NULL;
+2.2,tasks.c,4301,misra-c2012-2.2-dead-code,TCB_t * pxTCB = NULL;
+8.6,timers.c,349,misra-c2012-8.6-no-definition,pxNewTimer = ( Timer_t * ) pvPortMalloc( sizeof( Timer_t ) );
+8.6,timers.c,1059,misra-c2012-8.6-no-definition,vPortFree( pxTimer );
 10.5,tasks.c,1883,misra-c2012-10.5-inappropriate-cast,if( pcName[ x ] == ( char ) 0x00 )
 10.5,tasks.c,3606,misra-c2012-10.5-inappropriate-cast,if( cIdleName[ xIdleTaskNameIndex ] == ( char ) 0x00 )
 10.5,tasks.c,4332,misra-c2012-10.5-inappropriate-cast,else if( cNextChar == ( char ) 0x00 )

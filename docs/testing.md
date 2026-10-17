@@ -29,3 +29,11 @@ Content-Security-Policy forbids `eval`, so the test waits with `page.evaluate` p
 - `python3 scripts/fuzz_broken_input.py SEED ROUNDS` : the checker must not crash on code with injected errors.
 - `python3 scripts/run_freertos_oracle.py --work-dir /tmp/frk` : comparison with FreeRTOS-Kernel's published
   deviations (needs internet).
+
+## Per-rule specifications and rule cards
+
+Every rule has annotated cases in `tests/rulespec/*.specs` (`--- ok|bad|gap|fp: description`, `/*@V*/` marks a
+line that must be reported, `/*@N*/` one that must not). `python3 scripts/rulespec.py --check` runs them
+(ctest `rulespec`); `gap` and `fp` cases document known false negatives and false positives and flip to
+"promote" when the detector improves. `python3 scripts/gen_rule_cards.py` writes one card per rule to
+[rule-cards/](rule-cards/README.md): what is detected, the known limits, and every case with its result.
