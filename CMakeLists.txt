@@ -256,6 +256,12 @@ if(BUILD_TESTING)
     )
   endif()
   add_test(
+    NAME rulespec
+    COMMAND
+      "${Python3_EXECUTABLE}" -I "${CMAKE_CURRENT_SOURCE_DIR}/scripts/rulespec.py" --check
+      --checker "$<TARGET_FILE:misra-checker>" --clang "${CLANG_EXECUTABLE}"
+  )
+  add_test(
     NAME e2e_browser
     COMMAND
       "${Python3_EXECUTABLE}" "${CMAKE_CURRENT_SOURCE_DIR}/tests/e2e_browser.py"

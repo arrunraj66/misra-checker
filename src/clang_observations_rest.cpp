@@ -254,9 +254,10 @@ class RestVisitor final : public clang::RecursiveASTVisitor<RestVisitor> {
   }
 
   bool VisitUnaryOperator(clang::UnaryOperator* op) {
+    // `*(int *)0` casts the null constant to another pointer type; look through the casts.
     if ((op->getOpcode() == clang::UO_Deref) &&
-        op->getSubExpr()->isNullPointerConstant(ast_, clang::Expr::NPC_ValueDependentIsNull) !=
-            clang::Expr::NPCK_NotNull) {
+        op->getSubExpr()->IgnoreParenCasts()->isNullPointerConstant(
+            ast_, clang::Expr::NPC_ValueDependentIsNull) != clang::Expr::NPCK_NotNull) {
       recorder_.add("null-pointer-dereference", op->getOperatorLoc());
     }
     return true;

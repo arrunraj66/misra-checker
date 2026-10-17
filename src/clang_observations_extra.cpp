@@ -376,7 +376,12 @@ class ExtraVisitor final : public clang::RecursiveASTVisitor<ExtraVisitor> {
   }
 
   bool VisitAsmStmt(clang::AsmStmt* statement) {
-    recorder_.add("language-extension", statement->getBeginLoc(), "inline-assembly");
+    // getBeginLoc() can be invalid for GCC-style asm statements; the keyword's location is reliable.
+    clang::SourceLocation where = statement->getAsmLoc();
+    if (where.isInvalid()) {
+      where = statement->getSourceRange().getBegin();
+    }
+    recorder_.add("language-extension", where, "inline-assembly");
     return true;
   }
 

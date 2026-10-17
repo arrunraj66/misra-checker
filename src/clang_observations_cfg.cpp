@@ -94,6 +94,19 @@ class DeadStoreObserver final : public clang::LiveVariables::Observer {
 
   void observeStmt(const clang::Stmt* statement, const clang::CFGBlock*,
                    const clang::LiveVariables::LivenessValues& live) override {
+    // An initializer whose value is never read afterwards.
+    if (const auto* declaration = llvm::dyn_cast<clang::DeclStmt>(statement)) {
+      for (const clang::Decl* decl : declaration->decls()) {
+        const auto* variable = llvm::dyn_cast<clang::VarDecl>(decl);
+        if ((variable != nullptr) && variable->hasInit() && variable->hasLocalStorage() &&
+            variable->getType()->isScalarType() && !variable->getType()->isReferenceType() &&
+            !variable->getType().isVolatileQualified() && !variable->hasAttr<clang::UnusedAttr>() &&
+            !live.isLive(variable)) {
+          recorder_.add("dead-store", variable->getLocation(), variable->getNameAsString());
+        }
+      }
+      return;
+    }
     const auto* assignment = llvm::dyn_cast<clang::BinaryOperator>(statement);
     if ((assignment == nullptr) || (assignment->getOpcode() != clang::BO_Assign)) {
       return;
