@@ -1215,6 +1215,10 @@ class ExtraVisitor final : public clang::RecursiveASTVisitor<ExtraVisitor> {
         if ((binary->getOpcode() == clang::BO_Comma) && (binary->getLHS() == child)) {
           return false;
         }
+        if ((binary->getOpcode() == clang::BO_Comma) && (binary->getRHS() == child)) {
+          child = parent;  // the comma's value is its right operand: look at how the comma is used
+          continue;
+        }
       }
       if (llvm::isa<clang::Expr>(parent)) {
         return true;
