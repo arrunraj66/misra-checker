@@ -14,7 +14,7 @@ Only the functions of time.h that read or format the time are covered.
 
 ## Tested cases
 
-4 of 4 pass.
+5 of 5 pass.
 
 | Kind | Case | Result |
 |---|---|---|
@@ -22,6 +22,7 @@ Only the functions of time.h that read or format the time are covered.
 | Violation (must be reported) | time, clock and strftime | pass |
 | Violation (must be reported) | difftime and mktime | pass |
 | Compliant (must stay silent) | a user function called clock_tick | pass |
+| Violation (must be reported) | time | pass |
 
 ## Case sources
 
@@ -63,5 +64,14 @@ double f(time_t a, time_t b) { return difftime(a, b); } /*@V*/
 ```c
 void clock_tick(void);
 void f(void) { clock_tick(); }
+```
+
+### Violation (must be reported): time
+
+`main.c`
+
+```c
+#include <time.h>
+time_t f(void) { return time(0); } /*@V*/
 ```
 

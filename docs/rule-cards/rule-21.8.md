@@ -14,7 +14,7 @@ _Exit and quick_exit are not covered.
 
 ## Tested cases
 
-5 of 5 pass.
+6 of 6 pass.
 
 | Kind | Case | Result |
 |---|---|---|
@@ -23,6 +23,7 @@ _Exit and quick_exit are not covered.
 | Violation (must be reported) | getenv and system | pass |
 | Violation (must be reported) | system | pass |
 | Compliant (must stay silent) | a local named exit_code | pass |
+| Violation (must be reported) | abort alone | pass |
 
 ## Case sources
 
@@ -78,5 +79,14 @@ int f(void) { return system("ls"); } /*@V*/
 
 ```c
 int f(void) { int exit_code = 0; return exit_code; }
+```
+
+### Violation (must be reported): abort alone
+
+`main.c`
+
+```c
+#include <stdlib.h>
+void f(void) { abort(); } /*@V*/
 ```
 

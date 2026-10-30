@@ -14,7 +14,7 @@ Passing the pointer to library functions is the intended use and is accepted.
 
 ## Tested cases
 
-4 of 4 pass.
+5 of 5 pass.
 
 | Kind | Case | Result |
 |---|---|---|
@@ -22,6 +22,7 @@ Passing the pointer to library functions is the intended use and is accepted.
 | Violation (must be reported) | dereferencing the pointer to copy the object | pass |
 | Compliant (must stay silent) | sizeof of the dereferenced pointer is not evaluated | pass |
 | Violation (must be reported) | member access through a stream pointer | pass |
+| Violation (must be reported) | copy of the FILE object | pass |
 
 ## Case sources
 
@@ -63,5 +64,18 @@ unsigned long f(FILE *p) { return sizeof(*p); }
 ```c
 #include <stdio.h>
 int f(FILE *p) { return p->_flags; } /*@V*/
+```
+
+### Violation (must be reported): copy of the FILE object
+
+`main.c`
+
+```c
+#include <stdio.h>
+void f(FILE *p)
+{
+    FILE copy = *p; /*@V*/
+    (void)copy;
+}
 ```
 

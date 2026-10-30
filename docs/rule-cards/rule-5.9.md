@@ -14,7 +14,7 @@ Needs every translation unit of the program in one run; with a single translatio
 
 ## Tested cases
 
-5 of 5 pass.
+7 of 7 pass.
 
 | Kind | Case | Result |
 |---|---|---|
@@ -23,6 +23,8 @@ Needs every translation unit of the program in one run; with a single translatio
 | Violation (must be reported) | the same static object name in two files | pass |
 | Compliant (must stay silent) | a static inline function in a shared header is one declaration | pass |
 | Violation (must be reported) | static functions of the same name with different bodies in two files | pass |
+| Compliant (must stay silent) | a static function defined once and a different name elsewhere | pass |
+| Violation (must be reported) | a static object of the same name in two files | pass |
 
 ## Case sources
 
@@ -110,5 +112,37 @@ int fa(int x) { return step(x); }
 ```c
 static int step(int a) { return a + 2; } /*@V*/
 int fb(int x) { return step(x); }
+```
+
+### Compliant (must stay silent): a static function defined once and a different name elsewhere
+
+`a.c`
+
+```c
+static int step_a(int a) { return a + 1; }
+int fa(int x) { return step_a(x); }
+```
+
+`b.c`
+
+```c
+static int step_b(int a) { return a + 2; }
+int fb(int x) { return step_b(x); }
+```
+
+### Violation (must be reported): a static object of the same name in two files
+
+`a.c`
+
+```c
+static int level = 1;
+int ga(void) { return level; }
+```
+
+`b.c`
+
+```c
+static int level = 2; /*@V*/
+int gb(void) { return level; }
 ```
 

@@ -14,7 +14,7 @@ None; every #undef is reported.
 
 ## Tested cases
 
-5 of 5 pass.
+6 of 6 pass.
 
 | Kind | Case | Result |
 |---|---|---|
@@ -23,6 +23,7 @@ None; every #undef is reported.
 | Violation (must be reported) | #undef of a name that was never defined | pass |
 | Violation (must be reported) | #undef inside a function | pass |
 | Compliant (must stay silent) | only #define and #if | pass |
+| Violation (must be reported) | #undef followed by redefinition | pass |
 
 ## Case sources
 
@@ -74,5 +75,16 @@ void f(void)
 #if LEVEL
 int x;
 #endif
+```
+
+### Violation (must be reported): #undef followed by redefinition
+
+`main.c`
+
+```c
+#define LEVEL 1
+#undef LEVEL /*@V*/
+#define LEVEL 2
+int x = LEVEL;
 ```
 

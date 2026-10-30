@@ -14,7 +14,7 @@ After a missing header Clang may stop reading later includes, so code that depen
 
 ## Tested cases
 
-6 of 6 pass.
+8 of 8 pass.
 
 | Kind | Case | Result |
 |---|---|---|
@@ -24,6 +24,8 @@ After a missing header Clang may stop reading later includes, so code that depen
 | Violation (must be reported) | constraint violation (assigning a structure to an int) | pass |
 | Violation (must be reported) | include file that does not exist | pass |
 | Violation (must be reported) | an error located in a project header is reported at the header | pass |
+| Compliant (must stay silent) | code that only produces compiler warnings is not a language violation | pass |
+| Compliant (must stay silent) | a long but valid translation unit with every common construct | pass |
 
 ## Case sources
 
@@ -82,5 +84,31 @@ int a;
 
 ```c
 int x = ; /*@V*/
+```
+
+### Compliant (must stay silent): code that only produces compiler warnings is not a language violation
+
+`main.c`
+
+```c
+int f(void)
+{
+    int unused;
+    return 0;
+}
+```
+
+### Compliant (must stay silent): a long but valid translation unit with every common construct
+
+`main.c`
+
+```c
+#include <stddef.h>
+struct s { int a; };
+enum e { A, B };
+union u { int i; };
+typedef int t;
+static t v = A;
+int g(struct s *p) { return p == NULL ? v : p->a; }
 ```
 

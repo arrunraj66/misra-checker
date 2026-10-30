@@ -14,7 +14,7 @@ Only declarations that the compiler accepts with a warning are reachable; strict
 
 ## Tested cases
 
-7 of 7 pass.
+9 of 9 pass.
 
 | Kind | Case | Result |
 |---|---|---|
@@ -25,6 +25,8 @@ Only declarations that the compiler accepts with a warning are reachable; strict
 | Violation (must be reported) | const without a type | pass |
 | Compliant (must stay silent) | unsigned, long and short alone are explicit types | pass |
 | Violation (must be reported) | main without a return type | pass |
+| Compliant (must stay silent) | a typedef name used as the type | pass |
+| Compliant (must stay silent) | a struct pointer declaration | pass |
 
 ## Case sources
 
@@ -86,5 +88,23 @@ signed d;
 
 ```c
 main(void) { return 0; } /*@V*/
+```
+
+### Compliant (must stay silent): a typedef name used as the type
+
+`main.c`
+
+```c
+typedef int count_t;
+count_t n;
+```
+
+### Compliant (must stay silent): a struct pointer declaration
+
+`main.c`
+
+```c
+struct s { int a; };
+struct s *p;
 ```
 

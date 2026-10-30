@@ -14,13 +14,15 @@ Compares the files in which the declarations are written; it needs the whole pro
 
 ## Tested cases
 
-3 of 3 pass.
+5 of 5 pass.
 
 | Kind | Case | Result |
 |---|---|---|
 | Compliant (must stay silent) | one header declares it, everyone includes the header | pass |
 | Violation (must be reported) | two source files each declare the same external object | pass |
 | Violation (must be reported) | a function declared in two source files | pass |
+| Compliant (must stay silent) | a declaration in a header repeated by the defining file only | pass |
+| Compliant (must stay silent) | an extern declaration of a function in one source file only | pass |
 
 ## Case sources
 
@@ -82,6 +84,43 @@ int run(void) { return helper(); }
 
 ```c
 int helper(void); /*@V*/
+int helper(void) { return 1; }
+```
+
+### Compliant (must stay silent): a declaration in a header repeated by the defining file only
+
+`h.h`
+
+```c
+extern int level;
+```
+
+`a.c`
+
+```c
+#include "h.h"
+int level = 1;
+```
+
+`b.c`
+
+```c
+#include "h.h"
+int get(void) { return level; }
+```
+
+### Compliant (must stay silent): an extern declaration of a function in one source file only
+
+`a.c`
+
+```c
+int helper(void);
+int run(void) { return helper(); }
+```
+
+`b.c`
+
+```c
 int helper(void) { return 1; }
 ```
 

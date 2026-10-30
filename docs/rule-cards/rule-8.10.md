@@ -12,9 +12,11 @@ Detection contract: Report an inline function definition that is not declared st
 
 Only inline function definitions are examined.
 
+- **False negative:** an inline function declaration without static (only definitions are examined) (documented limit)
+
 ## Tested cases
 
-5 of 5 pass.
+6 of 7 pass.
 
 | Kind | Case | Result |
 |---|---|---|
@@ -23,6 +25,8 @@ Only inline function definitions are examined.
 | Violation (must be reported) | inline without static | pass |
 | Violation (must be reported) | extern inline definition | pass |
 | Compliant (must stay silent) | a declaration only of a static inline function | pass |
+| Compliant (must stay silent) | a static inline function used twice | pass |
+| Known false negative (not detected yet) | an inline function declaration without static (only definitions are examined) | documented limit |
 
 ## Case sources
 
@@ -66,5 +70,22 @@ extern inline int sq(int a) { return a * a; } /*@V*/
 ```c
 static inline int sq(int a);
 static inline int sq(int a) { return a * a; }
+```
+
+### Compliant (must stay silent): a static inline function used twice
+
+`main.c`
+
+```c
+static inline int sq(int a) { return a * a; }
+int f(int x) { return sq(x) + sq(x + 1); }
+```
+
+### Known false negative (not detected yet): an inline function declaration without static (only definitions are examined)
+
+`main.c`
+
+```c
+inline int sq(int a); /*@V*/
 ```
 

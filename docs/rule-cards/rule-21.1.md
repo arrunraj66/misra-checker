@@ -14,7 +14,7 @@ Names reserved for the standard library by their prefix are not covered.
 
 ## Tested cases
 
-8 of 8 pass.
+10 of 10 pass.
 
 | Kind | Case | Result |
 |---|---|---|
@@ -26,6 +26,8 @@ Names reserved for the standard library by their prefix are not covered.
 | Violation (must be reported) | defining a keyword-like reserved name | pass |
 | Compliant (must stay silent) | a name with an underscore inside | pass |
 | Violation (must be reported) | undefining a predefined macro | pass |
+| Compliant (must stay silent) | a library name used as the name of a struct member only | pass |
+| Violation (must be reported) | defining EOF | pass |
 
 ## Case sources
 
@@ -95,6 +97,23 @@ int x;
 
 ```c
 #undef __STDC__ /*@V*/
+int x;
+```
+
+### Compliant (must stay silent): a library name used as the name of a struct member only
+
+`main.c`
+
+```c
+struct s { int errno_value; };
+```
+
+### Violation (must be reported): defining EOF
+
+`main.c`
+
+```c
+#define EOF (-2) /*@V*/
 int x;
 ```
 

@@ -14,7 +14,7 @@ A clause with several stacked labels counts once.
 
 ## Tested cases
 
-5 of 5 pass.
+7 of 7 pass.
 
 | Kind | Case | Result |
 |---|---|---|
@@ -23,6 +23,8 @@ A clause with several stacked labels counts once.
 | Violation (must be reported) | a single case clause | pass |
 | Violation (must be reported) | two labels stacked on one clause only | pass |
 | Compliant (must stay silent) | a case clause and a default clause | pass |
+| Violation (must be reported) | only a default and a stacked default label | pass |
+| Compliant (must stay silent) | three clauses | pass |
 
 ## Case sources
 
@@ -90,6 +92,38 @@ void f(int v)
     switch (v)
     {
         case 1: v = 0; break;
+        default: break;
+    }
+}
+```
+
+### Violation (must be reported): only a default and a stacked default label
+
+`main.c`
+
+```c
+void f(int v)
+{
+    switch (v) /*@V*/
+    {
+        default:
+            v = 1;
+            break;
+    }
+}
+```
+
+### Compliant (must stay silent): three clauses
+
+`main.c`
+
+```c
+void f(int v)
+{
+    switch (v)
+    {
+        case 1: break;
+        case 2: break;
         default: break;
     }
 }

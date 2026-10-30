@@ -14,7 +14,7 @@ Matched by use; a function declared with an ellipsis but never reading its argum
 
 ## Tested cases
 
-6 of 6 pass.
+7 of 7 pass.
 
 | Kind | Case | Result |
 |---|---|---|
@@ -24,6 +24,7 @@ Matched by use; a function declared with an ellipsis but never reading its argum
 | Violation (must be reported) | va_start in a variadic function | pass |
 | Compliant (must stay silent) | calling a variadic library function | pass |
 | Compliant (must stay silent) | declaring a variadic prototype | pass |
+| Violation (must be reported) | va_arg | pass |
 
 ## Case sources
 
@@ -91,5 +92,22 @@ void f(void) { (void)printf("x"); }
 
 ```c
 int log_msg(const char *fmt, ...);
+```
+
+### Violation (must be reported): va_arg
+
+`main.c`
+
+```c
+#include <stdarg.h>
+int f(int n, ...)
+{
+    va_list ap;
+    int r;
+    va_start(ap, n);
+    r = va_arg(ap, int); /*@V*/
+    va_end(ap);
+    return r;
+}
 ```
 

@@ -39,7 +39,7 @@ class Rule_16_01 final : public Rule {
 
   [[nodiscard]] RuleEvaluation evaluate(
       const AnalysisContext& context) const override {
-    return findings_from_observations(context, {"nested-switch-label", "missing-break", "switch-no-default", "default-not-first-or-last", "switch-too-few-clauses", "boolean-switch-expression"},
+    return findings_from_observations(context, {"nested-switch-label", "missing-break", "switch-no-default", "default-not-first-or-last", "switch-too-few-clauses", "boolean-switch-expression", "statement-before-first-label"},
                                       "misra-c2012-16.1-malformed-switch", {}, {});
   }
 };

@@ -14,7 +14,7 @@ The compiler rejects these files; the finding comes from that diagnostic.
 
 ## Tested cases
 
-5 of 5 pass.
+7 of 7 pass.
 
 | Kind | Case | Result |
 |---|---|---|
@@ -23,6 +23,8 @@ The compiler rejects these files; the finding comes from that diagnostic.
 | Violation (must be reported) | an #ifdef without #endif inside a function body file | pass |
 | Violation (must be reported) | an #if without #endif in an included header | pass |
 | Compliant (must stay silent) | nested balanced conditionals | pass |
+| Violation (must be reported) | #else without a matching end in a header | pass |
+| Compliant (must stay silent) | a header with balanced groups | pass |
 
 ## Case sources
 
@@ -84,5 +86,41 @@ int a;
 int b;
 #endif
 #endif
+```
+
+### Violation (must be reported): #else without a matching end in a header
+
+`h.h`
+
+```c
+#ifdef A
+int a;
+#else
+int b;
+```
+
+`main.c`
+
+```c
+#include "h.h"
+int c;
+```
+
+### Compliant (must stay silent): a header with balanced groups
+
+`h.h`
+
+```c
+#ifndef H_H
+#define H_H
+int a;
+#endif
+```
+
+`main.c`
+
+```c
+#include "h.h"
+int c;
 ```
 

@@ -14,7 +14,7 @@ Needs every translation unit of the program in one run; with a single translatio
 
 ## Tested cases
 
-5 of 5 pass.
+7 of 7 pass.
 
 | Kind | Case | Result |
 |---|---|---|
@@ -23,6 +23,8 @@ Needs every translation unit of the program in one run; with a single translatio
 | Violation (must be reported) | an external function whose name is a static function elsewhere | pass |
 | Compliant (must stay silent) | the same external name declared in a header and defined once | pass |
 | Violation (must be reported) | a static function shares a name with an external function elsewhere | pass |
+| Compliant (must stay silent) | the same extern function declared in a header by both files | pass |
+| Violation (must be reported) | a static object that shares its name with an external object elsewhere | pass |
 
 ## Case sources
 
@@ -112,5 +114,42 @@ int helper(void) { return 1; }
 ```c
 static int helper(void) { return 2; } /*@V*/
 int use(void) { return helper(); }
+```
+
+### Compliant (must stay silent): the same extern function declared in a header by both files
+
+`h.h`
+
+```c
+int shared(void);
+```
+
+`a.c`
+
+```c
+#include "h.h"
+int shared(void) { return 1; }
+```
+
+`b.c`
+
+```c
+#include "h.h"
+int use(void) { return shared(); }
+```
+
+### Violation (must be reported): a static object that shares its name with an external object elsewhere
+
+`a.c`
+
+```c
+int level = 1;
+```
+
+`b.c`
+
+```c
+static int level = 2; /*@V*/
+int get(void) { return level; }
 ```
 

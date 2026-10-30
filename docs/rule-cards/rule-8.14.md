@@ -14,7 +14,7 @@ The qualifier is reported wherever it is written.
 
 ## Tested cases
 
-6 of 6 pass.
+8 of 8 pass.
 
 | Kind | Case | Result |
 |---|---|---|
@@ -24,6 +24,8 @@ The qualifier is reported wherever it is written.
 | Violation (must be reported) | restrict member in a structure | pass |
 | Compliant (must stay silent) | the word restrict inside an identifier | pass |
 | Violation (must be reported) | restrict through a typedef | pass |
+| Compliant (must stay silent) | no pointer parameter uses the keyword | pass |
+| Violation (must be reported) | restrict on a local pointer | pass |
 
 ## Case sources
 
@@ -74,5 +76,26 @@ int restrict_count;
 
 ```c
 typedef int *restrict rp_t; /*@V*/
+```
+
+### Compliant (must stay silent): no pointer parameter uses the keyword
+
+`main.c`
+
+```c
+void copy(int *dst, const int *src, unsigned n);
+```
+
+### Violation (must be reported): restrict on a local pointer
+
+`main.c`
+
+```c
+void f(void)
+{
+    int a = 0;
+    int *restrict p = &a; /*@V*/
+    *p = 1;
+}
 ```
 

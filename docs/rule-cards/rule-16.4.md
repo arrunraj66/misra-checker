@@ -14,7 +14,7 @@ Only the presence of a default label is examined.
 
 ## Tested cases
 
-5 of 5 pass.
+7 of 7 pass.
 
 | Kind | Case | Result |
 |---|---|---|
@@ -23,6 +23,8 @@ Only the presence of a default label is examined.
 | Violation (must be reported) | only a case label | pass |
 | Violation (must be reported) | an enum switch covering all enumerators without default | pass |
 | Compliant (must stay silent) | default first | pass |
+| Compliant (must stay silent) | default alone after other labels in a stacked group | pass |
+| Violation (must be reported) | a nested switch missing default inside a compliant outer switch | pass |
 
 ## Case sources
 
@@ -94,6 +96,44 @@ void f(int v)
     {
         default: break;
         case 1: break;
+    }
+}
+```
+
+### Compliant (must stay silent): default alone after other labels in a stacked group
+
+`main.c`
+
+```c
+void f(int v)
+{
+    switch (v)
+    {
+        case 1:
+        default:
+            break;
+    }
+}
+```
+
+### Violation (must be reported): a nested switch missing default inside a compliant outer switch
+
+`main.c`
+
+```c
+void f(int a, int b)
+{
+    switch (a)
+    {
+        case 1:
+            switch (b) /*@V*/
+            {
+                case 1: break;
+                case 2: break;
+            }
+            break;
+        default:
+            break;
     }
 }
 ```

@@ -420,6 +420,9 @@ class ObservationVisitor final
     }
     unsigned int clauses = 0U;
     int default_index = -1;
+    if (!body->body_empty() && !llvm::isa<clang::SwitchCase>(*body->body_begin())) {
+      recorder_.add("statement-before-first-label", (*body->body_begin())->getBeginLoc());
+    }
     for (const clang::Stmt* child : body->body()) {
       const clang::Stmt* current = child;
       bool is_head = false;

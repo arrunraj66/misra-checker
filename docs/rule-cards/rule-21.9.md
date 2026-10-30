@@ -14,13 +14,15 @@ Only the two functions of stdlib.h are covered.
 
 ## Tested cases
 
-3 of 3 pass.
+5 of 5 pass.
 
 | Kind | Case | Result |
 |---|---|---|
 | Compliant (must stay silent) | a hand written search | pass |
 | Violation (must be reported) | qsort and bsearch | pass |
 | Violation (must be reported) | qsort with a comparator | pass |
+| Violation (must be reported) | bsearch | pass |
+| Compliant (must stay silent) | a local function called search | pass |
 
 ## Case sources
 
@@ -54,5 +56,27 @@ void f(int *a)
 #include <stdlib.h>
 int cmp(const void *a, const void *b);
 void f(int *t, unsigned long n) { qsort(t, n, sizeof(int), cmp); } /*@V*/
+```
+
+### Violation (must be reported): bsearch
+
+`main.c`
+
+```c
+#include <stdlib.h>
+int cmp(const void *a, const void *b);
+void *f(const void *k, const void *t, unsigned long n)
+{
+    return bsearch(k, t, n, 4, cmp); /*@V*/
+}
+```
+
+### Compliant (must stay silent): a local function called search
+
+`main.c`
+
+```c
+int search(const int *t, int n, int k);
+int f(const int *t, int n) { return search(t, n, 3); }
 ```
 

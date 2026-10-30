@@ -14,7 +14,7 @@ A summary rule that overlaps 16.2 to 16.7; those individual rules are reported a
 
 ## Tested cases
 
-5 of 5 pass.
+7 of 7 pass.
 
 | Kind | Case | Result |
 |---|---|---|
@@ -23,6 +23,8 @@ A summary rule that overlaps 16.2 to 16.7; those individual rules are reported a
 | Violation (must be reported) | a switch without default | pass |
 | Compliant (must stay silent) | default listed first | pass |
 | Violation (must be reported) | switch with a single clause | pass |
+| Compliant (must stay silent) | stacked labels, breaks, and a default last | pass |
+| Violation (must be reported) | statement before the first label in the switch body | pass |
 
 ## Case sources
 
@@ -121,6 +123,44 @@ void f(int v)
     switch (v)
     {
         default: v = 1; break;
+    }
+}
+```
+
+### Compliant (must stay silent): stacked labels, breaks, and a default last
+
+`main.c`
+
+```c
+void f(int v)
+{
+    switch (v)
+    {
+        case 1:
+        case 2:
+            v = 0;
+            break;
+        case 3:
+            v = 1;
+            break;
+        default:
+            break;
+    }
+}
+```
+
+### Violation (must be reported): statement before the first label in the switch body
+
+`main.c`
+
+```c
+void f(int v)
+{
+    switch (v)
+    {
+        v = 1; /*@V*/
+        case 1: break;
+        default: break;
     }
 }
 ```

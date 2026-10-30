@@ -1639,7 +1639,7 @@ void scan_main_file_text(clang::ASTContext& ast, const Recorder& recorder) {
     std::size_t operand = line.raw.find("include", raw_hash);
     {
       const std::size_t after = line.raw.find_first_not_of(" \t", operand + 7U);
-      if ((after != std::string::npos) && (line.raw[after] != '<') && (line.raw[after] != '"')) {
+      if (!inactive && (after != std::string::npos) && (line.raw[after] != '<') && (line.raw[after] != '"')) {
         recorder.add("include-macro-operand", location_of(line.offset));
       }
     }

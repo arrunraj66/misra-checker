@@ -14,7 +14,7 @@ Reported as a possible finding.
 
 ## Tested cases
 
-5 of 5 pass.
+7 of 7 pass.
 
 | Kind | Case | Result |
 |---|---|---|
@@ -23,6 +23,8 @@ Reported as a possible finding.
 | Compliant (must stay silent) | a header name followed by a comment | pass |
 | Violation (must be reported) | a macro that expands to a quoted name | pass |
 | Violation (must be reported) | a macro expanding to an angle name | pass |
+| Compliant (must stay silent) | an include inside an inactive group written with a macro | pass |
+| Violation (must be reported) | a macro that expands to a header in an elif branch that is taken | pass |
 
 ## Case sources
 
@@ -69,5 +71,27 @@ int x;
 ```c
 #define HDR <stddef.h>
 #include HDR /*@V*/
+```
+
+### Compliant (must stay silent): an include inside an inactive group written with a macro
+
+`main.c`
+
+```c
+#if 0
+#include HEADER
+#endif
+int x;
+```
+
+### Violation (must be reported): a macro that expands to a header in an elif branch that is taken
+
+`main.c`
+
+```c
+#define HDR <stddef.h>
+#if 1
+#include HDR /*@V*/
+#endif
 ```
 

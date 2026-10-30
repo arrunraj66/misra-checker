@@ -14,7 +14,7 @@ Only macros defined in project code are examined.
 
 ## Tested cases
 
-6 of 6 pass.
+8 of 8 pass.
 
 | Kind | Case | Result |
 |---|---|---|
@@ -24,6 +24,8 @@ Only macros defined in project code are examined.
 | Violation (must be reported) | 32-character macro names differ only after the 31st (C90 limit) | pass |
 | Compliant (must stay silent) | macro parameters repeat the macro name of another macro | pass |
 | Compliant (must stay silent) | two macros with different long names | pass |
+| Compliant (must stay silent) | function-like macro names that differ early | pass |
+| Compliant (must stay silent) | a macro and a function that share the same long name prefix are different name classes | pass |
 
 ## Case sources
 
@@ -85,5 +87,24 @@ int v = A(1) + B(2);
 #define ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ0a 1
 #define BBCDEFGHIJKLMNOPQRSTUVWXYZ0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ0a 2
 int a = ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ0a + BBCDEFGHIJKLMNOPQRSTUVWXYZ0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ0a;
+```
+
+### Compliant (must stay silent): function-like macro names that differ early
+
+`main.c`
+
+```c
+#define ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ0a(x) (x)
+#define BBCDEFGHIJKLMNOPQRSTUVWXYZ0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ0a(x) (x)
+int v = 1;
+```
+
+### Compliant (must stay silent): a macro and a function that share the same long name prefix are different name classes
+
+`main.c`
+
+```c
+#define SHORT_NAME 1
+int SHORT_NAME2 = SHORT_NAME;
 ```
 

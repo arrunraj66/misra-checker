@@ -14,7 +14,7 @@ The check is textual, so the sequence is reported even when it sits in an inacti
 
 ## Tested cases
 
-7 of 7 pass.
+9 of 9 pass.
 
 | Kind | Case | Result |
 |---|---|---|
@@ -25,6 +25,8 @@ The check is textual, so the sequence is reported even when it sits in an inacti
 | Compliant (must stay silent) | a path with a directory separator | pass |
 | Violation (must be reported) | an apostrophe inside an angle bracket header name | pass |
 | Violation (must be reported) | a double-slash comment marker inside the name | pass |
+| Compliant (must stay silent) | a quoted header with an underscore and a dot | pass |
+| Violation (must be reported) | a backslash path separator in an angle name | pass |
 
 ## Case sources
 
@@ -83,5 +85,22 @@ The check is textual, so the sequence is reported even when it sits in an inacti
 
 ```c
 #include "a//b.h" /*@V*/
+```
+
+### Compliant (must stay silent): a quoted header with an underscore and a dot
+
+`main.c`
+
+```c
+#include "my_header.h"
+int x;
+```
+
+### Violation (must be reported): a backslash path separator in an angle name
+
+`main.c`
+
+```c
+#include <sys\types.h> /*@V*/
 ```
 

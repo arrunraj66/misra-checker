@@ -14,7 +14,7 @@ Only arrays declared without a size are examined.
 
 ## Tested cases
 
-5 of 5 pass.
+7 of 7 pass.
 
 | Kind | Case | Result |
 |---|---|---|
@@ -23,6 +23,8 @@ Only arrays declared without a size are examined.
 | Violation (must be reported) | unspecified size with a designator | pass |
 | Compliant (must stay silent) | designators with an explicit size | pass |
 | Violation (must be reported) | two array designators and no size | pass |
+| Compliant (must stay silent) | a string initialiser without designators | pass |
+| Violation (must be reported) | a designator in a nested unspecified array | pass |
 
 ## Case sources
 
@@ -64,5 +66,21 @@ int a[4] = { [1] = 1, [3] = 2 };
 
 ```c
 int a[] = { [1] = 1, [3] = 2 }; /*@V*/
+```
+
+### Compliant (must stay silent): a string initialiser without designators
+
+`main.c`
+
+```c
+char s[] = "abc";
+```
+
+### Violation (must be reported): a designator in a nested unspecified array
+
+`main.c`
+
+```c
+int a[][2] = { [1] = { 1, 2 } }; /*@V*/
 ```
 

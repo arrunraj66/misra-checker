@@ -14,12 +14,13 @@ The # then ## sequence is reported at the macro definition.
 
 ## Tested cases
 
-2 of 2 pass.
+3 of 3 pass.
 
 | Kind | Case | Result |
 |---|---|---|
 | Compliant (must stay silent) | # alone and ## alone | pass |
 | Violation (must be reported) | stringizing then pasting | pass |
+| Compliant (must stay silent) | a pasting of two parameters and a stringizing of one | pass |
 
 ## Case sources
 
@@ -41,5 +42,16 @@ int C(v, 1);
 ```c
 #define BAD(x) #x ## _suffix /*@V*/
 const char *s = BAD(q);
+```
+
+### Compliant (must stay silent): a pasting of two parameters and a stringizing of one
+
+`main.c`
+
+```c
+#define CAT(a, b) a##b
+#define STR(a) #a
+int CAT(v, 1);
+const char *s = STR(q);
 ```
 

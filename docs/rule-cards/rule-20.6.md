@@ -14,12 +14,13 @@ Found through the compiler's diagnostic, so the location is the directive inside
 
 ## Tested cases
 
-2 of 2 pass.
+3 of 3 pass.
 
 | Kind | Case | Result |
 |---|---|---|
 | Compliant (must stay silent) | directives outside macro arguments | pass |
 | Violation (must be reported) | a conditional directive inside macro arguments | pass |
+| Compliant (must stay silent) | a multi-line macro invocation without directives | pass |
 
 ## Case sources
 
@@ -49,5 +50,15 @@ int v = F(
     2
 #endif
 );
+```
+
+### Compliant (must stay silent): a multi-line macro invocation without directives
+
+`main.c`
+
+```c
+#define ADD(a, b) ((a) + (b))
+int x = ADD(1,
+            2);
 ```
 

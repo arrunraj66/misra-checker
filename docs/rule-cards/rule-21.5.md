@@ -14,7 +14,7 @@ Other functions of the signal header are not covered.
 
 ## Tested cases
 
-4 of 4 pass.
+5 of 5 pass.
 
 | Kind | Case | Result |
 |---|---|---|
@@ -22,6 +22,7 @@ Other functions of the signal header are not covered.
 | Violation (must be reported) | signal and raise | pass |
 | Violation (must be reported) | raise | pass |
 | Compliant (must stay silent) | variable named signal in a local scope | pass |
+| Compliant (must stay silent) | the word raise inside a string | pass |
 
 ## Case sources
 
@@ -65,5 +66,13 @@ void f(void)
 
 ```c
 int f(int signal) { return signal; }
+```
+
+### Compliant (must stay silent): the word raise inside a string
+
+`main.c`
+
+```c
+const char *s = "raise";
 ```
 

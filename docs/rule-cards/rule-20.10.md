@@ -14,7 +14,7 @@ Every use of either operator in a macro definition is reported.
 
 ## Tested cases
 
-5 of 5 pass.
+7 of 7 pass.
 
 | Kind | Case | Result |
 |---|---|---|
@@ -23,6 +23,8 @@ Every use of either operator in a macro definition is reported.
 | Violation (must be reported) | token pasting | pass |
 | Violation (must be reported) | pasting with a prefix | pass |
 | Compliant (must stay silent) | a macro that only uses its parameters | pass |
+| Compliant (must stay silent) | a macro whose body mentions a hash inside a string literal | pass |
+| Violation (must be reported) | both operators in different macros | pass |
 
 ## Case sources
 
@@ -70,5 +72,25 @@ int NAME(a);
 ```c
 #define TWICE(x) ((x) + (x))
 int a = TWICE(1);
+```
+
+### Compliant (must stay silent): a macro whose body mentions a hash inside a string literal
+
+`main.c`
+
+```c
+#define MSG "# not an operator"
+const char *s = MSG;
+```
+
+### Violation (must be reported): both operators in different macros
+
+`main.c`
+
+```c
+#define STR(x) #x /*@V*/
+#define CAT(a, b) a##b /*@V*/
+int CAT(v, 1);
+const char *s = STR(a);
 ```
 

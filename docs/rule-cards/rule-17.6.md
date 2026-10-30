@@ -14,7 +14,7 @@ Only the bracketed form is examined.
 
 ## Tested cases
 
-5 of 5 pass.
+7 of 7 pass.
 
 | Kind | Case | Result |
 |---|---|---|
@@ -23,6 +23,8 @@ Only the bracketed form is examined.
 | Violation (must be reported) | in a definition | pass |
 | Compliant (must stay silent) | const inside the brackets | pass |
 | Violation (must be reported) | static with a size in a prototype | pass |
+| Compliant (must stay silent) | an ordinary array parameter with a size | pass |
+| Violation (must be reported) | a definition with a static size and several parameters | pass |
 
 ## Case sources
 
@@ -65,5 +67,24 @@ void f(int a[const 4]);
 
 ```c
 void f(char s[static 8]); /*@V*/
+```
+
+### Compliant (must stay silent): an ordinary array parameter with a size
+
+`main.c`
+
+```c
+void f(int a[4]);
+```
+
+### Violation (must be reported): a definition with a static size and several parameters
+
+`main.c`
+
+```c
+int f(int n, int a[static 2])  /*@V*/
+{
+    return n + a[0];
+}
 ```
 

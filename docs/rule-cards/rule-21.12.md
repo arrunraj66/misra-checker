@@ -14,13 +14,15 @@ The exception macros are not examined.
 
 ## Tested cases
 
-3 of 3 pass.
+5 of 5 pass.
 
 | Kind | Case | Result |
 |---|---|---|
 | Compliant (must stay silent) | no fenv use | pass |
 | Violation (must be reported) | clearing and testing exceptions | pass |
 | Violation (must be reported) | feraiseexcept | pass |
+| Violation (must be reported) | fetestexcept | pass |
+| Compliant (must stay silent) | including fenv.h without calling its functions | pass |
 
 ## Case sources
 
@@ -52,5 +54,23 @@ void f(void)
 ```c
 #include <fenv.h>
 void f(void) { (void)feraiseexcept(FE_INVALID); } /*@V*/
+```
+
+### Violation (must be reported): fetestexcept
+
+`main.c`
+
+```c
+#include <fenv.h>
+int f(void) { return fetestexcept(FE_ALL_EXCEPT); } /*@V*/
+```
+
+### Compliant (must stay silent): including fenv.h without calling its functions
+
+`main.c`
+
+```c
+#include <fenv.h>
+int x;
 ```
 

@@ -14,7 +14,7 @@ Only straight-line uses in the same block are found.
 
 ## Tested cases
 
-4 of 4 pass.
+6 of 6 pass.
 
 | Kind | Case | Result |
 |---|---|---|
@@ -22,6 +22,8 @@ Only straight-line uses in the same block are found.
 | Violation (must be reported) | used after fclose | pass |
 | Violation (must be reported) | the pointer tested after fclose | pass |
 | Compliant (must stay silent) | the pointer cleared after fclose | pass |
+| Violation (must be reported) | fprintf after fclose | pass |
+| Compliant (must stay silent) | close in one branch and use in the other | pass |
 
 ## Case sources
 
@@ -81,6 +83,31 @@ void f(FILE *p)
 {
     (void)fclose(p);
     p = NULL;
+}
+```
+
+### Violation (must be reported): fprintf after fclose
+
+`main.c`
+
+```c
+#include <stdio.h>
+void f(FILE *p)
+{
+    (void)fclose(p);
+    (void)fprintf(p, "x"); /*@V*/
+}
+```
+
+### Compliant (must stay silent): close in one branch and use in the other
+
+`main.c`
+
+```c
+#include <stdio.h>
+void f(FILE *p, int c)
+{
+    if (c) { (void)fclose(p); } else { (void)fputs("x", p); }
 }
 ```
 
