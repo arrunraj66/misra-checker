@@ -14,7 +14,7 @@ Functions of void type with a bare return are examined the same way.
 
 ## Tested cases
 
-5 of 5 pass.
+8 of 8 pass.
 
 | Kind | Case | Result |
 |---|---|---|
@@ -23,6 +23,9 @@ Functions of void type with a bare return are examined the same way.
 | Violation (must be reported) | two returns | pass |
 | Violation (must be reported) | a return that is not the last statement | pass |
 | Violation (must be reported) | an early return in a void function | pass |
+| Violation (must be reported) | a return in a nested block at the end | pass |
+| Compliant (must stay silent) | a void function that never returns early | pass |
+| Compliant (must stay silent) | a value computed and returned once | pass |
 
 ## Case sources
 
@@ -75,6 +78,39 @@ void h(int x) /*@V*/
 {
     if (x) { return; }
     x = 1;
+}
+```
+
+### Violation (must be reported): a return in a nested block at the end
+
+`main.c`
+
+```c
+int f(int a) /*@V*/
+{
+    if (a) { return 1; }
+    return 0;
+}
+```
+
+### Compliant (must stay silent): a void function that never returns early
+
+`main.c`
+
+```c
+void f(int *p) { *p = 1; }
+```
+
+### Compliant (must stay silent): a value computed and returned once
+
+`main.c`
+
+```c
+int f(int a)
+{
+    int r = 0;
+    if (a) { r = 1; }
+    return r;
 }
 ```
 

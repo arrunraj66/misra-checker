@@ -1,0 +1,517 @@
+##### rule 20.1
+summary: ignored (merged)
+
+--- bad: an include inside a function body
+void f(void)
+{
+#include "inner.h" /*@V*/
+}
+
+--- ok: pragma, define and error-free directives before the includes
+#pragma once
+#define LEVEL 2
+#if LEVEL > 1
+#include <stddef.h>
+#endif
+#include <stdint.h>
+int x;
+
+--- bad: an include after a stray semicolon declaration
+int x;
+#include <stddef.h> /*@V*/
+
+##### rule 20.2
+summary: ignored (merged)
+
+--- ok: a path with a directory separator
+#include <sys/types.h>
+
+--- bad: an apostrophe inside an angle bracket header name
+#include <a'b.h> /*@V*/
+
+--- bad: a double-slash comment marker inside the name
+#include "a//b.h" /*@V*/
+
+##### rule 20.3
+summary: ignored (merged)
+
+--- ok: a header name followed by a comment
+#include <stddef.h> // the usual header
+int x;
+
+--- bad: a macro that expands to a quoted name
+#define HDR "stddef.h"
+#include HDR /*@V*/
+
+--- bad: a macro expanding to an angle name
+#define HDR <stddef.h>
+#include HDR /*@V*/
+
+##### rule 20.4
+summary: ignored (merged)
+
+--- bad: a macro named restrict
+#define restrict /*@V*/
+int x;
+
+--- bad: a macro named while
+#define while(x) if (x) /*@V*/
+int y;
+
+--- ok: bool as a macro name (not a C99 keyword)
+#define bool int
+bool x;
+
+--- ok: a macro name containing a keyword
+#define my_int_type int
+my_int_type x;
+
+##### rule 20.5
+summary: ignored (merged)
+
+--- bad: #undef inside a function
+#define LEVEL 1
+void f(void)
+{
+#undef LEVEL /*@V*/
+}
+
+--- ok: only #define and #if
+#define LEVEL 1
+#if LEVEL
+int x;
+#endif
+
+##### rule 20.7
+summary: ignored (merged)
+
+--- ok: parameter used as a call argument and as a cast operand
+#define CALL(f, x) f(x)
+#define CAST(t, x) ((t)(x))
+int g(int a);
+int h(void) { return CALL(g, 1); }
+long s2(void) { return CAST(long, 2); }
+
+--- bad: parameter on one side of an addition
+#define ADD(x, y) ((x) + y) /*@V*/
+int a = ADD(1, 2);
+
+--- ok: parameter in an array subscript
+#define AT(a, i) ((a)[i])
+int t[3];
+int v(void) { return AT(t, 1); }
+
+--- ok: parameter used with the arrow operator in parentheses
+struct s { int f; };
+#define FIELD(p) ((p)->f)
+struct s o;
+int v(void) { return FIELD(&o); }
+
+--- bad: parameter in a shift
+#define SHL(x, n) ((x) << n) /*@V*/
+int v = SHL(1, 2);
+
+##### rule 20.8
+summary: ignored (merged)
+
+--- bad: a condition with arithmetic
+#if 1 + 1 /*@V*/
+int a;
+#endif
+
+--- bad: a negative value
+#if -1 /*@V*/
+int a;
+#endif
+
+--- ok: a comparison that yields one
+#if 3 > 2
+int a;
+#endif
+
+--- ok: defined and logical operators
+#define A
+#if defined(A) && !defined(B)
+int a;
+#endif
+
+##### rule 20.9
+summary: ignored (merged)
+
+--- bad: true is not defined in C99
+#if true /*@V*/
+int a;
+#endif
+
+--- ok: identifier guarded by defined in the same condition
+#define X 2
+#if defined(X) && X > 1
+int a;
+#endif
+
+--- ok: function-like macro defined and called
+#define MAX(a, b) ((a) > (b) ? (a) : (b))
+#if MAX(1, 2) > 1
+int a;
+#endif
+
+--- bad: an undefined name on the right of a comparison
+#define A 1
+#if A == B /*@V*/
+int a;
+#endif
+
+##### rule 20.10
+summary: ignored (merged)
+
+--- bad: pasting with a prefix
+#define NAME(x) pre_##x /*@V*/
+int NAME(a);
+
+--- ok: a macro that only uses its parameters
+#define TWICE(x) ((x) + (x))
+int a = TWICE(1);
+
+##### rule 20.12
+summary: ignored (merged)
+
+--- ok: the two-level stringizing idiom
+#define STR(x) #x
+#define XSTR(x) STR(x)
+const char *s = XSTR(42);
+
+--- bad: pasting an operand that is also used on its own
+#define MK(x) x##_t x /*@V*/
+typedef int MK(a);
+
+##### rule 20.13
+summary: ignored (merged)
+
+--- gap: a warning directive is a common extension and is accepted (strict reading: not a C99 directive)
+#warning something /*@V*/
+int a;
+
+--- ok: a pragma
+#pragma pack(1)
+int a;
+
+--- ok: an error directive in an inactive group is skipped
+#if 0
+#error never
+#endif
+int a;
+
+##### rule 20.14
+summary: ignored (merged)
+
+--- bad: an #if without #endif in an included header
+=== h.h
+#if 1
+int h;
+=== main.c
+#include "h.h"
+int a;
+
+--- ok: nested balanced conditionals
+#if 1
+#ifdef A
+int a;
+#else
+int b;
+#endif
+#endif
+
+##### rule 21.1
+summary: ignored (merged)
+
+--- bad: defining a standard macro name
+#define errno 0 /*@V*/
+int x;
+
+--- bad: defining a keyword-like reserved name
+#define _Reserved 1 /*@V*/
+int x;
+
+--- ok: a name with an underscore inside
+#define MY_LEVEL 1
+int x;
+
+--- bad: undefining a predefined macro
+#undef __STDC__ /*@V*/
+int x;
+
+##### rule 21.2
+summary: ignored (merged)
+
+--- bad: a static function named like a library function
+static int abs(int a) { return a; } /*@V*/
+int g(void) { return abs(1); }
+
+--- ok: a prototype from the library header
+#include <string.h>
+unsigned long f(const char *s) { return strlen(s); }
+
+--- bad: a tag with a leading underscore at file scope
+struct _node { int a; }; /*@V*/
+struct _node n;
+
+--- ok: a local variable named like a library function
+int f(void) { int time = 1; return time; }
+
+##### rule 21.3
+summary: ignored (merged)
+
+--- bad: realloc and free through a macro name
+#include <stdlib.h>
+#define RELEASE(p) free(p)
+void f(void *p)
+{
+    RELEASE(p); /*@V*/
+}
+
+--- ok: a user wrapper with a similar name
+void *my_malloc(unsigned long n);
+void f(void) { (void)my_malloc(4); }
+
+--- ok: a structure member named like the function
+struct s { int free; };
+int f(struct s *p) { return p->free; }
+
+##### rule 21.4
+summary: ignored (merged)
+
+--- bad: longjmp through a jmp_buf
+#include <setjmp.h>
+jmp_buf env;
+void f(void)
+{
+    longjmp(env, 1); /*@V*/
+}
+
+--- ok: a variable named setjmp_count
+int setjmp_count;
+
+##### rule 21.5
+summary: ignored (merged)
+
+--- bad: raise
+#include <signal.h>
+void f(void)
+{
+    (void)raise(2); /*@V*/
+}
+
+--- ok: variable named signal in a local scope
+int f(int signal) { return signal; }
+
+##### rule 21.6
+summary: ignored (merged)
+
+--- bad: fopen and fclose
+#include <stdio.h>
+void f(void)
+{
+    FILE *p = fopen("a", "r"); /*@V*/
+    if (p != NULL) { (void)fclose(p); } /*@V*/
+}
+
+--- ok: a structure member named printf
+struct s { int printf; };
+int f(struct s *p) { return p->printf; }
+
+--- bad: puts and putchar
+#include <stdio.h>
+void f(void)
+{
+    (void)puts("x"); /*@V*/
+    (void)putchar('a'); /*@V*/
+}
+
+##### rule 21.7
+summary: ignored (merged)
+
+--- bad: atoll
+#include <stdlib.h>
+long long f(const char *s) { return atoll(s); } /*@V*/
+
+--- ok: strtoul
+#include <stdlib.h>
+unsigned long f(const char *s) { return strtoul(s, 0, 10); }
+
+##### rule 21.8
+summary: ignored (merged)
+
+--- bad: system
+#include <stdlib.h>
+int f(void) { return system("ls"); } /*@V*/
+
+--- ok: a local named exit_code
+int f(void) { int exit_code = 0; return exit_code; }
+
+##### rule 21.9
+summary: ignored (merged)
+
+--- bad: qsort with a comparator
+#include <stdlib.h>
+int cmp(const void *a, const void *b);
+void f(int *t, unsigned long n) { qsort(t, n, sizeof(int), cmp); } /*@V*/
+
+##### rule 21.10
+summary: ignored (merged)
+
+--- bad: difftime and mktime
+#include <time.h>
+double f(time_t a, time_t b) { return difftime(a, b); } /*@V*/
+
+--- ok: a user function called clock_tick
+void clock_tick(void);
+void f(void) { clock_tick(); }
+
+##### rule 21.11
+summary: ignored (merged)
+
+--- ok: complex.h is not tgmath
+#include <complex.h>
+
+##### rule 21.12
+summary: ignored (merged)
+
+--- bad: feraiseexcept
+#include <fenv.h>
+void f(void) { (void)feraiseexcept(FE_INVALID); } /*@V*/
+
+##### rule 22.1
+summary: ignored (merged)
+
+--- ok: allocation checked for null then freed
+#include <stdlib.h>
+void f(void)
+{
+    char *p = malloc(4);
+    if (p != NULL)
+    {
+        p[0] = 'a';
+        free(p);
+    }
+}
+
+--- ok: allocation stored in a global
+#include <stdlib.h>
+char *keep;
+void f(void) { keep = malloc(4); }
+
+--- bad: calloc never freed
+#include <stdlib.h>
+void f(void)
+{
+    char *p = calloc(1, 4); /*@V*/
+    if (p != NULL) { p[0] = 'a'; }
+}
+
+--- ok: a stream returned to the caller
+#include <stdio.h>
+FILE *f(void) { return fopen("a", "r"); }
+
+--- ok: the allocation is passed to a function that takes over
+#include <stdlib.h>
+void take(char *p);
+void f(void)
+{
+    char *p = malloc(4);
+    take(p);
+}
+
+##### rule 22.2
+summary: ignored (merged)
+
+--- bad: free of a structure member address
+#include <stdlib.h>
+struct s { int a; };
+void f(void)
+{
+    struct s v;
+    free(&v.a); /*@V*/
+}
+
+--- ok: free of an allocation obtained earlier
+#include <stdlib.h>
+void f(void)
+{
+    char *p = malloc(4);
+    free(p);
+}
+
+--- ok: free of a pointer parameter
+#include <stdlib.h>
+void f(void *p) { free(p); }
+
+##### rule 22.3
+summary: ignored (merged)
+
+--- ok: opened for reading with read plus mode twice
+#include <stdio.h>
+void f(void)
+{
+    FILE *a = fopen("x", "rb");
+    FILE *b = fopen("x", "rb");
+    (void)a; (void)b;
+}
+
+--- bad: append and read of the same name
+#include <stdio.h>
+void f(void)
+{
+    FILE *a = fopen("x", "a");
+    FILE *b = fopen("x", "r"); /*@V*/
+    (void)a; (void)b;
+}
+
+##### rule 22.4
+summary: ignored (merged)
+
+--- ok: update mode allows writing
+#include <stdio.h>
+void f(void)
+{
+    FILE *a = fopen("x", "r+");
+    (void)fputs("a", a);
+}
+
+--- bad: fprintf to a binary read stream
+#include <stdio.h>
+void f(void)
+{
+    FILE *a = fopen("x", "rb");
+    (void)fprintf(a, "a"); /*@V*/
+}
+
+##### rule 22.5
+summary: ignored (merged)
+
+--- ok: sizeof of the dereferenced pointer is not evaluated
+#include <stdio.h>
+unsigned long f(FILE *p) { return sizeof(*p); }
+
+--- bad: member access through a stream pointer
+#include <stdio.h>
+int f(FILE *p) { return p->_flags; } /*@V*/
+
+##### rule 22.6
+summary: ignored (merged)
+
+--- bad: the pointer tested after fclose
+#include <stdio.h>
+int f(FILE *p)
+{
+    (void)fclose(p);
+    if (p != NULL) { return 1; } /*@V*/
+    return 0;
+}
+
+--- ok: the pointer cleared after fclose
+#include <stdio.h>
+void f(FILE *p)
+{
+    (void)fclose(p);
+    p = NULL;
+}

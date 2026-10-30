@@ -14,7 +14,7 @@ A macro used only in another translation unit, or only in a header that is not p
 
 ## Tested cases
 
-8 of 8 pass.
+14 of 14 pass.
 
 | Kind | Case | Result |
 |---|---|---|
@@ -23,6 +23,12 @@ A macro used only in another translation unit, or only in a header that is not p
 | Compliant (must stay silent) | macro used by another macro that is used | pass |
 | Violation (must be reported) | unused object-like macro | pass |
 | Violation (must be reported) | unused function-like macro | pass |
+| Violation (must be reported) | macro used only in a skipped region | pass |
+| Compliant (must stay silent) | macro redefined after undef and used | pass |
+| Violation (must be reported) | function-like macro mentioned only by name | pass |
+| Compliant (must stay silent) | macro used as an argument of another macro | pass |
+| Compliant (must stay silent) | macro tested with ifndef and defined in the same file | pass |
+| Compliant (must stay silent) | stringised macro argument | pass |
 | Compliant (must stay silent) | a macro used in an elif | pass |
 | Compliant (must stay silent) | a header guard style macro is tested | pass |
 | Compliant (must stay silent) | a macro used only inside another macro that is used | pass |
@@ -73,6 +79,68 @@ int v = TWICE;
 
 ```c
 #define SQUARE(x) ((x) * (x)) /*@V*/
+```
+
+### Violation (must be reported): macro used only in a skipped region
+
+`main.c`
+
+```c
+#define ONLY_SKIPPED 1
+#if 0
+int a = ONLY_SKIPPED;
+#endif
+```
+
+### Compliant (must stay silent): macro redefined after undef and used
+
+`main.c`
+
+```c
+#define LIMIT 1
+#undef LIMIT
+#define LIMIT 2
+int a = LIMIT;
+```
+
+### Violation (must be reported): function-like macro mentioned only by name
+
+`main.c`
+
+```c
+#define CALL(x) (x)
+int CALL_COUNT;
+int f(int CALL2) { return CALL2; }
+```
+
+### Compliant (must stay silent): macro used as an argument of another macro
+
+`main.c`
+
+```c
+#define ID(x) (x)
+#define VAL 5
+int a = ID(VAL);
+```
+
+### Compliant (must stay silent): macro tested with ifndef and defined in the same file
+
+`main.c`
+
+```c
+#define FEATURE
+#ifndef FEATURE
+int a;
+#endif
+```
+
+### Compliant (must stay silent): stringised macro argument
+
+`main.c`
+
+```c
+#define NAME(x) #x
+const char *s = NAME(hello);
 ```
 
 ### Compliant (must stay silent): a macro used in an elif

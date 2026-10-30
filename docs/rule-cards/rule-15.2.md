@@ -14,7 +14,7 @@ Needs a successfully parsed translation unit with the label resolved.
 
 ## Tested cases
 
-4 of 4 pass.
+6 of 6 pass.
 
 | Kind | Case | Result |
 |---|---|---|
@@ -22,6 +22,8 @@ Needs a successfully parsed translation unit with the label resolved.
 | Compliant (must stay silent) | no goto at all | pass |
 | Violation (must be reported) | a backward jump | pass |
 | Violation (must be reported) | a backward jump out of a nested block | pass |
+| Compliant (must stay silent) | a forward goto past a loop | pass |
+| Violation (must be reported) | a backward goto forming a loop | pass |
 
 ## Case sources
 
@@ -74,6 +76,32 @@ top:
     {
         goto top; /*@V*/
     }
+}
+```
+
+### Compliant (must stay silent): a forward goto past a loop
+
+`main.c`
+
+```c
+void f(int n)
+{
+    while (n) { if (n == 3) { goto out; } n--; }
+out:
+    n = 0;
+}
+```
+
+### Violation (must be reported): a backward goto forming a loop
+
+`main.c`
+
+```c
+void f(int n)
+{
+top:
+    n--;
+    if (n > 0) { goto top; } /*@V*/
 }
 ```
 

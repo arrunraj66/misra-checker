@@ -14,7 +14,7 @@ Only the listed stdio and wide-character I/O functions are covered.
 
 ## Tested cases
 
-6 of 6 pass.
+9 of 9 pass.
 
 | Kind | Case | Result |
 |---|---|---|
@@ -22,6 +22,9 @@ Only the listed stdio and wide-character I/O functions are covered.
 | Compliant (must stay silent) | a user function with a similar name | pass |
 | Violation (must be reported) | printf and puts | pass |
 | Violation (must be reported) | file functions | pass |
+| Violation (must be reported) | fopen and fclose | pass |
+| Compliant (must stay silent) | a structure member named printf | pass |
+| Violation (must be reported) | puts and putchar | pass |
 | Violation (must be reported) | formatted input and output | pass |
 | Violation (must be reported) | character and block I/O | pass |
 
@@ -67,6 +70,41 @@ void g(void)
 {
     FILE *f = fopen("a", "r"); /*@V*/
     (void)fclose(f); /*@V*/
+}
+```
+
+### Violation (must be reported): fopen and fclose
+
+`main.c`
+
+```c
+#include <stdio.h>
+void f(void)
+{
+    FILE *p = fopen("a", "r"); /*@V*/
+    if (p != NULL) { (void)fclose(p); } /*@V*/
+}
+```
+
+### Compliant (must stay silent): a structure member named printf
+
+`main.c`
+
+```c
+struct s { int printf; };
+int f(struct s *p) { return p->printf; }
+```
+
+### Violation (must be reported): puts and putchar
+
+`main.c`
+
+```c
+#include <stdio.h>
+void f(void)
+{
+    (void)puts("x"); /*@V*/
+    (void)putchar('a'); /*@V*/
 }
 ```
 

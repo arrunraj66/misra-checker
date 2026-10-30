@@ -14,7 +14,7 @@ Whether an expression is safely delimited is judged textually.
 
 ## Tested cases
 
-8 of 8 pass.
+13 of 13 pass.
 
 | Kind | Case | Result |
 |---|---|---|
@@ -23,6 +23,11 @@ Whether an expression is safely delimited is judged textually.
 | Compliant (must stay silent) | a parameter between commas | pass |
 | Violation (must be reported) | an unparenthesized parameter in an expression | pass |
 | Violation (must be reported) | a parameter next to an operator | pass |
+| Compliant (must stay silent) | parameter used as a call argument and as a cast operand | pass |
+| Violation (must be reported) | parameter on one side of an addition | pass |
+| Compliant (must stay silent) | parameter in an array subscript | pass |
+| Compliant (must stay silent) | parameter used with the arrow operator in parentheses | pass |
+| Violation (must be reported) | parameter in a shift | pass |
 | Compliant (must stay silent) | a conditional with every parameter parenthesized | pass |
 | Compliant (must stay silent) | a parameter inside an index with parentheses | pass |
 | Violation (must be reported) | a parameter in a comparison without parentheses | pass |
@@ -75,6 +80,57 @@ int a = SQUARE(3);
 ```c
 #define ADD_ONE(x) x + 1 /*@V*/
 int b = ADD_ONE(3);
+```
+
+### Compliant (must stay silent): parameter used as a call argument and as a cast operand
+
+`main.c`
+
+```c
+#define CALL(f, x) f(x)
+#define CAST(t, x) ((t)(x))
+int g(int a);
+int h(void) { return CALL(g, 1); }
+long s2(void) { return CAST(long, 2); }
+```
+
+### Violation (must be reported): parameter on one side of an addition
+
+`main.c`
+
+```c
+#define ADD(x, y) ((x) + y) /*@V*/
+int a = ADD(1, 2);
+```
+
+### Compliant (must stay silent): parameter in an array subscript
+
+`main.c`
+
+```c
+#define AT(a, i) ((a)[i])
+int t[3];
+int v(void) { return AT(t, 1); }
+```
+
+### Compliant (must stay silent): parameter used with the arrow operator in parentheses
+
+`main.c`
+
+```c
+struct s { int f; };
+#define FIELD(p) ((p)->f)
+struct s o;
+int v(void) { return FIELD(&o); }
+```
+
+### Violation (must be reported): parameter in a shift
+
+`main.c`
+
+```c
+#define SHL(x, n) ((x) << n) /*@V*/
+int v = SHL(1, 2);
 ```
 
 ### Compliant (must stay silent): a conditional with every parameter parenthesized

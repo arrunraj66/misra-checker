@@ -14,12 +14,14 @@ Other functions of the signal header are not covered.
 
 ## Tested cases
 
-2 of 2 pass.
+4 of 4 pass.
 
 | Kind | Case | Result |
 |---|---|---|
 | Compliant (must stay silent) | no signal handling | pass |
 | Violation (must be reported) | signal and raise | pass |
+| Violation (must be reported) | raise | pass |
+| Compliant (must stay silent) | variable named signal in a local scope | pass |
 
 ## Case sources
 
@@ -43,5 +45,25 @@ void f(void)
     signal(2, handler); /*@V*/
     raise(2); /*@V*/
 }
+```
+
+### Violation (must be reported): raise
+
+`main.c`
+
+```c
+#include <signal.h>
+void f(void)
+{
+    (void)raise(2); /*@V*/
+}
+```
+
+### Compliant (must stay silent): variable named signal in a local scope
+
+`main.c`
+
+```c
+int f(int signal) { return signal; }
 ```
 

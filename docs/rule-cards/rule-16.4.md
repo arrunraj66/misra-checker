@@ -14,13 +14,15 @@ Only the presence of a default label is examined.
 
 ## Tested cases
 
-3 of 3 pass.
+5 of 5 pass.
 
 | Kind | Case | Result |
 |---|---|---|
 | Compliant (must stay silent) | a switch with default | pass |
 | Violation (must be reported) | no default | pass |
 | Violation (must be reported) | only a case label | pass |
+| Violation (must be reported) | an enum switch covering all enumerators without default | pass |
+| Compliant (must stay silent) | default first | pass |
 
 ## Case sources
 
@@ -62,6 +64,37 @@ int g(int v)
             return 1;
     }
     return 0;
+}
+```
+
+### Violation (must be reported): an enum switch covering all enumerators without default
+
+`main.c`
+
+```c
+enum e { A, B };
+void f(enum e v)
+{
+    switch (v) /*@V*/
+    {
+        case A: break;
+        case B: break;
+    }
+}
+```
+
+### Compliant (must stay silent): default first
+
+`main.c`
+
+```c
+void f(int v)
+{
+    switch (v)
+    {
+        default: break;
+        case 1: break;
+    }
 }
 ```
 

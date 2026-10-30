@@ -16,7 +16,7 @@ Dead stores are found for local objects with liveness analysis. Stores to global
 
 ## Tested cases
 
-14 of 15 pass.
+26 of 27 pass.
 
 | Kind | Case | Result |
 |---|---|---|
@@ -30,6 +30,18 @@ Dead stores are found for local objects with liveness analysis. Stores to global
 | Compliant (must stay silent) | initializer that is read later | pass |
 | Compliant (must stay silent) | initializer overwritten only after it was read | pass |
 | Known false negative (not detected yet) | a store through a pointer is not tracked | documented limit |
+| Violation (must be reported) | self assignment has no effect | pass |
+| Compliant (must stay silent) | a value read in the next loop iteration | pass |
+| Compliant (must stay silent) | assignment to a static local persists | pass |
+| Compliant (must stay silent) | assignment to a file-scope object | pass |
+| Compliant (must stay silent) | a local whose address is taken may be read through the pointer | pass |
+| Violation (must be reported) | assignment before a return that ignores it | pass |
+| Compliant (must stay silent) | assignment read on only one path | pass |
+| Compliant (must stay silent) | out parameter pointer write | pass |
+| Compliant (must stay silent) | both branches assign then read | pass |
+| Violation (must be reported) | compound assignment whose result is never read | pass |
+| Compliant (must stay silent) | assignment used as a condition | pass |
+| Compliant (must stay silent) | a local array element store is not tracked | pass |
 | Compliant (must stay silent) | a volatile read is an effect | pass |
 | Compliant (must stay silent) | increments and calls as statements | pass |
 | Compliant (must stay silent) | a cast to void of a call result | pass |
@@ -151,6 +163,157 @@ void h(int *p)
 {
     *p = 1; /*@V*/
     *p = 2;
+}
+```
+
+### Violation (must be reported): self assignment has no effect
+
+`main.c`
+
+```c
+void f(int a)
+{
+    int x = a;
+    x = x; /*@V*/
+}
+```
+
+### Compliant (must stay silent): a value read in the next loop iteration
+
+`main.c`
+
+```c
+int f(int n)
+{
+    int prev = 0;
+    int i;
+    for (i = 0; i < n; i++)
+    {
+        n += prev;
+        prev = i;
+    }
+    return n;
+}
+```
+
+### Compliant (must stay silent): assignment to a static local persists
+
+`main.c`
+
+```c
+int f(void)
+{
+    static int count;
+    count = count + 1;
+    count = 0;
+    return 1;
+}
+```
+
+### Compliant (must stay silent): assignment to a file-scope object
+
+`main.c`
+
+```c
+int g;
+void f(void) { g = 1; g = 2; }
+```
+
+### Compliant (must stay silent): a local whose address is taken may be read through the pointer
+
+`main.c`
+
+```c
+void use(int *p);
+void f(void)
+{
+    int x;
+    x = 1;
+    use(&x);
+}
+```
+
+### Violation (must be reported): assignment before a return that ignores it
+
+`main.c`
+
+```c
+int f(void)
+{
+    int x;
+    x = 5; /*@V*/
+    return 0;
+}
+```
+
+### Compliant (must stay silent): assignment read on only one path
+
+`main.c`
+
+```c
+int f(int c)
+{
+    int x = 0;
+    if (c) { x = 1; }
+    return x;
+}
+```
+
+### Compliant (must stay silent): out parameter pointer write
+
+`main.c`
+
+```c
+void f(int *out) { *out = 1; }
+```
+
+### Compliant (must stay silent): both branches assign then read
+
+`main.c`
+
+```c
+int f(int c)
+{
+    int x;
+    if (c) { x = 1; } else { x = 2; }
+    return x;
+}
+```
+
+### Violation (must be reported): compound assignment whose result is never read
+
+`main.c`
+
+```c
+void f(void)
+{
+    int x = 0;
+    x += 5; /*@V*/
+}
+```
+
+### Compliant (must stay silent): assignment used as a condition
+
+`main.c`
+
+```c
+int f(int *p)
+{
+    int c;
+    while ((c = *p++) != 0) { }
+    return c;
+}
+```
+
+### Compliant (must stay silent): a local array element store is not tracked
+
+`main.c`
+
+```c
+void f(void)
+{
+    int a[2];
+    a[0] = 1;
 }
 ```
 

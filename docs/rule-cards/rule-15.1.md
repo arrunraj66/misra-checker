@@ -14,7 +14,7 @@ A goto produced by a macro expansion is reported at the use.
 
 ## Tested cases
 
-4 of 4 pass.
+6 of 6 pass.
 
 | Kind | Case | Result |
 |---|---|---|
@@ -22,6 +22,8 @@ A goto produced by a macro expansion is reported at the use.
 | Compliant (must stay silent) | a label is not a goto | pass |
 | Violation (must be reported) | a forward goto | pass |
 | Violation (must be reported) | a backward goto | pass |
+| Violation (must be reported) | goto in a nested block | pass |
+| Compliant (must stay silent) | a switch label and a case are not gotos | pass |
 
 ## Case sources
 
@@ -73,5 +75,26 @@ again:
     i++;
     if (i < 3) { goto again; } /*@V*/
 }
+```
+
+### Violation (must be reported): goto in a nested block
+
+`main.c`
+
+```c
+void f(int a)
+{
+    if (a) { goto end; } /*@V*/
+end:
+    a = 0;
+}
+```
+
+### Compliant (must stay silent): a switch label and a case are not gotos
+
+`main.c`
+
+```c
+int f(int v) { switch (v) { case 1: return 1; default: return 0; } }
 ```
 

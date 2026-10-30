@@ -14,7 +14,7 @@ Needs every translation unit of the program in one run.
 
 ## Tested cases
 
-4 of 4 pass.
+6 of 6 pass.
 
 | Kind | Case | Result |
 |---|---|---|
@@ -22,6 +22,8 @@ Needs every translation unit of the program in one run.
 | Compliant (must stay silent) | main is exempt | pass |
 | Violation (must be reported) | external function used only in its own file | pass |
 | Violation (must be reported) | external object used only in its own file | pass |
+| Violation (must be reported) | a header declaration that no other file uses | pass |
+| Compliant (must stay silent) | an object accessed from two files | pass |
 
 ## Case sources
 
@@ -78,5 +80,44 @@ int get(void) { return only_obj; }
 ```c
 int get(void);
 int top(void) { return get(); }
+```
+
+### Violation (must be reported): a header declaration that no other file uses
+
+`h.h`
+
+```c
+int only_here(void);
+```
+
+`a.c`
+
+```c
+#include "h.h"
+int only_here(void) { return 1; } /*@V*/
+int run(void) { return only_here(); }
+```
+
+`b.c`
+
+```c
+int other(void) { return 2; }
+```
+
+### Compliant (must stay silent): an object accessed from two files
+
+`a.c`
+
+```c
+int shared = 1;
+int get(void);
+int main(void) { return get(); }
+```
+
+`b.c`
+
+```c
+extern int shared;
+int get(void) { return shared; }
 ```
 

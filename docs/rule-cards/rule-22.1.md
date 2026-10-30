@@ -14,7 +14,7 @@ Only the owner within one function is tracked; passing the object to any functio
 
 ## Tested cases
 
-10 of 10 pass.
+15 of 15 pass.
 
 | Kind | Case | Result |
 |---|---|---|
@@ -24,6 +24,11 @@ Only the owner within one function is tracked; passing the object to any functio
 | Compliant (must stay silent) | handed on to another function | pass |
 | Violation (must be reported) | allocation that is never released | pass |
 | Violation (must be reported) | a stream that is never closed | pass |
+| Compliant (must stay silent) | allocation checked for null then freed | pass |
+| Compliant (must stay silent) | allocation stored in a global | pass |
+| Violation (must be reported) | calloc never freed | pass |
+| Compliant (must stay silent) | a stream returned to the caller | pass |
+| Compliant (must stay silent) | the allocation is passed to a function that takes over | pass |
 | Compliant (must stay silent) | an allocation freed after use on every path | pass |
 | Compliant (must stay silent) | the allocation is stored in a structure that outlives the function | pass |
 | Compliant (must stay silent) | realloc keeps the owner | pass |
@@ -91,6 +96,69 @@ void g(void)
 {
     FILE *f = fopen("a", "r"); /*@V*/
     (void)f;
+}
+```
+
+### Compliant (must stay silent): allocation checked for null then freed
+
+`main.c`
+
+```c
+#include <stdlib.h>
+void f(void)
+{
+    char *p = malloc(4);
+    if (p != NULL)
+    {
+        p[0] = 'a';
+        free(p);
+    }
+}
+```
+
+### Compliant (must stay silent): allocation stored in a global
+
+`main.c`
+
+```c
+#include <stdlib.h>
+char *keep;
+void f(void) { keep = malloc(4); }
+```
+
+### Violation (must be reported): calloc never freed
+
+`main.c`
+
+```c
+#include <stdlib.h>
+void f(void)
+{
+    char *p = calloc(1, 4); /*@V*/
+    if (p != NULL) { p[0] = 'a'; }
+}
+```
+
+### Compliant (must stay silent): a stream returned to the caller
+
+`main.c`
+
+```c
+#include <stdio.h>
+FILE *f(void) { return fopen("a", "r"); }
+```
+
+### Compliant (must stay silent): the allocation is passed to a function that takes over
+
+`main.c`
+
+```c
+#include <stdlib.h>
+void take(char *p);
+void f(void)
+{
+    char *p = malloc(4);
+    take(p);
 }
 ```
 

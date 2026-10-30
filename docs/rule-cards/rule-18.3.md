@@ -14,13 +14,15 @@ Only pointers formed directly from named arrays are examined.
 
 ## Tested cases
 
-3 of 3 pass.
+5 of 5 pass.
 
 | Kind | Case | Result |
 |---|---|---|
 | Compliant (must stay silent) | comparing within one array | pass |
 | Violation (must be reported) | comparing across arrays | pass |
 | Violation (must be reported) | with the other relational operators | pass |
+| Compliant (must stay silent) | pointer parameters of unknown origin | pass |
+| Violation (must be reported) | relational comparison of two distinct arrays through addresses of elements | pass |
 
 ## Case sources
 
@@ -51,5 +53,23 @@ int f(void) { return &a[1] < &b[1]; } /*@V*/
 int a[8];
 int b[8];
 int g(void) { return &a[0] >= &b[0]; } /*@V*/
+```
+
+### Compliant (must stay silent): pointer parameters of unknown origin
+
+`main.c`
+
+```c
+int f(int *p, int *q) { return p < q; }
+```
+
+### Violation (must be reported): relational comparison of two distinct arrays through addresses of elements
+
+`main.c`
+
+```c
+int a[4];
+int b[4];
+int f(void) { return &a[1] >= &b[1]; } /*@V*/
 ```
 

@@ -16,7 +16,7 @@ Only constant addition, subtraction and multiplication are evaluated. Shifts are
 
 ## Tested cases
 
-6 of 7 pass.
+10 of 11 pass.
 
 | Kind | Case | Result |
 |---|---|---|
@@ -24,6 +24,10 @@ Only constant addition, subtraction and multiplication are evaluated. Shifts are
 | Violation (must be reported) | unsigned subtraction below zero | pass |
 | Violation (must be reported) | unsigned addition past the maximum | pass |
 | Violation (must be reported) | unsigned multiplication overflow | pass |
+| Violation (must be reported) | complement plus one | pass |
+| Violation (must be reported) | multiplication that wraps | pass |
+| Compliant (must stay silent) | shift that fits | pass |
+| Compliant (must stay silent) | signed constants are another matter | pass |
 | Compliant (must stay silent) | a signed expression and a result that fits | pass |
 | Compliant (must stay silent) | the common mask idiom that shifts bits out of an all-ones value | pass |
 | Known false negative (not detected yet) | a left shift that discards bits (whether this is wrap-around is undecided; shifts are not evaluated) | documented limit |
@@ -62,6 +66,38 @@ unsigned int b = 0xFFFFFFFFU + 1U; /*@V*/
 
 ```c
 unsigned int c = 0x10000U * 0x10000U; /*@V*/
+```
+
+### Violation (must be reported): complement plus one
+
+`main.c`
+
+```c
+unsigned int a = ~0u + 1u; /*@V*/
+```
+
+### Violation (must be reported): multiplication that wraps
+
+`main.c`
+
+```c
+unsigned int a = 0xFFFFFFFFu * 2u; /*@V*/
+```
+
+### Compliant (must stay silent): shift that fits
+
+`main.c`
+
+```c
+unsigned int a = 1u << 3;
+```
+
+### Compliant (must stay silent): signed constants are another matter
+
+`main.c`
+
+```c
+int a = 2147483647 - 1;
 ```
 
 ### Compliant (must stay silent): a signed expression and a result that fits

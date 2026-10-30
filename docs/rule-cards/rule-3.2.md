@@ -14,13 +14,15 @@ Only line comments are examined.
 
 ## Tested cases
 
-3 of 3 pass.
+5 of 5 pass.
 
 | Kind | Case | Result |
 |---|---|---|
 | Compliant (must stay silent) | line comment without a continuation | pass |
 | Compliant (must stay silent) | block comment may end a line with a backslash | pass |
 | Violation (must be reported) | line comment continued by a backslash (the next line becomes part of the comment) | pass |
+| Compliant (must stay silent) | a line comment that ends with a backslash inside a string | pass |
+| Compliant (must stay silent) | backslash followed by a space is not a continuation of a block comment | pass |
 
 ## Case sources
 
@@ -51,5 +53,23 @@ int b;
 // continued comment \
 int hidden_by_comment;
 int c;
+```
+
+### Compliant (must stay silent): a line comment that ends with a backslash inside a string
+
+`main.c`
+
+```c
+const char *s = "a\\";
+int a;
+```
+
+### Compliant (must stay silent): backslash followed by a space is not a continuation of a block comment
+
+`main.c`
+
+```c
+/* text \ */
+int a;
 ```
 

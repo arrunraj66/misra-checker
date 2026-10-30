@@ -14,12 +14,13 @@ Only the two functions of stdlib.h are covered.
 
 ## Tested cases
 
-2 of 2 pass.
+3 of 3 pass.
 
 | Kind | Case | Result |
 |---|---|---|
 | Compliant (must stay silent) | a hand written search | pass |
 | Violation (must be reported) | qsort and bsearch | pass |
+| Violation (must be reported) | qsort with a comparator | pass |
 
 ## Case sources
 
@@ -43,5 +44,15 @@ void f(int *a)
     qsort(a, 4, sizeof(int), cmp); /*@V*/
     (void)bsearch(a, a, 4, sizeof(int), cmp); /*@V*/
 }
+```
+
+### Violation (must be reported): qsort with a comparator
+
+`main.c`
+
+```c
+#include <stdlib.h>
+int cmp(const void *a, const void *b);
+void f(int *t, unsigned long n) { qsort(t, n, sizeof(int), cmp); } /*@V*/
 ```
 

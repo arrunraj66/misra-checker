@@ -14,12 +14,14 @@ strtol and friends are not reported.
 
 ## Tested cases
 
-2 of 2 pass.
+4 of 4 pass.
 
 | Kind | Case | Result |
 |---|---|---|
 | Compliant (must stay silent) | strtol | pass |
 | Violation (must be reported) | the ato family | pass |
+| Violation (must be reported) | atoll | pass |
+| Compliant (must stay silent) | strtoul | pass |
 
 ## Case sources
 
@@ -44,5 +46,23 @@ void f(const char *s)
     (void)atol(s); /*@V*/
     (void)atof(s); /*@V*/
 }
+```
+
+### Violation (must be reported): atoll
+
+`main.c`
+
+```c
+#include <stdlib.h>
+long long f(const char *s) { return atoll(s); } /*@V*/
+```
+
+### Compliant (must stay silent): strtoul
+
+`main.c`
+
+```c
+#include <stdlib.h>
+unsigned long f(const char *s) { return strtoul(s, 0, 10); }
 ```
 

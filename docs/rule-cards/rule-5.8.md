@@ -14,13 +14,15 @@ Needs every translation unit of the program in one run; with a single translatio
 
 ## Tested cases
 
-3 of 3 pass.
+5 of 5 pass.
 
 | Kind | Case | Result |
 |---|---|---|
 | Compliant (must stay silent) | distinct names across files | pass |
 | Violation (must be reported) | an external name that another file uses as a static name | pass |
 | Violation (must be reported) | an external function whose name is a static function elsewhere | pass |
+| Compliant (must stay silent) | the same external name declared in a header and defined once | pass |
+| Violation (must be reported) | a static function shares a name with an external function elsewhere | pass |
 
 ## Case sources
 
@@ -59,6 +61,45 @@ int use_b(void) { return counter; }
 ```
 
 ### Violation (must be reported): an external function whose name is a static function elsewhere
+
+`a.c`
+
+```c
+int helper(void) { return 1; }
+```
+
+`b.c`
+
+```c
+static int helper(void) { return 2; } /*@V*/
+int use(void) { return helper(); }
+```
+
+### Compliant (must stay silent): the same external name declared in a header and defined once
+
+`common.h`
+
+```c
+extern int shared;
+int get(void);
+```
+
+`a.c`
+
+```c
+#include "common.h"
+int shared = 1;
+int get(void) { return shared; }
+```
+
+`b.c`
+
+```c
+#include "common.h"
+int use(void) { return shared + get(); }
+```
+
+### Violation (must be reported): a static function shares a name with an external function elsewhere
 
 `a.c`
 

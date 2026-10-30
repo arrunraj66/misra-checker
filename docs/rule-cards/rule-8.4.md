@@ -14,7 +14,7 @@ A declaration in a header counts as earlier only when it is visible in the same 
 
 ## Tested cases
 
-7 of 7 pass.
+10 of 10 pass.
 
 | Kind | Case | Result |
 |---|---|---|
@@ -25,6 +25,9 @@ A declaration in a header counts as earlier only when it is visible in the same 
 | Violation (must be reported) | function defined without a prior declaration | pass |
 | Violation (must be reported) | object defined without a prior declaration | pass |
 | Violation (must be reported) | a prototype that appears after the definition does not help | pass |
+| Compliant (must stay silent) | a prior declaration from an included header | pass |
+| Compliant (must stay silent) | an inline function that is static | pass |
+| Violation (must be reported) | a non-static inline function definition with no declaration | pass |
 
 ## Case sources
 
@@ -89,5 +92,38 @@ int total = 0; /*@V*/
 ```c
 int late(void) { return 1; } /*@V*/
 int late(void);
+```
+
+### Compliant (must stay silent): a prior declaration from an included header
+
+`h.h`
+
+```c
+int get(void);
+extern int level;
+```
+
+`a.c`
+
+```c
+#include "h.h"
+int level = 3;
+int get(void) { return level; }
+```
+
+### Compliant (must stay silent): an inline function that is static
+
+`main.c`
+
+```c
+static inline int sq(int a) { return a * a; }
+```
+
+### Violation (must be reported): a non-static inline function definition with no declaration
+
+`main.c`
+
+```c
+inline int sq(int a) { return a * a; } /*@V*/
 ```
 

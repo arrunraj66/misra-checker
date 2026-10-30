@@ -14,7 +14,7 @@ NULL passed through the argument of another macro still counts as NULL.
 
 ## Tested cases
 
-8 of 8 pass.
+14 of 14 pass.
 
 | Kind | Case | Result |
 |---|---|---|
@@ -23,6 +23,12 @@ NULL passed through the argument of another macro still counts as NULL.
 | Violation (must be reported) | zero as a null pointer | pass |
 | Violation (must be reported) | comparison with zero | pass |
 | Violation (must be reported) | a cast zero | pass |
+| Violation (must be reported) | zero returned from a pointer function | pass |
+| Violation (must be reported) | zero in a conditional operator | pass |
+| Violation (must be reported) | a character constant used as a null pointer | pass |
+| Compliant (must stay silent) | cast of NULL | pass |
+| Compliant (must stay silent) | negation of a pointer | pass |
+| Compliant (must stay silent) | pointer compared with another pointer | pass |
 | Violation (must be reported) | zero passed where a pointer is expected | pass |
 | Violation (must be reported) | a home made null macro | pass |
 | Compliant (must stay silent) | NULL passed as an argument | pass |
@@ -69,6 +75,55 @@ int f(int *p) { return p == 0; } /*@V*/
 
 ```c
 void *q = (void *)0; /*@V*/
+```
+
+### Violation (must be reported): zero returned from a pointer function
+
+`main.c`
+
+```c
+int *f(void) { return 0; } /*@V*/
+```
+
+### Violation (must be reported): zero in a conditional operator
+
+`main.c`
+
+```c
+int *f(int c, int *p) { return c ? p : 0; } /*@V*/
+```
+
+### Violation (must be reported): a character constant used as a null pointer
+
+`main.c`
+
+```c
+char *p = '\0'; /*@V*/
+```
+
+### Compliant (must stay silent): cast of NULL
+
+`main.c`
+
+```c
+#include <stddef.h>
+int *p = (int *)NULL;
+```
+
+### Compliant (must stay silent): negation of a pointer
+
+`main.c`
+
+```c
+int f(int *p) { return !p; }
+```
+
+### Compliant (must stay silent): pointer compared with another pointer
+
+`main.c`
+
+```c
+int f(int *p, int *q) { return p == q; }
 ```
 
 ### Violation (must be reported): zero passed where a pointer is expected

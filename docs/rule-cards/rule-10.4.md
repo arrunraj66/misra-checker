@@ -14,7 +14,7 @@ Constants are exempt. The essential type of arithmetic on small integers is comp
 
 ## Tested cases
 
-10 of 10 pass.
+16 of 16 pass.
 
 | Kind | Case | Result |
 |---|---|---|
@@ -24,6 +24,12 @@ Constants are exempt. The essential type of arithmetic on small integers is comp
 | Violation (must be reported) | signed with unsigned | pass |
 | Violation (must be reported) | integer with floating | pass |
 | Violation (must be reported) | Boolean with integer in a comparison | pass |
+| Violation (must be reported) | unsigned compared with a negative constant | pass |
+| Violation (must be reported) | floating variable compared with an integer variable | pass |
+| Compliant (must stay silent) | unsigned with a non-negative integer constant | pass |
+| Compliant (must stay silent) | character compared with a character constant | pass |
+| Compliant (must stay silent) | signed variables of different widths | pass |
+| Violation (must be reported) | enum compared with an integer variable | pass |
 | Compliant (must stay silent) | comparisons of the same category | pass |
 | Compliant (must stay silent) | operands that are constants | pass |
 | Violation (must be reported) | two different enumerations compared | pass |
@@ -78,6 +84,55 @@ int g(int a, double b) { return a < b; } /*@V*/
 
 ```c
 int h(_Bool f, int a) { return f == a; } /*@V*/
+```
+
+### Violation (must be reported): unsigned compared with a negative constant
+
+`main.c`
+
+```c
+int f(unsigned int u) { return u < -1; } /*@V*/
+```
+
+### Violation (must be reported): floating variable compared with an integer variable
+
+`main.c`
+
+```c
+int f(float a, int b) { return a < b; } /*@V*/
+```
+
+### Compliant (must stay silent): unsigned with a non-negative integer constant
+
+`main.c`
+
+```c
+unsigned int f(unsigned int u) { return u + 1; }
+```
+
+### Compliant (must stay silent): character compared with a character constant
+
+`main.c`
+
+```c
+int f(char c) { return c == 'a'; }
+```
+
+### Compliant (must stay silent): signed variables of different widths
+
+`main.c`
+
+```c
+int f(short a, long b) { return a < b; }
+```
+
+### Violation (must be reported): enum compared with an integer variable
+
+`main.c`
+
+```c
+enum e { A, B };
+int f(enum e v, int i) { return v == i; } /*@V*/
 ```
 
 ### Compliant (must stay silent): comparisons of the same category

@@ -14,7 +14,7 @@ The implementation-defined types a compiler may allow are not accepted unless th
 
 ## Tested cases
 
-4 of 4 pass.
+9 of 9 pass.
 
 | Kind | Case | Result |
 |---|---|---|
@@ -22,6 +22,11 @@ The implementation-defined types a compiler may allow are not accepted unless th
 | Violation (must be reported) | a char bit-field | pass |
 | Violation (must be reported) | a short and a long bit-field | pass |
 | Violation (must be reported) | an enumerated bit-field | pass |
+| Compliant (must stay silent) | typedef of unsigned int used as a bit-field | pass |
+| Compliant (must stay silent) | plain unsigned and signed int bit-fields | pass |
+| Violation (must be reported) | an unsigned char bit-field | pass |
+| Compliant (must stay silent) | zero-width unnamed bit-field | pass |
+| Compliant (must stay silent) | a boolean bit-field | pass |
 
 ## Case sources
 
@@ -61,5 +66,46 @@ struct s2
 ```c
 enum e { E1, E2 };
 struct s3 { enum e a : 2; } v3; /*@V*/
+```
+
+### Compliant (must stay silent): typedef of unsigned int used as a bit-field
+
+`main.c`
+
+```c
+typedef unsigned int bits_t;
+struct s { bits_t a : 3; };
+```
+
+### Compliant (must stay silent): plain unsigned and signed int bit-fields
+
+`main.c`
+
+```c
+struct s { unsigned a : 3; signed int b : 3; };
+```
+
+### Violation (must be reported): an unsigned char bit-field
+
+`main.c`
+
+```c
+struct s { unsigned char a : 3; }; /*@V*/
+```
+
+### Compliant (must stay silent): zero-width unnamed bit-field
+
+`main.c`
+
+```c
+struct s { unsigned a : 3; unsigned : 0; unsigned b : 2; };
+```
+
+### Compliant (must stay silent): a boolean bit-field
+
+`main.c`
+
+```c
+struct s { _Bool flag : 1; };
 ```
 

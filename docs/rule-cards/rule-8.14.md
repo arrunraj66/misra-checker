@@ -14,13 +14,16 @@ The qualifier is reported wherever it is written.
 
 ## Tested cases
 
-3 of 3 pass.
+6 of 6 pass.
 
 | Kind | Case | Result |
 |---|---|---|
 | Compliant (must stay silent) | no restrict | pass |
 | Violation (must be reported) | restrict parameters | pass |
 | Violation (must be reported) | restrict pointer object | pass |
+| Violation (must be reported) | restrict member in a structure | pass |
+| Compliant (must stay silent) | the word restrict inside an identifier | pass |
+| Violation (must be reported) | restrict through a typedef | pass |
 
 ## Case sources
 
@@ -46,5 +49,30 @@ void copy(int *restrict dst, const int *restrict src, int n) { } /*@V*/
 
 ```c
 int *restrict global_ptr; /*@V*/
+```
+
+### Violation (must be reported): restrict member in a structure
+
+`main.c`
+
+```c
+struct s { int *restrict p; }; /*@V*/
+```
+
+### Compliant (must stay silent): the word restrict inside an identifier
+
+`main.c`
+
+```c
+int restricted;
+int restrict_count;
+```
+
+### Violation (must be reported): restrict through a typedef
+
+`main.c`
+
+```c
+typedef int *restrict rp_t; /*@V*/
 ```
 

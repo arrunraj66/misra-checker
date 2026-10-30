@@ -14,7 +14,7 @@ Compiler built-in functions and predefined macros are not reported. Only the ext
 
 ## Tested cases
 
-10 of 10 pass.
+21 of 21 pass.
 
 | Kind | Case | Result |
 |---|---|---|
@@ -28,6 +28,17 @@ Compiler built-in functions and predefined macros are not reported. Only the ext
 | Violation (must be reported) | omitted middle operand of the conditional operator | pass |
 | Violation (must be reported) | explicit attribute | pass |
 | Compliant (must stay silent) | a function-like macro is not an extension | pass |
+| Violation (must be reported) | attribute on a variable | pass |
+| Violation (must be reported) | attribute on a function declaration | pass |
+| Violation (must be reported) | binary literal | pass |
+| Violation (must be reported) | zero-length array | pass |
+| Compliant (must stay silent) | flexible array member is C99 | pass |
+| Compliant (must stay silent) | restrict, inline, compound literal and long long are C99 | pass |
+| Compliant (must stay silent) | designated initializers are C99 | pass |
+| Compliant (must stay silent) | a comment mentioning __attribute__ and asm | pass |
+| Violation (must be reported) | statement expression inside a macro use | pass |
+| Violation (must be reported) | inline assembly with volatile | pass |
+| Violation (must be reported) | case range in a switch with several labels | pass |
 
 ## Case sources
 
@@ -128,5 +139,107 @@ int unused_value __attribute__((unused)); /*@V*/
 ```c
 #define SQUARE(x) ((x) * (x))
 int f(int v) { return SQUARE(v); }
+```
+
+### Violation (must be reported): attribute on a variable
+
+`main.c`
+
+```c
+int x __attribute__((unused)); /*@V*/
+```
+
+### Violation (must be reported): attribute on a function declaration
+
+`main.c`
+
+```c
+void f(void) __attribute__((noreturn)); /*@V*/
+```
+
+### Violation (must be reported): binary literal
+
+`main.c`
+
+```c
+int b = 0b101; /*@V*/
+```
+
+### Violation (must be reported): zero-length array
+
+`main.c`
+
+```c
+struct s { int n; int d[0]; /*@V*/ };
+```
+
+### Compliant (must stay silent): flexible array member is C99
+
+`main.c`
+
+```c
+struct s { int n; int d[]; };
+```
+
+### Compliant (must stay silent): restrict, inline, compound literal and long long are C99
+
+`main.c`
+
+```c
+static inline int f(int *restrict p) { long long w = 1LL; return *p + (int)w + (int){3}; }
+```
+
+### Compliant (must stay silent): designated initializers are C99
+
+`main.c`
+
+```c
+int a[4] = { [2] = 1 };
+struct p { int x; int y; } v = { .y = 2 };
+```
+
+### Compliant (must stay silent): a comment mentioning __attribute__ and asm
+
+`main.c`
+
+```c
+/* __attribute__((x)) asm("nop") */
+const char *s = "__attribute__ typeof asm";
+```
+
+### Violation (must be reported): statement expression inside a macro use
+
+`main.c`
+
+```c
+#define SQ(x) ({ int t = (x); t * t; })
+int f(int a) { return SQ(a); } /*@V*/
+```
+
+### Violation (must be reported): inline assembly with volatile
+
+`main.c`
+
+```c
+void f(void)
+{
+    __asm__ volatile ("nop"); /*@V*/
+}
+```
+
+### Violation (must be reported): case range in a switch with several labels
+
+`main.c`
+
+```c
+int f(int v)
+{
+    switch (v)
+    {
+        case 1: return 1;
+        case 2 ... 5: return 2; /*@V*/
+        default: return 0;
+    }
+}
 ```
 

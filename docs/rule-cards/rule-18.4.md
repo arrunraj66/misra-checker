@@ -14,7 +14,7 @@ Subscripting, dereference and increment or decrement are not reported.
 
 ## Tested cases
 
-8 of 8 pass.
+12 of 12 pass.
 
 | Kind | Case | Result |
 |---|---|---|
@@ -24,6 +24,10 @@ Subscripting, dereference and increment or decrement are not reported.
 | Violation (must be reported) | pointer minus integer | pass |
 | Violation (must be reported) | compound assignments on a pointer | pass |
 | Violation (must be reported) | an array name decays to a pointer | pass |
+| Violation (must be reported) | dereference of pointer plus offset | pass |
+| Compliant (must stay silent) | a pointer compared with another | pass |
+| Compliant (must stay silent) | arithmetic on an integer converted from a count | pass |
+| Violation (must be reported) | pointer subtraction assigned to a long | pass |
 | Violation (must be reported) | the difference of two pointers | pass |
 | Compliant (must stay silent) | subscript instead of arithmetic | pass |
 
@@ -81,6 +85,38 @@ void h(int *p)
 ```c
 int a[4];
 int *k(void) { return a + 1; } /*@V*/
+```
+
+### Violation (must be reported): dereference of pointer plus offset
+
+`main.c`
+
+```c
+int f(int *p) { return *(p + 1); } /*@V*/
+```
+
+### Compliant (must stay silent): a pointer compared with another
+
+`main.c`
+
+```c
+int f(int *p, int *q) { return p == q; }
+```
+
+### Compliant (must stay silent): arithmetic on an integer converted from a count
+
+`main.c`
+
+```c
+int f(int *p, int i) { return p[i]; }
+```
+
+### Violation (must be reported): pointer subtraction assigned to a long
+
+`main.c`
+
+```c
+long f(char *e, char *b) { return e - b; } /*@V*/
 ```
 
 ### Violation (must be reported): the difference of two pointers

@@ -14,7 +14,7 @@ Only explicit casts are examined.
 
 ## Tested cases
 
-7 of 7 pass.
+9 of 9 pass.
 
 | Kind | Case | Result |
 |---|---|---|
@@ -23,6 +23,8 @@ Only explicit casts are examined.
 | Violation (must be reported) | integer address cast to a pointer | pass |
 | Violation (must be reported) | pointer cast to an integer | pass |
 | Violation (must be reported) | a memory-mapped register address | pass |
+| Violation (must be reported) | pointer cast to unsigned long | pass |
+| Compliant (must stay silent) | integer constant zero cast to pointer | pass |
 | Compliant (must stay silent) | a cast between pointers is not an integer cast | pass |
 | Violation (must be reported) | a cast of an integer constant to a pointer inside a function | pass |
 
@@ -68,6 +70,22 @@ unsigned long f(int *p) { return (unsigned long)p; } /*@V*/
 ```c
 #define REG (*(volatile unsigned int *)0x40021000)
 unsigned int f(void) { return REG; } /*@V*/
+```
+
+### Violation (must be reported): pointer cast to unsigned long
+
+`main.c`
+
+```c
+unsigned long f(int *p) { return (unsigned long)p; } /*@V*/
+```
+
+### Compliant (must stay silent): integer constant zero cast to pointer
+
+`main.c`
+
+```c
+int *f(void) { return (int *)0; }
 ```
 
 ### Compliant (must stay silent): a cast between pointers is not an integer cast

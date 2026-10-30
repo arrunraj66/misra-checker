@@ -14,7 +14,7 @@ A web address inside a block comment contains a double slash and is reported (st
 
 ## Tested cases
 
-6 of 6 pass.
+13 of 13 pass.
 
 | Kind | Case | Result |
 |---|---|---|
@@ -24,6 +24,13 @@ A web address inside a block comment contains a double slash and is reported (st
 | Violation (must be reported) | block comment containing a slash-star | pass |
 | Violation (must be reported) | block comment containing a double slash | pass |
 | Violation (must be reported) | web address inside a block comment (strict reading) | pass |
+| Violation (must be reported) | line comment containing a block-comment opener | pass |
+| Compliant (must stay silent) | two comments on one line | pass |
+| Compliant (must stay silent) | comment ending with several stars | pass |
+| Violation (must be reported) | a nested opener hidden at the end of a comment | pass |
+| Compliant (must stay silent) | a division operator in code beside a comment | pass |
+| Compliant (must stay silent) | slashes inside a character constant | pass |
+| Violation (must be reported) | web address inside a line comment (strict reading) | pass |
 
 ## Case sources
 
@@ -78,6 +85,65 @@ int a;
 
 ```c
 /* docs: http://example.com/page */ /*@V*/
+int a;
+```
+
+### Violation (must be reported): line comment containing a block-comment opener
+
+`main.c`
+
+```c
+int a; // see /* here */ /*@V*/
+```
+
+### Compliant (must stay silent): two comments on one line
+
+`main.c`
+
+```c
+int a; /* one *//* two */
+```
+
+### Compliant (must stay silent): comment ending with several stars
+
+`main.c`
+
+```c
+/*** banner ***/
+int a;
+```
+
+### Violation (must be reported): a nested opener hidden at the end of a comment
+
+`main.c`
+
+```c
+/* text /* */
+int a;
+```
+
+### Compliant (must stay silent): a division operator in code beside a comment
+
+`main.c`
+
+```c
+int f(int x, int y) { return x / y; /* quotient */ }
+```
+
+### Compliant (must stay silent): slashes inside a character constant
+
+`main.c`
+
+```c
+int c = '/';
+```
+
+### Violation (must be reported): web address inside a line comment (strict reading)
+
+`main.c`
+
+```c
+// see http://example.org
 int a;
 ```
 

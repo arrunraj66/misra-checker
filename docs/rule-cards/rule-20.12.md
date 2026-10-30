@@ -14,7 +14,7 @@ Whether the second use is expanded is not analysed; the combined use is reported
 
 ## Tested cases
 
-4 of 4 pass.
+6 of 6 pass.
 
 | Kind | Case | Result |
 |---|---|---|
@@ -22,6 +22,8 @@ Whether the second use is expanded is not analysed; the combined use is reported
 | Compliant (must stay silent) | used only without the operator | pass |
 | Violation (must be reported) | used with # and also on its own | pass |
 | Violation (must be reported) | used with ## and also on its own | pass |
+| Compliant (must stay silent) | the two-level stringizing idiom | pass |
+| Violation (must be reported) | pasting an operand that is also used on its own | pass |
 
 ## Case sources
 
@@ -61,5 +63,24 @@ int v = (SHOW(1), 0);
 #define TWICE(x) x##_a + x /*@V*/
 int q_a = 1, q = 2;
 int v = TWICE(q);
+```
+
+### Compliant (must stay silent): the two-level stringizing idiom
+
+`main.c`
+
+```c
+#define STR(x) #x
+#define XSTR(x) STR(x)
+const char *s = XSTR(42);
+```
+
+### Violation (must be reported): pasting an operand that is also used on its own
+
+`main.c`
+
+```c
+#define MK(x) x##_t x /*@V*/
+typedef int MK(a);
 ```
 

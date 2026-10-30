@@ -14,7 +14,7 @@ Assignments that stand alone as expression statements are accepted; the initiali
 
 ## Tested cases
 
-5 of 5 pass.
+9 of 9 pass.
 
 | Kind | Case | Result |
 |---|---|---|
@@ -23,6 +23,10 @@ Assignments that stand alone as expression statements are accepted; the initiali
 | Violation (must be reported) | assignment used as a condition | pass |
 | Violation (must be reported) | chained assignment | pass |
 | Violation (must be reported) | assignment inside an argument | pass |
+| Violation (must be reported) | assignment returned | pass |
+| Violation (must be reported) | assignment in a loop condition | pass |
+| Compliant (must stay silent) | compound assignment as a statement | pass |
+| Compliant (must stay silent) | assignments in separate for clauses | pass |
 
 ## Case sources
 
@@ -85,6 +89,48 @@ void h(int v)
 {
     int x;
     use(x = v); /*@V*/
+}
+```
+
+### Violation (must be reported): assignment returned
+
+`main.c`
+
+```c
+int f(int a) { int b; return b = a; } /*@V*/
+```
+
+### Violation (must be reported): assignment in a loop condition
+
+`main.c`
+
+```c
+int f(int *p)
+{
+    int c;
+    int n = 0;
+    while ((c = *p++) != 0) { n += c; } /*@V*/
+    return n;
+}
+```
+
+### Compliant (must stay silent): compound assignment as a statement
+
+`main.c`
+
+```c
+void f(int a) { a += 2; (void)a; }
+```
+
+### Compliant (must stay silent): assignments in separate for clauses
+
+`main.c`
+
+```c
+void f(int n)
+{
+    int i, j;
+    for (i = 0, j = n; i < j; i++) { }
 }
 ```
 

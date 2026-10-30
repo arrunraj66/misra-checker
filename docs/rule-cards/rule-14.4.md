@@ -14,7 +14,7 @@ Only controlling expressions are examined; operands of && and || are Rule 10.1's
 
 ## Tested cases
 
-9 of 9 pass.
+14 of 14 pass.
 
 | Kind | Case | Result |
 |---|---|---|
@@ -23,6 +23,11 @@ Only controlling expressions are examined; operands of && and || are Rule 10.1's
 | Violation (must be reported) | an integer as a condition | pass |
 | Violation (must be reported) | a pointer as a condition | pass |
 | Violation (must be reported) | an integer as the condition of the conditional operator | pass |
+| Violation (must be reported) | while(1) is not essentially Boolean | pass |
+| Compliant (must stay silent) | for(;;) | pass |
+| Compliant (must stay silent) | Boolean variable and double negation | pass |
+| Violation (must be reported) | integer variable in a for condition | pass |
+| Violation (must be reported) | floating variable as a condition | pass |
 | Compliant (must stay silent) | a masked comparison and a pointer comparison | pass |
 | Compliant (must stay silent) | a Boolean valued macro expression | pass |
 | Violation (must be reported) | a bit test without comparison | pass |
@@ -76,6 +81,46 @@ int g(int *p)
 
 ```c
 int h(int x) { return x ? 1 : 2; } /*@V*/
+```
+
+### Violation (must be reported): while(1) is not essentially Boolean
+
+`main.c`
+
+```c
+void f(void) { while (1) { } } /*@V*/
+```
+
+### Compliant (must stay silent): for(;;)
+
+`main.c`
+
+```c
+void f(void) { for (;;) { } }
+```
+
+### Compliant (must stay silent): Boolean variable and double negation
+
+`main.c`
+
+```c
+int f(_Bool b, int x) { if (b) { return 1; } if (!!x) { return 2; } return 0; }
+```
+
+### Violation (must be reported): integer variable in a for condition
+
+`main.c`
+
+```c
+void f(int n) { for (; n; n--) { } } /*@V*/
+```
+
+### Violation (must be reported): floating variable as a condition
+
+`main.c`
+
+```c
+int f(float x) { if (x) { return 1; } return 0; } /*@V*/
 ```
 
 ### Compliant (must stay silent): a masked comparison and a pointer comparison

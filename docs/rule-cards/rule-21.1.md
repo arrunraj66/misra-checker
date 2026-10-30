@@ -14,7 +14,7 @@ Names reserved for the standard library by their prefix are not covered.
 
 ## Tested cases
 
-4 of 4 pass.
+8 of 8 pass.
 
 | Kind | Case | Result |
 |---|---|---|
@@ -22,6 +22,10 @@ Names reserved for the standard library by their prefix are not covered.
 | Violation (must be reported) | a name with a leading double underscore | pass |
 | Violation (must be reported) | underscore and a capital letter | pass |
 | Violation (must be reported) | #undef of a reserved name | pass |
+| Violation (must be reported) | defining a standard macro name | pass |
+| Violation (must be reported) | defining a keyword-like reserved name | pass |
+| Compliant (must stay silent) | a name with an underscore inside | pass |
+| Violation (must be reported) | undefining a predefined macro | pass |
 
 ## Case sources
 
@@ -56,5 +60,41 @@ Names reserved for the standard library by their prefix are not covered.
 
 ```c
 #undef __FILE__ /*@V*/
+```
+
+### Violation (must be reported): defining a standard macro name
+
+`main.c`
+
+```c
+#define errno 0 /*@V*/
+int x;
+```
+
+### Violation (must be reported): defining a keyword-like reserved name
+
+`main.c`
+
+```c
+#define _Reserved 1 /*@V*/
+int x;
+```
+
+### Compliant (must stay silent): a name with an underscore inside
+
+`main.c`
+
+```c
+#define MY_LEVEL 1
+int x;
+```
+
+### Violation (must be reported): undefining a predefined macro
+
+`main.c`
+
+```c
+#undef __STDC__ /*@V*/
+int x;
 ```
 

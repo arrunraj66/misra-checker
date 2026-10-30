@@ -14,7 +14,7 @@ Only redeclarations in the same translation unit are compared.
 
 ## Tested cases
 
-4 of 4 pass.
+6 of 6 pass.
 
 | Kind | Case | Result |
 |---|---|---|
@@ -22,6 +22,8 @@ Only redeclarations in the same translation unit are compared.
 | Compliant (must stay silent) | a different function without static | pass |
 | Violation (must be reported) | the definition omits static after a static declaration | pass |
 | Violation (must be reported) | an extern redeclaration of a static function | pass |
+| Violation (must be reported) | an extern redeclaration of a static object | pass |
+| Compliant (must stay silent) | static function declared and defined static | pass |
 
 ## Case sources
 
@@ -58,5 +60,24 @@ int f(void) { return 1; } /*@V*/
 ```c
 static int g(void);
 extern int g(void) { return 1; } /*@V*/
+```
+
+### Violation (must be reported): an extern redeclaration of a static object
+
+`main.c`
+
+```c
+static int level;
+extern int level; /*@V*/
+```
+
+### Compliant (must stay silent): static function declared and defined static
+
+`main.c`
+
+```c
+static int f(void);
+static int f(void) { return 1; }
+int g(void) { return f(); }
 ```
 

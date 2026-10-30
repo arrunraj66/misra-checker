@@ -14,13 +14,15 @@ The compiler rejects these files; the finding comes from that diagnostic.
 
 ## Tested cases
 
-3 of 3 pass.
+5 of 5 pass.
 
 | Kind | Case | Result |
 |---|---|---|
 | Compliant (must stay silent) | balanced conditionals | pass |
 | Violation (must be reported) | an #if without #endif | pass |
 | Violation (must be reported) | an #ifdef without #endif inside a function body file | pass |
+| Violation (must be reported) | an #if without #endif in an included header | pass |
+| Compliant (must stay silent) | nested balanced conditionals | pass |
 
 ## Case sources
 
@@ -52,5 +54,35 @@ int a;
 ```c
 #ifdef A
 void f(void) { }
+```
+
+### Violation (must be reported): an #if without #endif in an included header
+
+`h.h`
+
+```c
+#if 1
+int h;
+```
+
+`main.c`
+
+```c
+#include "h.h"
+int a;
+```
+
+### Compliant (must stay silent): nested balanced conditionals
+
+`main.c`
+
+```c
+#if 1
+#ifdef A
+int a;
+#else
+int b;
+#endif
+#endif
 ```
 

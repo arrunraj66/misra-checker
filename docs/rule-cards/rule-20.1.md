@@ -14,7 +14,7 @@ Directives in inactive conditional groups are not treated as code or as includes
 
 ## Tested cases
 
-4 of 4 pass.
+7 of 7 pass.
 
 | Kind | Case | Result |
 |---|---|---|
@@ -22,6 +22,9 @@ Directives in inactive conditional groups are not treated as code or as includes
 | Compliant (must stay silent) | an include in an inactive group | pass |
 | Violation (must be reported) | an include after a declaration | pass |
 | Violation (must be reported) | an include after a function | pass |
+| Violation (must be reported) | an include inside a function body | pass |
+| Compliant (must stay silent) | pragma, define and error-free directives before the includes | pass |
+| Violation (must be reported) | an include after a stray semicolon declaration | pass |
 
 ## Case sources
 
@@ -64,5 +67,39 @@ int a;
 ```c
 void f(void) { }
 #include <string.h> /*@V*/
+```
+
+### Violation (must be reported): an include inside a function body
+
+`main.c`
+
+```c
+void f(void)
+{
+#include "inner.h" /*@V*/
+}
+```
+
+### Compliant (must stay silent): pragma, define and error-free directives before the includes
+
+`main.c`
+
+```c
+#pragma once
+#define LEVEL 2
+#if LEVEL > 1
+#include <stddef.h>
+#endif
+#include <stdint.h>
+int x;
+```
+
+### Violation (must be reported): an include after a stray semicolon declaration
+
+`main.c`
+
+```c
+int x;
+#include <stddef.h> /*@V*/
 ```
 

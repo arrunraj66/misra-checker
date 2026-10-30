@@ -14,7 +14,7 @@ A parameter referenced only inside a macro that is not expanded counts as unused
 
 ## Tested cases
 
-8 of 8 pass.
+14 of 14 pass.
 
 | Kind | Case | Result |
 |---|---|---|
@@ -23,6 +23,12 @@ A parameter referenced only inside a macro that is not expanded counts as unused
 | Compliant (must stay silent) | a prototype never uses its parameters | pass |
 | Violation (must be reported) | one parameter unused | pass |
 | Violation (must be reported) | all parameters unused | pass |
+| Violation (must be reported) | unused parameter in a static function | pass |
+| Compliant (must stay silent) | parameter used only as an array bound of another parameter | pass |
+| Compliant (must stay silent) | parameter passed on to another function | pass |
+| Compliant (must stay silent) | parameter used only by taking its address | pass |
+| Compliant (must stay silent) | parameter used only in a macro argument that expands to it | pass |
+| Violation (must be reported) | parameter used only inside a macro that discards it | pass |
 | Compliant (must stay silent) | a parameter used only in sizeof | pass |
 | Compliant (must stay silent) | a parameter used only in a condition | pass |
 | Violation (must be reported) | a parameter shadowed by a local and never used | pass |
@@ -67,6 +73,68 @@ int first(int a, int b) { return a; } /*@V*/
 
 ```c
 void nothing(int a, char *b) { } /*@V*/
+```
+
+### Violation (must be reported): unused parameter in a static function
+
+`main.c`
+
+```c
+static int f(int a, int b) /*@V*/
+{
+    return a;
+}
+int g(void) { return f(1, 2); }
+```
+
+### Compliant (must stay silent): parameter used only as an array bound of another parameter
+
+`main.c`
+
+```c
+void f(int n, int a[n])
+{
+    a[0] = 1;
+}
+```
+
+### Compliant (must stay silent): parameter passed on to another function
+
+`main.c`
+
+```c
+int g(int);
+int f(int a) { return g(a); }
+```
+
+### Compliant (must stay silent): parameter used only by taking its address
+
+`main.c`
+
+```c
+int *f(int a) { static int *p; p = &a; return p; }
+```
+
+### Compliant (must stay silent): parameter used only in a macro argument that expands to it
+
+`main.c`
+
+```c
+#define TWICE(x) ((x) + (x))
+int f(int a) { return TWICE(a); }
+```
+
+### Violation (must be reported): parameter used only inside a macro that discards it
+
+`main.c`
+
+```c
+#define DROP(x)
+int f(int a) /*@V*/
+{
+    DROP(a)
+    return 0;
+}
 ```
 
 ### Compliant (must stay silent): a parameter used only in sizeof

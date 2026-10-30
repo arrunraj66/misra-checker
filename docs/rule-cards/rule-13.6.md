@@ -14,7 +14,7 @@ Only the unevaluated expression form is examined.
 
 ## Tested cases
 
-4 of 4 pass.
+7 of 7 pass.
 
 | Kind | Case | Result |
 |---|---|---|
@@ -22,6 +22,9 @@ Only the unevaluated expression form is examined.
 | Violation (must be reported) | increment inside sizeof | pass |
 | Violation (must be reported) | assignment inside sizeof | pass |
 | Violation (must be reported) | call inside sizeof | pass |
+| Compliant (must stay silent) | sizeof of an array element and a dereference | pass |
+| Violation (must be reported) | pre-increment inside sizeof | pass |
+| Compliant (must stay silent) | sizeof of a type name | pass |
 
 ## Case sources
 
@@ -59,5 +62,29 @@ unsigned long g(int i) { return sizeof(i = 2); } /*@V*/
 ```c
 int next(void);
 unsigned long h(void) { return sizeof(next()); } /*@V*/
+```
+
+### Compliant (must stay silent): sizeof of an array element and a dereference
+
+`main.c`
+
+```c
+unsigned long f(int *p, int i) { return sizeof(p[i]) + sizeof(*p); }
+```
+
+### Violation (must be reported): pre-increment inside sizeof
+
+`main.c`
+
+```c
+unsigned long f(int i) { return sizeof(++i); } /*@V*/
+```
+
+### Compliant (must stay silent): sizeof of a type name
+
+`main.c`
+
+```c
+unsigned long n = sizeof(unsigned int);
 ```
 

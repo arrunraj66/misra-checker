@@ -14,13 +14,15 @@ A switch without default is Rule 16.4.
 
 ## Tested cases
 
-3 of 3 pass.
+5 of 5 pass.
 
 | Kind | Case | Result |
 |---|---|---|
 | Compliant (must stay silent) | default last | pass |
 | Compliant (must stay silent) | default first | pass |
 | Violation (must be reported) | default in the middle | pass |
+| Compliant (must stay silent) | only a default and a case with default last | pass |
+| Violation (must be reported) | default between cases | pass |
 
 ## Case sources
 
@@ -52,6 +54,38 @@ int f(int v)
         case 1: return 1;
         default: return 0;
         case 2: return 2;
+    }
+}
+```
+
+### Compliant (must stay silent): only a default and a case with default last
+
+`main.c`
+
+```c
+void f(int v)
+{
+    switch (v)
+    {
+        case 1: break;
+        case 2: break;
+        default: break;
+    }
+}
+```
+
+### Violation (must be reported): default between cases
+
+`main.c`
+
+```c
+void f(int v)
+{
+    switch (v) /*@V*/
+    {
+        case 1: break;
+        default: break;
+        case 2: break;
     }
 }
 ```

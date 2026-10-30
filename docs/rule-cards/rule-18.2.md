@@ -12,15 +12,19 @@ Detection contract: Subset: report subtraction of pointers derived from two diff
 
 Only pointers formed directly from named arrays are examined.
 
+- **False negative:** members that are different arrays (only declared array objects are followed) (documented limit)
+
 ## Tested cases
 
-3 of 3 pass.
+4 of 5 pass.
 
 | Kind | Case | Result |
 |---|---|---|
 | Compliant (must stay silent) | pointers into the same array | pass |
 | Violation (must be reported) | pointers into two arrays | pass |
 | Violation (must be reported) | array names of two arrays | pass |
+| Known false negative (not detected yet) | members that are different arrays (only declared array objects are followed) | documented limit |
+| Compliant (must stay silent) | pointer parameters of unknown origin | pass |
 
 ## Case sources
 
@@ -51,5 +55,22 @@ long d(void) { return &a[1] - &b[0]; } /*@V*/
 int a[8];
 int b[8];
 long e(void) { return (a + 2) - b; } /*@V*/
+```
+
+### Known false negative (not detected yet): members that are different arrays (only declared array objects are followed)
+
+`main.c`
+
+```c
+struct s { int a[4]; int b[4]; };
+long f(struct s *p) { return &p->a[0] - &p->b[0]; } /*@V*/
+```
+
+### Compliant (must stay silent): pointer parameters of unknown origin
+
+`main.c`
+
+```c
+long f(int *p, int *q) { return p - q; }
 ```
 

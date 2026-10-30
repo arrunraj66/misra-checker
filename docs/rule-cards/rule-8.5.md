@@ -14,12 +14,13 @@ Compares the files in which the declarations are written; it needs the whole pro
 
 ## Tested cases
 
-2 of 2 pass.
+3 of 3 pass.
 
 | Kind | Case | Result |
 |---|---|---|
 | Compliant (must stay silent) | one header declares it, everyone includes the header | pass |
 | Violation (must be reported) | two source files each declare the same external object | pass |
+| Violation (must be reported) | a function declared in two source files | pass |
 
 ## Case sources
 
@@ -66,5 +67,21 @@ int read_twice(void) { return declared_twice; }
 
 ```c
 int declared_twice = 0;
+```
+
+### Violation (must be reported): a function declared in two source files
+
+`a.c`
+
+```c
+int helper(void);
+int run(void) { return helper(); }
+```
+
+`b.c`
+
+```c
+int helper(void); /*@V*/
+int helper(void) { return 1; }
 ```
 

@@ -16,7 +16,7 @@ Only direct address-of expressions of local objects are tracked.
 
 ## Tested cases
 
-7 of 8 pass.
+11 of 12 pass.
 
 | Kind | Case | Result |
 |---|---|---|
@@ -25,6 +25,10 @@ Only direct address-of expressions of local objects are tracked.
 | Violation (must be reported) | returning the address of a local | pass |
 | Violation (must be reported) | storing the address of a local in a global | pass |
 | Violation (must be reported) | returning the address of a local array | pass |
+| Violation (must be reported) | storing the address of a local through an output parameter | pass |
+| Violation (must be reported) | returning the address of a parameter | pass |
+| Compliant (must stay silent) | returning the address of a static local | pass |
+| Compliant (must stay silent) | a local pointer receives a local address | pass |
 | Compliant (must stay silent) | returning a pointer that was passed in | pass |
 | Compliant (must stay silent) | returning the address of a file-scope object | pass |
 | Known false negative (not detected yet) | returning the address of a local through a pointer variable (only direct &local is tracked) | documented limit |
@@ -82,6 +86,51 @@ char *name(void)
 {
     char buf[8];
     return buf; /*@V*/
+}
+```
+
+### Violation (must be reported): storing the address of a local through an output parameter
+
+`main.c`
+
+```c
+void f(int **out)
+{
+    int x = 0;
+    *out = &x; /*@V*/
+}
+```
+
+### Violation (must be reported): returning the address of a parameter
+
+`main.c`
+
+```c
+int *f(int a) { return &a; } /*@V*/
+```
+
+### Compliant (must stay silent): returning the address of a static local
+
+`main.c`
+
+```c
+int *f(void)
+{
+    static int x;
+    return &x;
+}
+```
+
+### Compliant (must stay silent): a local pointer receives a local address
+
+`main.c`
+
+```c
+int f(void)
+{
+    int x = 1;
+    int *p = &x;
+    return *p;
 }
 ```
 

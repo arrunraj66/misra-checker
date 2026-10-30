@@ -14,13 +14,15 @@ Only structure definitions are examined.
 
 ## Tested cases
 
-3 of 3 pass.
+5 of 5 pass.
 
 | Kind | Case | Result |
 |---|---|---|
 | Compliant (must stay silent) | fixed-size array members | pass |
 | Compliant (must stay silent) | a pointer member | pass |
 | Violation (must be reported) | flexible array member | pass |
+| Compliant (must stay silent) | the old one-element array idiom is a fixed array | pass |
+| Violation (must be reported) | flexible array member after several members | pass |
 
 ## Case sources
 
@@ -46,5 +48,21 @@ struct b { int n; int *data; };
 
 ```c
 struct c { int n; int data[]; }; /*@V*/
+```
+
+### Compliant (must stay silent): the old one-element array idiom is a fixed array
+
+`main.c`
+
+```c
+struct s { int n; int d[1]; };
+```
+
+### Violation (must be reported): flexible array member after several members
+
+`main.c`
+
+```c
+struct s { int n; char tag; unsigned char d[]; }; /*@V*/
 ```
 

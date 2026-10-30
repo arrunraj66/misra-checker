@@ -14,7 +14,7 @@ A bare statement i++; is accepted. A single increment used for its value without
 
 ## Tested cases
 
-5 of 5 pass.
+9 of 9 pass.
 
 | Kind | Case | Result |
 |---|---|---|
@@ -23,6 +23,10 @@ A bare statement i++; is accepted. A single increment used for its value without
 | Violation (must be reported) | increment combined with an assignment | pass |
 | Violation (must be reported) | increment inside an index expression | pass |
 | Violation (must be reported) | decrement combined with a call | pass |
+| Compliant (must stay silent) | an increment alone in a condition comparison | pass |
+| Violation (must be reported) | an increment as a call argument | pass |
+| Violation (must be reported) | a post-increment in an indexed store | pass |
+| Compliant (must stay silent) | pre-increment as a statement | pass |
 
 ## Case sources
 
@@ -74,5 +78,38 @@ int g(int *a, int i)
 ```c
 void use(int);
 void h(int i) { use(i--); } /*@V*/
+```
+
+### Compliant (must stay silent): an increment alone in a condition comparison
+
+`main.c`
+
+```c
+int f(int i) { return i++ > 1; }
+```
+
+### Violation (must be reported): an increment as a call argument
+
+`main.c`
+
+```c
+int g(int a);
+int f(int i) { return g(i++); } /*@V*/
+```
+
+### Violation (must be reported): a post-increment in an indexed store
+
+`main.c`
+
+```c
+void f(int *t, int i) { t[i++] = 0; } /*@V*/
+```
+
+### Compliant (must stay silent): pre-increment as a statement
+
+`main.c`
+
+```c
+void f(int i) { ++i; (void)i; }
 ```
 

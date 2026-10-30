@@ -14,7 +14,7 @@ Constants are exempt. Only assignments and initializers are examined; function a
 
 ## Tested cases
 
-12 of 12 pass.
+19 of 19 pass.
 
 | Kind | Case | Result |
 |---|---|---|
@@ -25,6 +25,13 @@ Constants are exempt. Only assignments and initializers are examined; function a
 | Violation (must be reported) | different category (int to float) | pass |
 | Violation (must be reported) | integer to Boolean | pass |
 | Violation (must be reported) | wider to narrower within the same category | pass |
+| Violation (must be reported) | wider integer passed to a narrower parameter | pass |
+| Violation (must be reported) | wider value returned from a narrower function | pass |
+| Violation (must be reported) | integer assigned to an enumeration | pass |
+| Compliant (must stay silent) | same type returned | pass |
+| Compliant (must stay silent) | unsigned char passed as an unsigned int (wider, same category) | pass |
+| Compliant (must stay silent) | float assigned to double | pass |
+| Violation (must be reported) | double assigned to float | pass |
 | Compliant (must stay silent) | widening within a category and constants | pass |
 | Violation (must be reported) | a character assigned to an int (a different essential type category) | pass |
 | Violation (must be reported) | a signed value assigned to an unsigned object | pass |
@@ -104,6 +111,65 @@ void k(long l)
     int n = l; /*@V*/
     (void)n;
 }
+```
+
+### Violation (must be reported): wider integer passed to a narrower parameter
+
+`main.c`
+
+```c
+void g(unsigned char c);
+void f(int i) { g(i); } /*@V*/
+```
+
+### Violation (must be reported): wider value returned from a narrower function
+
+`main.c`
+
+```c
+unsigned char f(int i) { return i; } /*@V*/
+```
+
+### Violation (must be reported): integer assigned to an enumeration
+
+`main.c`
+
+```c
+enum e { A, B };
+void f(int i) { enum e v = i; (void)v; } /*@V*/
+```
+
+### Compliant (must stay silent): same type returned
+
+`main.c`
+
+```c
+int f(int i) { return i; }
+```
+
+### Compliant (must stay silent): unsigned char passed as an unsigned int (wider, same category)
+
+`main.c`
+
+```c
+void g(unsigned int c);
+void f(unsigned char c) { g(c); }
+```
+
+### Compliant (must stay silent): float assigned to double
+
+`main.c`
+
+```c
+void f(float x) { double d = x; (void)d; }
+```
+
+### Violation (must be reported): double assigned to float
+
+`main.c`
+
+```c
+void f(double x) { float d = x; (void)d; } /*@V*/
 ```
 
 ### Compliant (must stay silent): widening within a category and constants

@@ -14,7 +14,7 @@ Only identifiers that exceed the significance limit are examined; the limit foll
 
 ## Tested cases
 
-5 of 5 pass.
+9 of 9 pass.
 
 | Kind | Case | Result |
 |---|---|---|
@@ -23,6 +23,10 @@ Only identifiers that exceed the significance limit are examined; the limit foll
 | Compliant (must stay silent) | the same long name in two different functions | pass |
 | Violation (must be reported) | 64-character names that differ only in the last character (C99) | pass |
 | Violation (must be reported) | 32-character names that differ only after the 31st (C90 limit) | pass |
+| Violation (must be reported) | structure members identical in significant characters | pass |
+| Compliant (must stay silent) | members of different structures may repeat names | pass |
+| Violation (must be reported) | enumerators identical in significant characters | pass |
+| Compliant (must stay silent) | a local and a global with different long names | pass |
 
 ## Case sources
 
@@ -69,5 +73,45 @@ static int aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaay;
 ```c
 static int abcdefghijklmnopqrstuvwxyz12345a; /*@V*/
 static int abcdefghijklmnopqrstuvwxyz12345b; /*@V*/
+```
+
+### Violation (must be reported): structure members identical in significant characters
+
+`main.c`
+
+```c
+struct s {
+    int abcdefghijklmnopqrstuvwxyz0123456789abcdefghijklmnopqrstuvwxyz0a;
+    int abcdefghijklmnopqrstuvwxyz0123456789abcdefghijklmnopqrstuvwxyz0b; /*@V*/
+};
+```
+
+### Compliant (must stay silent): members of different structures may repeat names
+
+`main.c`
+
+```c
+struct a { int value; };
+struct b { int value; };
+```
+
+### Violation (must be reported): enumerators identical in significant characters
+
+`main.c`
+
+```c
+enum e {
+    abcdefghijklmnopqrstuvwxyz0123456789abcdefghijklmnopqrstuvwxyz0a,
+    abcdefghijklmnopqrstuvwxyz0123456789abcdefghijklmnopqrstuvwxyz0b /*@V*/
+};
+```
+
+### Compliant (must stay silent): a local and a global with different long names
+
+`main.c`
+
+```c
+int abcdefghijklmnopqrstuvwxyz0123456789abcdefghijklmnopqrstuvwxy_g;
+void f(void) { int abcdefghijklmnopqrstuvwxyz0123456789abcdefghijklmnopqrstuvwxy_l; (void)abcdefghijklmnopqrstuvwxyz0123456789abcdefghijklmnopqrstuvwxy_l; }
 ```
 

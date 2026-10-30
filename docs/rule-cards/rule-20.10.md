@@ -14,13 +14,15 @@ Every use of either operator in a macro definition is reported.
 
 ## Tested cases
 
-3 of 3 pass.
+5 of 5 pass.
 
 | Kind | Case | Result |
 |---|---|---|
 | Compliant (must stay silent) | macros without the operators | pass |
 | Violation (must be reported) | stringizing | pass |
 | Violation (must be reported) | token pasting | pass |
+| Violation (must be reported) | pasting with a prefix | pass |
+| Compliant (must stay silent) | a macro that only uses its parameters | pass |
 
 ## Case sources
 
@@ -50,5 +52,23 @@ const char *s = STR(abc);
 ```c
 #define CAT(a, b) a##b /*@V*/
 int CAT(var, 1);
+```
+
+### Violation (must be reported): pasting with a prefix
+
+`main.c`
+
+```c
+#define NAME(x) pre_##x /*@V*/
+int NAME(a);
+```
+
+### Compliant (must stay silent): a macro that only uses its parameters
+
+`main.c`
+
+```c
+#define TWICE(x) ((x) + (x))
+int a = TWICE(1);
 ```
 

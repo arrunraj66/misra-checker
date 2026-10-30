@@ -16,7 +16,7 @@ while(1) and for(;;) infinite loops are accepted. Conditions in macros are skipp
 
 ## Tested cases
 
-5 of 6 pass.
+9 of 10 pass.
 
 | Kind | Case | Result |
 |---|---|---|
@@ -26,6 +26,10 @@ while(1) and for(;;) infinite loops are accepted. Conditions in macros are skipp
 | Violation (must be reported) | a constant conditional operator | pass |
 | Violation (must be reported) | a false loop condition | pass |
 | Known false negative (not detected yet) | a constant that is folded only through a configuration macro (conditions from macro expansions are skipped) | documented limit |
+| Violation (must be reported) | an always true if | pass |
+| Violation (must be reported) | a sizeof based condition | pass |
+| Compliant (must stay silent) | a condition with an unknown operand and a constant | pass |
+| Compliant (must stay silent) | infinite for loop without a condition | pass |
 
 ## Case sources
 
@@ -88,5 +92,43 @@ int k(void)
     if (LIMIT > 10) { return 1; } /*@V*/
     return 0;
 }
+```
+
+### Violation (must be reported): an always true if
+
+`main.c`
+
+```c
+void f(int a)
+{
+    if (1) { a++; } /*@V*/
+}
+```
+
+### Violation (must be reported): a sizeof based condition
+
+`main.c`
+
+```c
+void f(int a)
+{
+    if (sizeof(int) == 4) { a++; } /*@V*/
+}
+```
+
+### Compliant (must stay silent): a condition with an unknown operand and a constant
+
+`main.c`
+
+```c
+int f(int a) { return a && 0; }
+```
+
+### Compliant (must stay silent): infinite for loop without a condition
+
+`main.c`
+
+```c
+void f(void) { for (;;) { } }
 ```
 

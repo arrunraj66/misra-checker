@@ -14,7 +14,7 @@ Only the suffix is examined.
 
 ## Tested cases
 
-4 of 4 pass.
+9 of 9 pass.
 
 | Kind | Case | Result |
 |---|---|---|
@@ -22,6 +22,11 @@ Only the suffix is examined.
 | Violation (must be reported) | lowercase l on an integer | pass |
 | Violation (must be reported) | lowercase l combined with u, and on long long | pass |
 | Violation (must be reported) | lowercase l on a floating literal | pass |
+| Violation (must be reported) | lowercase l on a hexadecimal literal | pass |
+| Compliant (must stay silent) | lowercase letters that are not a suffix l | pass |
+| Compliant (must stay silent) | uppercase suffix combinations | pass |
+| Compliant (must stay silent) | l inside a string and character constant | pass |
+| Violation (must be reported) | lowercase ll | pass |
 
 ## Case sources
 
@@ -60,5 +65,49 @@ long long c = 10ll; /*@V*/
 
 ```c
 long double d = 1.0l; /*@V*/
+```
+
+### Violation (must be reported): lowercase l on a hexadecimal literal
+
+`main.c`
+
+```c
+long a = 0x1l; /*@V*/
+```
+
+### Compliant (must stay silent): lowercase letters that are not a suffix l
+
+`main.c`
+
+```c
+int a = 0xabc;
+float f = 1.5f;
+double d = 1e3;
+```
+
+### Compliant (must stay silent): uppercase suffix combinations
+
+`main.c`
+
+```c
+unsigned long long a = 1ULL;
+long double b = 1.0L;
+```
+
+### Compliant (must stay silent): l inside a string and character constant
+
+`main.c`
+
+```c
+const char *s = "1l";
+int c = 'l';
+```
+
+### Violation (must be reported): lowercase ll
+
+`main.c`
+
+```c
+long long a = 1ll; /*@V*/
 ```
 

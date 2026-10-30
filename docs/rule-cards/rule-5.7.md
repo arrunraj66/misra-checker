@@ -14,7 +14,7 @@ Tags from system headers are not examined.
 
 ## Tested cases
 
-4 of 4 pass.
+6 of 6 pass.
 
 | Kind | Case | Result |
 |---|---|---|
@@ -22,6 +22,8 @@ Tags from system headers are not examined.
 | Compliant (must stay silent) | unique tags | pass |
 | Violation (must be reported) | a variable reuses a tag name | pass |
 | Violation (must be reported) | two different types with the same tag name in different scopes | pass |
+| Violation (must be reported) | a function named like a tag | pass |
+| Compliant (must stay silent) | a tag used in the tag name space only | pass |
 
 ## Case sources
 
@@ -69,5 +71,23 @@ void f(void)
     struct item second;
     (void)second;
 }
+```
+
+### Violation (must be reported): a function named like a tag
+
+`main.c`
+
+```c
+struct node { int a; }; /*@V*/
+int node(void) { return 1; }
+```
+
+### Compliant (must stay silent): a tag used in the tag name space only
+
+`main.c`
+
+```c
+struct a { int x; };
+struct b { struct a inner; };
 ```
 

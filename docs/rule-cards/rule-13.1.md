@@ -14,7 +14,7 @@ Only side effects that the compiler front end can see in the element expression 
 
 ## Tested cases
 
-5 of 5 pass.
+9 of 9 pass.
 
 | Kind | Case | Result |
 |---|---|---|
@@ -23,6 +23,10 @@ Only side effects that the compiler front end can see in the element expression 
 | Violation (must be reported) | an increment in an initializer list | pass |
 | Violation (must be reported) | an assignment in an initializer list | pass |
 | Violation (must be reported) | a call with side effects in an initializer list | pass |
+| Compliant (must stay silent) | constants, sizeof and arithmetic in an initializer list | pass |
+| Violation (must be reported) | a volatile read in an initializer list | pass |
+| Violation (must be reported) | a decrement in a structure initializer | pass |
+| Compliant (must stay silent) | a parenthesised pure expression | pass |
 
 ## Case sources
 
@@ -78,6 +82,53 @@ int h(void)
 {
     int arr[2] = { next(), 0 }; /*@V*/
     return arr[0];
+}
+```
+
+### Compliant (must stay silent): constants, sizeof and arithmetic in an initializer list
+
+`main.c`
+
+```c
+int a = 1, b = 2;
+int t[3] = { 1, sizeof(int), 2 + 3 };
+```
+
+### Violation (must be reported): a volatile read in an initializer list
+
+`main.c`
+
+```c
+volatile int reg;
+void f(void)
+{
+    int t[2] = { reg, 1 }; /*@V*/
+    (void)t;
+}
+```
+
+### Violation (must be reported): a decrement in a structure initializer
+
+`main.c`
+
+```c
+struct s { int a; int b; };
+void f(int n)
+{
+    struct s v = { n--, 1 }; /*@V*/
+    (void)v;
+}
+```
+
+### Compliant (must stay silent): a parenthesised pure expression
+
+`main.c`
+
+```c
+void f(int a, int b)
+{
+    int t[2] = { (a + b) * 2, a - b };
+    (void)t;
 }
 ```
 

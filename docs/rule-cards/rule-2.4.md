@@ -14,7 +14,7 @@ A tag used only inside a macro that is never expanded is reported. Anonymous typ
 
 ## Tested cases
 
-8 of 8 pass.
+12 of 12 pass.
 
 | Kind | Case | Result |
 |---|---|---|
@@ -24,6 +24,10 @@ A tag used only inside a macro that is never expanded is reported. Anonymous typ
 | Violation (must be reported) | unused struct tag | pass |
 | Violation (must be reported) | unused enum tag | pass |
 | Violation (must be reported) | unused union tag | pass |
+| Violation (must be reported) | unused tag declared in a function | pass |
+| Compliant (must stay silent) | tag completed after a forward declaration and then used | pass |
+| Compliant (must stay silent) | enum tag used as a parameter type | pass |
+| Compliant (must stay silent) | tag used in sizeof | pass |
 | Compliant (must stay silent) | a tag used only through a pointer declaration | pass |
 | Compliant (must stay silent) | a tag used in a cast | pass |
 
@@ -77,6 +81,45 @@ enum unused_enum { A, B }; /*@V*/
 
 ```c
 union unused_union { int i; float f; }; /*@V*/
+```
+
+### Violation (must be reported): unused tag declared in a function
+
+`main.c`
+
+```c
+void f(void)
+{
+    struct local { int a; }; /*@V*/
+}
+```
+
+### Compliant (must stay silent): tag completed after a forward declaration and then used
+
+`main.c`
+
+```c
+struct node;
+struct node { struct node *next; };
+struct node head;
+```
+
+### Compliant (must stay silent): enum tag used as a parameter type
+
+`main.c`
+
+```c
+enum mode { M_A, M_B };
+int f(enum mode m) { return (int)m; }
+```
+
+### Compliant (must stay silent): tag used in sizeof
+
+`main.c`
+
+```c
+struct rec { int a; };
+unsigned long n = sizeof(struct rec);
 ```
 
 ### Compliant (must stay silent): a tag used only through a pointer declaration

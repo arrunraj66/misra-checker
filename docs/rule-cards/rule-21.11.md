@@ -14,12 +14,13 @@ Only the include directive is examined.
 
 ## Tested cases
 
-2 of 2 pass.
+3 of 3 pass.
 
 | Kind | Case | Result |
 |---|---|---|
 | Compliant (must stay silent) | math.h | pass |
 | Violation (must be reported) | tgmath.h | pass |
+| Compliant (must stay silent) | complex.h is not tgmath | pass |
 
 ## Case sources
 
@@ -39,5 +40,13 @@ double f(double x) { return sqrt(x); }
 ```c
 #include <tgmath.h> /*@V*/
 double f(double x) { return x; }
+```
+
+### Compliant (must stay silent): complex.h is not tgmath
+
+`main.c`
+
+```c
+#include <complex.h>
 ```
 

@@ -14,13 +14,16 @@ Matched by use; a function declared with an ellipsis but never reading its argum
 
 ## Tested cases
 
-3 of 3 pass.
+6 of 6 pass.
 
 | Kind | Case | Result |
 |---|---|---|
 | Compliant (must stay silent) | a normal function | pass |
 | Compliant (must stay silent) | only the header is included | pass |
 | Violation (must be reported) | reading variable arguments | pass |
+| Violation (must be reported) | va_start in a variadic function | pass |
+| Compliant (must stay silent) | calling a variadic library function | pass |
+| Compliant (must stay silent) | declaring a variadic prototype | pass |
 
 ## Case sources
 
@@ -56,5 +59,37 @@ int sum(int n, ...)
     va_end(ap); /*@V*/
     return v;
 }
+```
+
+### Violation (must be reported): va_start in a variadic function
+
+`main.c`
+
+```c
+#include <stdarg.h>
+int f(int n, ...)
+{
+    va_list ap;
+    va_start(ap, n); /*@V*/
+    va_end(ap);
+    return n;
+}
+```
+
+### Compliant (must stay silent): calling a variadic library function
+
+`main.c`
+
+```c
+#include <stdio.h>
+void f(void) { (void)printf("x"); }
+```
+
+### Compliant (must stay silent): declaring a variadic prototype
+
+`main.c`
+
+```c
+int log_msg(const char *fmt, ...);
 ```
 

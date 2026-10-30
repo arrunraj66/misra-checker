@@ -14,7 +14,7 @@ A call is assumed to have side effects. Reading a volatile object counts as a pe
 
 ## Tested cases
 
-5 of 5 pass.
+9 of 9 pass.
 
 | Kind | Case | Result |
 |---|---|---|
@@ -23,6 +23,10 @@ A call is assumed to have side effects. Reading a volatile object counts as a pe
 | Violation (must be reported) | an increment on the right | pass |
 | Violation (must be reported) | an assignment on the right | pass |
 | Violation (must be reported) | a volatile read on the right | pass |
+| Compliant (must stay silent) | a pointer check protects the member read | pass |
+| Violation (must be reported) | a decrement on the right of // | pass |
+| Violation (must be reported) | a volatile structure member on the right | pass |
+| Compliant (must stay silent) | both operands pure comparisons | pass |
 
 ## Case sources
 
@@ -67,5 +71,39 @@ int h(int a, int b) { return a && (b = 1); } /*@V*/
 ```c
 volatile int status;
 int k(int a) { return a && status; } /*@V*/
+```
+
+### Compliant (must stay silent): a pointer check protects the member read
+
+`main.c`
+
+```c
+struct s { int v; };
+int f(struct s *p) { return (p != 0) && (p->v > 0); }
+```
+
+### Violation (must be reported): a decrement on the right of ||
+
+`main.c`
+
+```c
+int f(int a, int b) { return (a > 0) || (b-- > 0); } /*@V*/
+```
+
+### Violation (must be reported): a volatile structure member on the right
+
+`main.c`
+
+```c
+struct r { volatile int v; };
+int f(struct r *p, int a) { return (a > 0) && (p->v > 0); } /*@V*/
+```
+
+### Compliant (must stay silent): both operands pure comparisons
+
+`main.c`
+
+```c
+int f(int a, int b) { return (a > 0) && (b > 0) && (a != b); }
 ```
 

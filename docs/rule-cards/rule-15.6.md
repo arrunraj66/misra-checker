@@ -14,7 +14,7 @@ Only the bodies are examined, not the layout.
 
 ## Tested cases
 
-8 of 8 pass.
+12 of 12 pass.
 
 | Kind | Case | Result |
 |---|---|---|
@@ -23,6 +23,10 @@ Only the bodies are examined, not the layout.
 | Violation (must be reported) | an if body without braces | pass |
 | Violation (must be reported) | a loop body without braces | pass |
 | Violation (must be reported) | an else body without braces | pass |
+| Violation (must be reported) | an empty statement as a loop body | pass |
+| Compliant (must stay silent) | macro supplies the braces | pass |
+| Compliant (must stay silent) | else block containing a nested if | pass |
+| Violation (must be reported) | switch body statement without braces is invalid C; a case body is fine | pass |
 | Violation (must be reported) | a do-while body without braces | pass |
 | Violation (must be reported) | an infinite for with a single statement | pass |
 | Compliant (must stay silent) | an else-if chain with braces everywhere | pass |
@@ -75,6 +79,46 @@ void g(int n)
 void h(int x)
 {
     if (x) { x = 1; } else x = 2; /*@V*/
+}
+```
+
+### Violation (must be reported): an empty statement as a loop body
+
+`main.c`
+
+```c
+void f(int n) { while (n--) ; } /*@V*/
+```
+
+### Compliant (must stay silent): macro supplies the braces
+
+`main.c`
+
+```c
+#define DO_TWICE(x) { x; x; }
+void g(void);
+void f(int a) { if (a) DO_TWICE(g()) }
+```
+
+### Compliant (must stay silent): else block containing a nested if
+
+`main.c`
+
+```c
+void f(int a, int b)
+{
+    if (a) { b = 1; } else { if (b) { b = 2; } }
+}
+```
+
+### Violation (must be reported): switch body statement without braces is invalid C; a case body is fine
+
+`main.c`
+
+```c
+void f(int a)
+{
+    for (a = 0; a < 2; a++) a++; /*@V*/
 }
 ```
 

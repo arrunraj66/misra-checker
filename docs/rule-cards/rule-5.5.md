@@ -14,7 +14,7 @@ A macro defined in a header is not compared with identifiers of the main file.
 
 ## Tested cases
 
-4 of 4 pass.
+7 of 7 pass.
 
 | Kind | Case | Result |
 |---|---|---|
@@ -22,6 +22,9 @@ A macro defined in a header is not compared with identifiers of the main file.
 | Compliant (must stay silent) | an unrelated macro defined after the declarations | pass |
 | Violation (must be reported) | identifier declared before a macro of the same name | pass |
 | Violation (must be reported) | a function declared before a function-like macro of the same name | pass |
+| Compliant (must stay silent) | identifier whose macro was undefined before the declaration | pass |
+| Violation (must be reported) | a struct member that shares the name of a later macro | pass |
+| Compliant (must stay silent) | a macro and a label name differ | pass |
 
 ## Case sources
 
@@ -63,5 +66,34 @@ int v = 0;
 int maxi(int a, int b); /*@V*/
 #define maxi(a, b) (((a) > (b)) ? (a) : (b))
 int use(int x) { return maxi(x, 1); }
+```
+
+### Compliant (must stay silent): identifier whose macro was undefined before the declaration
+
+`main.c`
+
+```c
+#define count 1
+#undef count
+int count;
+```
+
+### Violation (must be reported): a struct member that shares the name of a later macro
+
+`main.c`
+
+```c
+struct s { int width; };
+#define width 8
+int w = width;
+```
+
+### Compliant (must stay silent): a macro and a label name differ
+
+`main.c`
+
+```c
+#define FLAG 1
+void f(void) { goto done; done: ; }
 ```
 

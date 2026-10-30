@@ -671,7 +671,8 @@ class RestVisitor final : public clang::RecursiveASTVisitor<RestVisitor> {
       }
       void note(const clang::VarDecl* variable, const clang::Expr* value,
                 clang::SourceLocation location) {
-        if (variable == nullptr) {
+        // Only a local owner can leak; storing into a global or static object hands the resource on.
+        if ((variable == nullptr) || !variable->hasLocalStorage()) {
           return;
         }
         if (const auto* call = llvm::dyn_cast<clang::CallExpr>(value->IgnoreParenCasts())) {

@@ -14,7 +14,7 @@ Consecutive empty labels sharing a clause are accepted. A clause that ends in re
 
 ## Tested cases
 
-6 of 6 pass.
+10 of 10 pass.
 
 | Kind | Case | Result |
 |---|---|---|
@@ -22,6 +22,10 @@ Consecutive empty labels sharing a clause are accepted. A clause that ends in re
 | Compliant (must stay silent) | stacked labels | pass |
 | Violation (must be reported) | a clause that falls through | pass |
 | Violation (must be reported) | a clause that ends in return (strict reading) | pass |
+| Violation (must be reported) | a clause ending with a conditional break only | pass |
+| Violation (must be reported) | the last clause without break | pass |
+| Compliant (must stay silent) | stacked labels sharing a clause | pass |
+| Violation (must be reported) | a clause ending with goto | pass |
 | Compliant (must stay silent) | a clause that is a block ending in break | pass |
 | Violation (must be reported) | a clause that ends in continue inside a loop | pass |
 
@@ -104,6 +108,74 @@ int g(int v)
             break;
     }
     return 0;
+}
+```
+
+### Violation (must be reported): a clause ending with a conditional break only
+
+`main.c`
+
+```c
+void f(int v, int c)
+{
+    switch (v)
+    {
+        case 1:
+            if (c) { break; } else { break; }
+        default:
+            break;
+    }
+}
+```
+
+### Violation (must be reported): the last clause without break
+
+`main.c`
+
+```c
+void f(int v)
+{
+    switch (v)
+    {
+        case 1: v = 0; break;
+        default: v = 1;
+    }
+}
+```
+
+### Compliant (must stay silent): stacked labels sharing a clause
+
+`main.c`
+
+```c
+void f(int v)
+{
+    switch (v)
+    {
+        case 1:
+        case 2:
+            v = 0;
+            break;
+        default:
+            break;
+    }
+}
+```
+
+### Violation (must be reported): a clause ending with goto
+
+`main.c`
+
+```c
+void f(int v)
+{
+    switch (v)
+    {
+        case 1: goto out;
+        default: break;
+    }
+out:
+    v = 0;
 }
 ```
 

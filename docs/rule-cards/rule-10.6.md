@@ -14,7 +14,7 @@ The essential type of the expression is that of its operands (no integer promoti
 
 ## Tested cases
 
-4 of 4 pass.
+7 of 7 pass.
 
 | Kind | Case | Result |
 |---|---|---|
@@ -22,6 +22,9 @@ The essential type of the expression is that of its operands (no integer promoti
 | Compliant (must stay silent) | assignment to an object of the same width | pass |
 | Violation (must be reported) | a short sum assigned to an int | pass |
 | Violation (must be reported) | an unsigned char product assigned to an unsigned int | pass |
+| Compliant (must stay silent) | composite computed in the wider type | pass |
+| Violation (must be reported) | a signed char sum stored in a long | pass |
+| Compliant (must stay silent) | a non-composite operand assigned to a wider type | pass |
 
 ## Case sources
 
@@ -64,5 +67,29 @@ unsigned int g(unsigned char a, unsigned char b)
     r = a * b; /*@V*/
     return r;
 }
+```
+
+### Compliant (must stay silent): composite computed in the wider type
+
+`main.c`
+
+```c
+unsigned int f(unsigned short a, unsigned short b) { unsigned int r = (unsigned int)a + b; return r; }
+```
+
+### Violation (must be reported): a signed char sum stored in a long
+
+`main.c`
+
+```c
+long f(signed char a, signed char b) { long r = a + b; return r; } /*@V*/
+```
+
+### Compliant (must stay silent): a non-composite operand assigned to a wider type
+
+`main.c`
+
+```c
+long f(int a) { long r = a; return r; }
 ```
 

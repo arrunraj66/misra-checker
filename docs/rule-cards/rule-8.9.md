@@ -14,7 +14,7 @@ Counts references by function in the main file; an object used only at file scop
 
 ## Tested cases
 
-7 of 7 pass.
+11 of 11 pass.
 
 | Kind | Case | Result |
 |---|---|---|
@@ -22,6 +22,10 @@ Counts references by function in the main file; an object used only at file scop
 | Compliant (must stay silent) | an object declared inside the function | pass |
 | Violation (must be reported) | file-scope static used by one function only | pass |
 | Violation (must be reported) | file-scope static constant used by one function | pass |
+| Compliant (must stay silent) | a static whose address is stored at file scope as well | pass |
+| Compliant (must stay silent) | a static used in a macro by two functions | pass |
+| Violation (must be reported) | a static function-local use through a nested block | pass |
+| Compliant (must stay silent) | a static unused anywhere (an unreferenced object is another rule) | pass |
 | Compliant (must stay silent) | a static used in two functions | pass |
 | Compliant (must stay silent) | two statics each used by two functions | pass |
 | Violation (must be reported) | a static array used by one function | pass |
@@ -62,6 +66,47 @@ int next(void) { counter++; return counter; }
 ```c
 static const int limit = 5; /*@V*/
 int clamp(int v) { return v > limit ? limit : v; }
+```
+
+### Compliant (must stay silent): a static whose address is stored at file scope as well
+
+`main.c`
+
+```c
+static int level;
+static int *ptr = &level;
+void f(void) { level = 1; }
+```
+
+### Compliant (must stay silent): a static used in a macro by two functions
+
+`main.c`
+
+```c
+static int level;
+#define BUMP() (level++)
+void f(void) { BUMP(); }
+void g(void) { BUMP(); }
+```
+
+### Violation (must be reported): a static function-local use through a nested block
+
+`main.c`
+
+```c
+static int level; /*@V*/
+void f(int c)
+{
+    if (c) { level = 1; }
+}
+```
+
+### Compliant (must stay silent): a static unused anywhere (an unreferenced object is another rule)
+
+`main.c`
+
+```c
+static int level;
 ```
 
 ### Compliant (must stay silent): a static used in two functions

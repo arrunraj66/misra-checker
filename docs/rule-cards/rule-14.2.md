@@ -14,7 +14,7 @@ Only simple counters in the clauses are recognized; counters hidden in function 
 
 ## Tested cases
 
-10 of 10 pass.
+15 of 15 pass.
 
 | Kind | Case | Result |
 |---|---|---|
@@ -25,6 +25,11 @@ Only simple counters in the clauses are recognized; counters hidden in function 
 | Violation (must be reported) | the second clause tests something else than the counter | pass |
 | Violation (must be reported) | no third clause | pass |
 | Violation (must be reported) | two counters modified in the third clause | pass |
+| Compliant (must stay silent) | counter only read in the body | pass |
+| Compliant (must stay silent) | C99 declaration in the first clause | pass |
+| Violation (must be reported) | counter modified in the body through compound assignment | pass |
+| Compliant (must stay silent) | an empty first clause is allowed | pass |
+| Compliant (must stay silent) | nested loops with different counters | pass |
 | Compliant (must stay silent) | a step other than one | pass |
 | Compliant (must stay silent) | a pointer walking a list | pass |
 | Compliant (must stay silent) | a counting down loop with the counter only in the clauses | pass |
@@ -104,6 +109,68 @@ void k(int n)
 {
     int i, j;
     for (i = 0, j = 0; i < n; i++, j++) { } /*@V*/
+}
+```
+
+### Compliant (must stay silent): counter only read in the body
+
+`main.c`
+
+```c
+int f(int *t, int n)
+{
+    int i;
+    int s = 0;
+    for (i = 0; i < n; i++) { s += t[i]; }
+    return s;
+}
+```
+
+### Compliant (must stay silent): C99 declaration in the first clause
+
+`main.c`
+
+```c
+int f(int n)
+{
+    int s = 0;
+    for (int i = 0; i < n; i++) { s += i; }
+    return s;
+}
+```
+
+### Violation (must be reported): counter modified in the body through compound assignment
+
+`main.c`
+
+```c
+void f(int n)
+{
+    int i;
+    for (i = 0; i < n; i++) { i += 2; } /*@V*/
+}
+```
+
+### Compliant (must stay silent): an empty first clause is allowed
+
+`main.c`
+
+```c
+void f(int i, int n)
+{
+    for (; i < n; i++) { }
+}
+```
+
+### Compliant (must stay silent): nested loops with different counters
+
+`main.c`
+
+```c
+void f(int n)
+{
+    int i, j;
+    for (i = 0; i < n; i++) { for (j = 0; j < n; j++) { } }
 }
 ```
 

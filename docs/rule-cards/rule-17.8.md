@@ -14,7 +14,7 @@ Modifying the object a pointer parameter points to is allowed; only the paramete
 
 ## Tested cases
 
-5 of 5 pass.
+9 of 9 pass.
 
 | Kind | Case | Result |
 |---|---|---|
@@ -23,6 +23,10 @@ Modifying the object a pointer parameter points to is allowed; only the paramete
 | Violation (must be reported) | assignment to a parameter | pass |
 | Violation (must be reported) | increment of a parameter | pass |
 | Violation (must be reported) | compound assignment to a pointer parameter | pass |
+| Violation (must be reported) | shift-assign on a parameter | pass |
+| Compliant (must stay silent) | array parameter elements modified | pass |
+| Compliant (must stay silent) | a member of a structure pointer parameter modified | pass |
+| Violation (must be reported) | decrement of an integer parameter | pass |
 
 ## Case sources
 
@@ -75,6 +79,48 @@ void h(char *p)
 {
     p += 1; /*@V*/
     (void)p;
+}
+```
+
+### Violation (must be reported): shift-assign on a parameter
+
+`main.c`
+
+```c
+unsigned int f(unsigned int n)
+{
+    unsigned int c = 0;
+    while (n != 0u) { c++; n >>= 1; } /*@V*/
+    return c;
+}
+```
+
+### Compliant (must stay silent): array parameter elements modified
+
+`main.c`
+
+```c
+void f(int a[4]) { a[0] = 1; }
+```
+
+### Compliant (must stay silent): a member of a structure pointer parameter modified
+
+`main.c`
+
+```c
+struct s { int v; };
+void f(struct s *p) { p->v = 1; }
+```
+
+### Violation (must be reported): decrement of an integer parameter
+
+`main.c`
+
+```c
+int f(int n)
+{
+    n--; /*@V*/
+    return n;
 }
 ```
 

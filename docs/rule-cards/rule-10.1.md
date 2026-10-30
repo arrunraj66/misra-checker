@@ -14,7 +14,7 @@ Only the listed operator and operand combinations are examined, not the whole op
 
 ## Tested cases
 
-7 of 7 pass.
+15 of 15 pass.
 
 | Kind | Case | Result |
 |---|---|---|
@@ -25,6 +25,14 @@ Only the listed operator and operand combinations are examined, not the whole op
 | Violation (must be reported) | unary minus on an unsigned operand | pass |
 | Violation (must be reported) | bitwise operator on signed non-constant operands | pass |
 | Violation (must be reported) | shift of a signed non-constant value | pass |
+| Violation (must be reported) | logical negation of an integer | pass |
+| Violation (must be reported) | logical and of integer operands | pass |
+| Compliant (must stay silent) | logical operators on comparison results | pass |
+| Violation (must be reported) | bitwise complement of a signed value | pass |
+| Compliant (must stay silent) | bitwise complement of an unsigned value | pass |
+| Compliant (must stay silent) | shift of an unsigned value by a signed constant count | pass |
+| Violation (must be reported) | Boolean used as an array index in arithmetic | pass |
+| Compliant (must stay silent) | Boolean combined logically | pass |
 
 ## Case sources
 
@@ -83,5 +91,69 @@ int k(int a, int b) { return a & b; } /*@V*/
 
 ```c
 int m(int a) { return a << 2; } /*@V*/
+```
+
+### Violation (must be reported): logical negation of an integer
+
+`main.c`
+
+```c
+int f(int x) { return !x; } /*@V*/
+```
+
+### Violation (must be reported): logical and of integer operands
+
+`main.c`
+
+```c
+int f(int x, int y) { return x && y; } /*@V*/
+```
+
+### Compliant (must stay silent): logical operators on comparison results
+
+`main.c`
+
+```c
+int f(int x, int y) { return (x > 1) && (y < 2); }
+```
+
+### Violation (must be reported): bitwise complement of a signed value
+
+`main.c`
+
+```c
+int f(int x) { return ~x; } /*@V*/
+```
+
+### Compliant (must stay silent): bitwise complement of an unsigned value
+
+`main.c`
+
+```c
+unsigned int f(unsigned int x) { return ~x; }
+```
+
+### Compliant (must stay silent): shift of an unsigned value by a signed constant count
+
+`main.c`
+
+```c
+unsigned int f(unsigned int x) { return x << 2; }
+```
+
+### Violation (must be reported): Boolean used as an array index in arithmetic
+
+`main.c`
+
+```c
+int f(_Bool b, int x) { return x + b; } /*@V*/
+```
+
+### Compliant (must stay silent): Boolean combined logically
+
+`main.c`
+
+```c
+int f(_Bool a, _Bool b) { return a && b; }
 ```
 

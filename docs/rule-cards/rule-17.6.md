@@ -14,13 +14,15 @@ Only the bracketed form is examined.
 
 ## Tested cases
 
-3 of 3 pass.
+5 of 5 pass.
 
 | Kind | Case | Result |
 |---|---|---|
 | Compliant (must stay silent) | ordinary array parameter | pass |
 | Violation (must be reported) | static inside the brackets | pass |
 | Violation (must be reported) | in a definition | pass |
+| Compliant (must stay silent) | const inside the brackets | pass |
+| Violation (must be reported) | static with a size in a prototype | pass |
 
 ## Case sources
 
@@ -47,5 +49,21 @@ void f(int a[static 4]); /*@V*/
 
 ```c
 int sum(int a[static 2]) { return a[0] + a[1]; } /*@V*/
+```
+
+### Compliant (must stay silent): const inside the brackets
+
+`main.c`
+
+```c
+void f(int a[const 4]);
+```
+
+### Violation (must be reported): static with a size in a prototype
+
+`main.c`
+
+```c
+void f(char s[static 8]); /*@V*/
 ```
 

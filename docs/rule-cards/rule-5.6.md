@@ -14,7 +14,7 @@ Typedefs from system headers are not examined.
 
 ## Tested cases
 
-4 of 4 pass.
+6 of 6 pass.
 
 | Kind | Case | Result |
 |---|---|---|
@@ -22,6 +22,8 @@ Typedefs from system headers are not examined.
 | Compliant (must stay silent) | unique typedef names | pass |
 | Violation (must be reported) | a local variable reuses a typedef name | pass |
 | Violation (must be reported) | a file-scope variable named like a typedef in an inner scope function | pass |
+| Violation (must be reported) | a parameter named like a typedef | pass |
+| Compliant (must stay silent) | the same typedef name for the same type is not repeated | pass |
 
 ## Case sources
 
@@ -72,5 +74,23 @@ void f(void)
     int width_t;
     width_t = 1;
 }
+```
+
+### Violation (must be reported): a parameter named like a typedef
+
+`main.c`
+
+```c
+typedef int id_t2; /*@V*/
+int f(int id_t2) { return id_t2; }
+```
+
+### Compliant (must stay silent): the same typedef name for the same type is not repeated
+
+`main.c`
+
+```c
+typedef unsigned char byte_t;
+byte_t b;
 ```
 

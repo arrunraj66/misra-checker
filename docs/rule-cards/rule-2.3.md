@@ -14,7 +14,7 @@ Only typedefs declared in the main file are examined, and a typedef used only in
 
 ## Tested cases
 
-8 of 8 pass.
+12 of 12 pass.
 
 | Kind | Case | Result |
 |---|---|---|
@@ -23,6 +23,10 @@ Only typedefs declared in the main file are examined, and a typedef used only in
 | Violation (must be reported) | unused typedef | pass |
 | Violation (must be reported) | unused function-pointer typedef | pass |
 | Violation (must be reported) | typedef whose only user is also unused (the outer one is reported) | pass |
+| Violation (must be reported) | unused typedef inside a function | pass |
+| Compliant (must stay silent) | typedef used as a struct member type | pass |
+| Compliant (must stay silent) | typedef used in a function return type | pass |
+| Compliant (must stay silent) | typedef used only in an array declaration | pass |
 | Compliant (must stay silent) | typedef used only inside sizeof | pass |
 | Compliant (must stay silent) | typedef used in a cast | pass |
 | Compliant (must stay silent) | typedef used as a parameter type of a prototype | pass |
@@ -71,6 +75,45 @@ typedef void (*callback_t)(int); /*@V*/
 ```c
 typedef int inner_t;
 typedef inner_t outer_t; /*@V*/
+```
+
+### Violation (must be reported): unused typedef inside a function
+
+`main.c`
+
+```c
+void f(void)
+{
+    typedef int local_t; /*@V*/
+}
+```
+
+### Compliant (must stay silent): typedef used as a struct member type
+
+`main.c`
+
+```c
+typedef unsigned char byte_t;
+struct s { byte_t b; };
+struct s v;
+```
+
+### Compliant (must stay silent): typedef used in a function return type
+
+`main.c`
+
+```c
+typedef int status_t;
+status_t f(void) { return 0; }
+```
+
+### Compliant (must stay silent): typedef used only in an array declaration
+
+`main.c`
+
+```c
+typedef int cell_t;
+cell_t grid[4];
 ```
 
 ### Compliant (must stay silent): typedef used only inside sizeof

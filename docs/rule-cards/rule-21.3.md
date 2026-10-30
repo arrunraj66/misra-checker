@@ -14,7 +14,7 @@ Calls through function pointers and wrappers with other names are not found.
 
 ## Tested cases
 
-4 of 4 pass.
+7 of 7 pass.
 
 | Kind | Case | Result |
 |---|---|---|
@@ -22,6 +22,9 @@ Calls through function pointers and wrappers with other names are not found.
 | Compliant (must stay silent) | a function with a similar name | pass |
 | Violation (must be reported) | malloc and free | pass |
 | Violation (must be reported) | calloc and realloc | pass |
+| Violation (must be reported) | realloc and free through a macro name | pass |
+| Compliant (must stay silent) | a user wrapper with a similar name | pass |
+| Compliant (must stay silent) | a structure member named like the function | pass |
 
 ## Case sources
 
@@ -68,5 +71,36 @@ void g(void)
     p = realloc(p, 8); /*@V*/
     (void)p;
 }
+```
+
+### Violation (must be reported): realloc and free through a macro name
+
+`main.c`
+
+```c
+#include <stdlib.h>
+#define RELEASE(p) free(p)
+void f(void *p)
+{
+    RELEASE(p); /*@V*/
+}
+```
+
+### Compliant (must stay silent): a user wrapper with a similar name
+
+`main.c`
+
+```c
+void *my_malloc(unsigned long n);
+void f(void) { (void)my_malloc(4); }
+```
+
+### Compliant (must stay silent): a structure member named like the function
+
+`main.c`
+
+```c
+struct s { int free; };
+int f(struct s *p) { return p->free; }
 ```
 

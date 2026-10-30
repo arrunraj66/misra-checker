@@ -14,7 +14,7 @@ Array parameters (which decay to pointers) and defined arrays are not extern dec
 
 ## Tested cases
 
-5 of 5 pass.
+9 of 9 pass.
 
 | Kind | Case | Result |
 |---|---|---|
@@ -23,6 +23,10 @@ Array parameters (which decay to pointers) and defined arrays are not extern dec
 | Compliant (must stay silent) | a defined array sized by its initializer | pass |
 | Violation (must be reported) | extern array of unspecified size | pass |
 | Violation (must be reported) | extern two-dimensional array with the first size missing | pass |
+| Violation (must be reported) | extern char array without size | pass |
+| Compliant (must stay silent) | extern pointer | pass |
+| Compliant (must stay silent) | extern array of a typedef with size | pass |
+| Compliant (must stay silent) | flexible array member in a structure | pass |
 
 ## Case sources
 
@@ -64,5 +68,37 @@ extern int table[]; /*@V*/
 
 ```c
 extern int grid[][4]; /*@V*/
+```
+
+### Violation (must be reported): extern char array without size
+
+`main.c`
+
+```c
+extern char buffer[]; /*@V*/
+```
+
+### Compliant (must stay silent): extern pointer
+
+`main.c`
+
+```c
+extern char *buffer;
+```
+
+### Compliant (must stay silent): extern array of a typedef with size
+
+`main.c`
+
+```c
+extern int table[8];
+```
+
+### Compliant (must stay silent): flexible array member in a structure
+
+`main.c`
+
+```c
+struct s { int n; int d[]; };
 ```
 

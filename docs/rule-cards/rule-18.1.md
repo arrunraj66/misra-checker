@@ -16,7 +16,7 @@ Only constant offsets on arrays with a known size are examined.
 
 ## Tested cases
 
-4 of 5 pass.
+7 of 8 pass.
 
 | Kind | Case | Result |
 |---|---|---|
@@ -25,6 +25,9 @@ Only constant offsets on arrays with a known size are examined.
 | Violation (must be reported) | a negative constant index | pass |
 | Violation (must be reported) | a pointer formed beyond one past the end | pass |
 | Known false negative (not detected yet) | an index computed through a variable | documented limit |
+| Violation (must be reported) | pointer plus a constant beyond one past the end | pass |
+| Compliant (must stay silent) | the one-past-the-end pointer through addition | pass |
+| Compliant (must stay silent) | pointer parameters have unknown extent | pass |
 
 ## Case sources
 
@@ -77,5 +80,31 @@ int h(void)
     int i = 6;
     return a[i]; /*@V*/
 }
+```
+
+### Violation (must be reported): pointer plus a constant beyond one past the end
+
+`main.c`
+
+```c
+int a[4];
+int *f(void) { return a + 5; } /*@V*/
+```
+
+### Compliant (must stay silent): the one-past-the-end pointer through addition
+
+`main.c`
+
+```c
+int a[4];
+int *f(void) { return a + 4; }
+```
+
+### Compliant (must stay silent): pointer parameters have unknown extent
+
+`main.c`
+
+```c
+int *f(int *p) { return p + 100; }
 ```
 

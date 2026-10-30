@@ -14,7 +14,7 @@ Unnamed bit-fields are not reported. Only signed integer types are examined.
 
 ## Tested cases
 
-5 of 5 pass.
+9 of 9 pass.
 
 | Kind | Case | Result |
 |---|---|---|
@@ -23,6 +23,10 @@ Unnamed bit-fields are not reported. Only signed integer types are examined.
 | Compliant (must stay silent) | unnamed single-bit signed field (padding) | pass |
 | Violation (must be reported) | named signed single-bit field | pass |
 | Violation (must be reported) | two fields, one of them signed single-bit | pass |
+| Violation (must be reported) | plain int single-bit field (implementation-defined signedness) | pass |
+| Violation (must be reported) | signed int single-bit field | pass |
+| Compliant (must stay silent) | unsigned and boolean single-bit fields | pass |
+| Compliant (must stay silent) | wide signed field | pass |
 
 ## Case sources
 
@@ -68,5 +72,37 @@ struct e
     unsigned int ok_flag : 1;
     int bad_flag : 1; /*@V*/
 } ve;
+```
+
+### Violation (must be reported): plain int single-bit field (implementation-defined signedness)
+
+`main.c`
+
+```c
+struct s { int a : 1; }; /*@V*/
+```
+
+### Violation (must be reported): signed int single-bit field
+
+`main.c`
+
+```c
+struct s { signed int a : 1; }; /*@V*/
+```
+
+### Compliant (must stay silent): unsigned and boolean single-bit fields
+
+`main.c`
+
+```c
+struct s { unsigned a : 1; _Bool b : 1; };
+```
+
+### Compliant (must stay silent): wide signed field
+
+`main.c`
+
+```c
+struct s { int a : 8; };
 ```
 

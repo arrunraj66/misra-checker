@@ -14,7 +14,7 @@ Numeric casts between integer and floating types are not reported. Whether a cas
 
 ## Tested cases
 
-7 of 7 pass.
+11 of 11 pass.
 
 | Kind | Case | Result |
 |---|---|---|
@@ -25,6 +25,10 @@ Numeric casts between integer and floating types are not reported. Whether a cas
 | Violation (must be reported) | integer cast to character | pass |
 | Violation (must be reported) | integer cast to an enumeration | pass |
 | Violation (must be reported) | character cast to floating | pass |
+| Violation (must be reported) | Boolean cast to integer | pass |
+| Compliant (must stay silent) | float cast to int and back | pass |
+| Compliant (must stay silent) | cast from signed to unsigned of the same width | pass |
+| Violation (must be reported) | cast of a constant to an enumeration | pass |
 
 ## Case sources
 
@@ -85,5 +89,38 @@ enum e h(int a) { return (enum e)a; } /*@V*/
 
 ```c
 float k(char c) { return (float)c; } /*@V*/
+```
+
+### Violation (must be reported): Boolean cast to integer
+
+`main.c`
+
+```c
+int f(_Bool b) { return (int)b; } /*@V*/
+```
+
+### Compliant (must stay silent): float cast to int and back
+
+`main.c`
+
+```c
+int f(float x) { return (int)x; }
+```
+
+### Compliant (must stay silent): cast from signed to unsigned of the same width
+
+`main.c`
+
+```c
+unsigned int f(int x) { return (unsigned int)x; }
+```
+
+### Violation (must be reported): cast of a constant to an enumeration
+
+`main.c`
+
+```c
+enum e { A, B };
+enum e v = (enum e)1; /*@V*/
 ```
 

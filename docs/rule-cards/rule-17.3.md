@@ -14,7 +14,7 @@ Compiler built-in functions are not reported.
 
 ## Tested cases
 
-7 of 7 pass.
+9 of 9 pass.
 
 | Kind | Case | Result |
 |---|---|---|
@@ -22,6 +22,8 @@ Compiler built-in functions are not reported.
 | Compliant (must stay silent) | a standard function with its header | pass |
 | Violation (must be reported) | call of an undeclared function | pass |
 | Violation (must be reported) | a second undeclared call | pass |
+| Violation (must be reported) | implicit declaration is valid C90 but still not allowed | pass |
+| Compliant (must stay silent) | function declared in an included header | pass |
 | Compliant (must stay silent) | a call through a function pointer and through a declared function | pass |
 | Compliant (must stay silent) | compiler built-in functions are not reported | pass |
 | Violation (must be reported) | a call in a condition | pass |
@@ -66,6 +68,29 @@ void g(void)
 {
     another_unknown(); /*@V*/
 }
+```
+
+### Violation (must be reported): implicit declaration is valid C90 but still not allowed
+
+`main.c`
+
+```c
+int f(void) { return helper(1); } /*@V*/
+```
+
+### Compliant (must stay silent): function declared in an included header
+
+`h.h`
+
+```c
+int helper(int a);
+```
+
+`main.c`
+
+```c
+#include "h.h"
+int f(void) { return helper(1); }
 ```
 
 ### Compliant (must stay silent): a call through a function pointer and through a declared function

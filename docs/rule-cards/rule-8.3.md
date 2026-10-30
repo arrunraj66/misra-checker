@@ -14,7 +14,7 @@ Only declarations in the analysed translation unit are compared; conflicts with 
 
 ## Tested cases
 
-4 of 4 pass.
+7 of 7 pass.
 
 | Kind | Case | Result |
 |---|---|---|
@@ -22,6 +22,9 @@ Only declarations in the analysed translation unit are compared; conflicts with 
 | Compliant (must stay silent) | declarations of different functions | pass |
 | Violation (must be reported) | parameter names differ between declaration and definition | pass |
 | Violation (must be reported) | a top-level parameter qualifier differs (the compiler accepts it) | pass |
+| Violation (must be reported) | an extern object declared with different types in two files | pass |
+| Compliant (must stay silent) | the same declaration repeated in two files through a header | pass |
+| Violation (must be reported) | a parameter name differs in two prototypes | pass |
 
 ## Case sources
 
@@ -59,5 +62,51 @@ int f(int b) { return b; } /*@V*/
 ```c
 void put(const int count);
 void put(int count) { } /*@V*/
+```
+
+### Violation (must be reported): an extern object declared with different types in two files
+
+`a.c`
+
+```c
+int level = 1;
+```
+
+`b.c`
+
+```c
+extern long level; /*@V*/
+long get(void) { return level; }
+```
+
+### Compliant (must stay silent): the same declaration repeated in two files through a header
+
+`h.h`
+
+```c
+extern int level;
+```
+
+`a.c`
+
+```c
+#include "h.h"
+int level = 1;
+```
+
+`b.c`
+
+```c
+#include "h.h"
+int get(void) { return level; }
+```
+
+### Violation (must be reported): a parameter name differs in two prototypes
+
+`main.c`
+
+```c
+int f(int a, int b);
+int f(int a, int c); /*@V*/
 ```
 

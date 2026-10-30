@@ -14,7 +14,7 @@ Explicit duplicate values are allowed; only an implicit value that coincides wit
 
 ## Tested cases
 
-5 of 5 pass.
+9 of 9 pass.
 
 | Kind | Case | Result |
 |---|---|---|
@@ -23,6 +23,10 @@ Explicit duplicate values are allowed; only an implicit value that coincides wit
 | Compliant (must stay silent) | the first is explicit and the rest follow implicitly without a clash | pass |
 | Violation (must be reported) | an implicit value equals an earlier explicit one | pass |
 | Violation (must be reported) | an implicit enumerator follows a value that makes it equal to another | pass |
+| Violation (must be reported) | implicit enumerator equals a later explicit one | pass |
+| Compliant (must stay silent) | all explicit and duplicated by choice | pass |
+| Compliant (must stay silent) | negative start then implicit | pass |
+| Violation (must be reported) | implicit equals the first explicit value of a negative start | pass |
 
 ## Case sources
 
@@ -64,5 +68,37 @@ enum d { D0 = 1, D1 = 0, D2 }; /*@V*/
 
 ```c
 enum e { E0 = 2, E1 = 1, E2, E3 = 3 }; /*@V*/
+```
+
+### Violation (must be reported): implicit enumerator equals a later explicit one
+
+`main.c`
+
+```c
+enum e { A = 0, B, C = 1 }; /*@V*/
+```
+
+### Compliant (must stay silent): all explicit and duplicated by choice
+
+`main.c`
+
+```c
+enum e { A = 1, B = 1 };
+```
+
+### Compliant (must stay silent): negative start then implicit
+
+`main.c`
+
+```c
+enum e { A = -1, B, C };
+```
+
+### Violation (must be reported): implicit equals the first explicit value of a negative start
+
+`main.c`
+
+```c
+enum e { A, B = -1, C }; /*@V*/
 ```
 

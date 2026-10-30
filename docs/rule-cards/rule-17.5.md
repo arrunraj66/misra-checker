@@ -14,7 +14,7 @@ Only arguments whose array size is known at the call site are checked.
 
 ## Tested cases
 
-4 of 4 pass.
+7 of 7 pass.
 
 | Kind | Case | Result |
 |---|---|---|
@@ -22,6 +22,9 @@ Only arguments whose array size is known at the call site are checked.
 | Compliant (must stay silent) | a parameter of unspecified size | pass |
 | Violation (must be reported) | argument smaller than the parameter | pass |
 | Violation (must be reported) | null argument for an array parameter | pass |
+| Violation (must be reported) | a smaller array passed to a two dimensional parameter | pass |
+| Compliant (must stay silent) | a larger array than the parameter needs | pass |
+| Compliant (must stay silent) | a pointer argument of unknown size | pass |
 
 ## Case sources
 
@@ -63,5 +66,40 @@ void g(void) { f(small); } /*@V*/
 ```c
 void f(int a[4]);
 void g(void) { f(0); } /*@V*/
+```
+
+### Violation (must be reported): a smaller array passed to a two dimensional parameter
+
+`main.c`
+
+```c
+void g(int a[2][4]);
+void f(void)
+{
+    int b[1][4];
+    g(b); /*@V*/
+}
+```
+
+### Compliant (must stay silent): a larger array than the parameter needs
+
+`main.c`
+
+```c
+void g(int a[4]);
+void f(void)
+{
+    int b[8];
+    g(b);
+}
+```
+
+### Compliant (must stay silent): a pointer argument of unknown size
+
+`main.c`
+
+```c
+void g(int a[4]);
+void f(int *p) { g(p); }
 ```
 

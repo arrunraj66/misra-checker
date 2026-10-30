@@ -14,7 +14,7 @@ Casts to and from character-type pointers are reported (strict reading; Coverity
 
 ## Tested cases
 
-5 of 5 pass.
+9 of 9 pass.
 
 | Kind | Case | Result |
 |---|---|---|
@@ -23,6 +23,10 @@ Casts to and from character-type pointers are reported (strict reading; Coverity
 | Violation (must be reported) | int pointer to float pointer | pass |
 | Violation (must be reported) | struct pointer to int pointer | pass |
 | Violation (must be reported) | int pointer to char pointer (strict reading) | pass |
+| Compliant (must stay silent) | cast through a typedef of the same type | pass |
+| Violation (must be reported) | pointer to double cast to pointer to long | pass |
+| Compliant (must stay silent) | a cast that only adds a qualifier is Rule 11.8 compliant and not a type change | pass |
+| Compliant (must stay silent) | array decays to a pointer of its own element type | pass |
 
 ## Case sources
 
@@ -65,5 +69,39 @@ int *g(struct s *p) { return (int *)p; } /*@V*/
 
 ```c
 char *h(int *p) { return (char *)p; } /*@V*/
+```
+
+### Compliant (must stay silent): cast through a typedef of the same type
+
+`main.c`
+
+```c
+typedef int word_t;
+word_t *f(int *p) { return (word_t *)p; }
+```
+
+### Violation (must be reported): pointer to double cast to pointer to long
+
+`main.c`
+
+```c
+long *f(double *p) { return (long *)p; } /*@V*/
+```
+
+### Compliant (must stay silent): a cast that only adds a qualifier is Rule 11.8 compliant and not a type change
+
+`main.c`
+
+```c
+const int *f(int *p) { return (const int *)p; }
+```
+
+### Compliant (must stay silent): array decays to a pointer of its own element type
+
+`main.c`
+
+```c
+char buf[4];
+char *f(void) { return (char *)buf; }
 ```
 

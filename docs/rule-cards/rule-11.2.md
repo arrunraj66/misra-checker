@@ -14,7 +14,7 @@ Only conversions of pointers to incomplete struct or union types are examined.
 
 ## Tested cases
 
-4 of 4 pass.
+6 of 6 pass.
 
 | Kind | Case | Result |
 |---|---|---|
@@ -22,6 +22,8 @@ Only conversions of pointers to incomplete struct or union types are examined.
 | Compliant (must stay silent) | conversion to void pointer of a complete type | pass |
 | Violation (must be reported) | pointer to incomplete type cast to an integer | pass |
 | Violation (must be reported) | pointer to incomplete type cast to another pointer type | pass |
+| Compliant (must stay silent) | a pointer to an incomplete type stored and returned unchanged | pass |
+| Violation (must be reported) | incomplete pointer cast to char pointer | pass |
 
 ## Case sources
 
@@ -61,5 +63,23 @@ unsigned long f(struct opaque *p) { return (unsigned long)p; } /*@V*/
 ```c
 struct opaque;
 char *g(struct opaque *p) { return (char *)p; } /*@V*/
+```
+
+### Compliant (must stay silent): a pointer to an incomplete type stored and returned unchanged
+
+`main.c`
+
+```c
+struct opaque;
+struct opaque *keep(struct opaque *p) { return p; }
+```
+
+### Violation (must be reported): incomplete pointer cast to char pointer
+
+`main.c`
+
+```c
+struct opaque;
+char *f(struct opaque *p) { return (char *)p; } /*@V*/
 ```
 

@@ -14,13 +14,17 @@ Detected on the raw text, also inside comments and strings. Compilers with trigr
 
 ## Tested cases
 
-3 of 3 pass.
+7 of 7 pass.
 
 | Kind | Case | Result |
 |---|---|---|
 | Compliant (must stay silent) | question marks that do not form a trigraph | pass |
 | Violation (must be reported) | trigraph in a string | pass |
 | Violation (must be reported) | trigraph in code position | pass |
+| Violation (must be reported) | question-mark trigraph for a bracket | pass |
+| Violation (must be reported) | trigraph in a character constant | pass |
+| Compliant (must stay silent) | a lone question mark pair at the end of a string | pass |
+| Compliant (must stay silent) | a ternary expression with question marks apart | pass |
 
 ## Case sources
 
@@ -47,5 +51,37 @@ const char *a = "??="; /*@V*/
 
 ```c
 int a = 0; ??/ /*@V*/
+```
+
+### Violation (must be reported): question-mark trigraph for a bracket
+
+`main.c`
+
+```c
+char *s = "??)"; /*@V*/
+```
+
+### Violation (must be reported): trigraph in a character constant
+
+`main.c`
+
+```c
+int c = '??/'; /*@V*/
+```
+
+### Compliant (must stay silent): a lone question mark pair at the end of a string
+
+`main.c`
+
+```c
+const char *s = "what??";
+```
+
+### Compliant (must stay silent): a ternary expression with question marks apart
+
+`main.c`
+
+```c
+int f(int a) { return a ? a ? 1 : 2 : 3; }
 ```
 

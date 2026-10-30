@@ -641,7 +641,7 @@ class ExtraVisitor final : public clang::RecursiveASTVisitor<ExtraVisitor> {
         inappropriate_arithmetic(operand)) {
       recorder_.add("inappropriate-operand-type", op->getOperatorLoc());
     }
-    if ((op->getOpcode() == clang::UO_Deref) && points_to_file(op->getSubExpr()->getType())) {
+    if ((op->getOpcode() == clang::UO_Deref) && points_to_file(op->getSubExpr()->getType()) && !in_sizeof(op)) {
       recorder_.add("file-object-dereferenced", op->getOperatorLoc());
     }
     return true;
@@ -653,7 +653,7 @@ class ExtraVisitor final : public clang::RecursiveASTVisitor<ExtraVisitor> {
             ast_, clang::Expr::NPC_ValueDependentIsNull) != clang::Expr::NPCK_NotNull) {
       recorder_.add("null-pointer-dereference", member->getOperatorLoc());
     }
-    if (member->isArrow() && points_to_file(member->getBase()->getType())) {
+    if (member->isArrow() && points_to_file(member->getBase()->getType()) && !in_sizeof(member)) {
       recorder_.add("file-object-dereferenced", member->getMemberLoc());
     }
     return true;
@@ -1187,6 +1187,22 @@ class ExtraVisitor final : public clang::RecursiveASTVisitor<ExtraVisitor> {
   }
 
   // Whether the value produced by `expression` feeds an enclosing construct.
+  // The operand of sizeof is never evaluated.
+  [[nodiscard]] bool in_sizeof(const clang::Stmt* statement) const {
+    const clang::Stmt* current = statement;
+    while (current != nullptr) {
+      const auto parents = ast_.getParents(*current);
+      if (parents.empty()) {
+        return false;
+      }
+      current = parents[0].get<clang::Stmt>();
+      if ((current != nullptr) && llvm::isa<clang::UnaryExprOrTypeTraitExpr>(current)) {
+        return true;
+      }
+    }
+    return false;
+  }
+
   [[nodiscard]] bool result_used(const clang::Expr* expression) const {
     const clang::Stmt* child = expression;
     while (true) {
@@ -1755,7 +1771,12 @@ class ExtraMacroObserver final : public clang::PPCallbacks {
       const bool close_after = ((i + 1U) < tokens.size()) &&
                                (tokens[i + 1U].is(clang::tok::r_paren) ||
                                 tokens[i + 1U].is(clang::tok::comma));
-      if (!member_name && !(open_before && close_after)) {
+      // Brackets enclose a subscript, and a function designator cannot sensibly be parenthesised.
+      const bool in_brackets = (i > 0U) && tokens[i - 1U].is(clang::tok::l_square) &&
+                               ((i + 1U) < tokens.size()) && tokens[i + 1U].is(clang::tok::r_square);
+      const bool callee = ((i + 1U) < tokens.size()) && tokens[i + 1U].is(clang::tok::l_paren) &&
+                          !((i > 0U) && (tokens[i - 1U].is(clang::tok::identifier)));
+      if (!member_name && !in_brackets && !callee && !(open_before && close_after)) {
         unparenthesized = true;
       }
     }
@@ -1814,8 +1835,13 @@ class ExtraMacroObserver final : public clang::PPCallbacks {
   }
 
   void check_reserved_macro(const std::string& name, const clang::SourceLocation location) const {
+    static const std::set<std::string> kLibraryMacros{
+        "errno", "NULL", "EOF", "assert", "offsetof", "stdin", "stdout", "stderr", "BUFSIZ", "INT_MAX",
+        "INT_MIN", "UINT_MAX", "LONG_MAX", "LONG_MIN", "ULONG_MAX", "CHAR_BIT", "SIZE_MAX", "RAND_MAX",
+        "EXIT_SUCCESS", "EXIT_FAILURE", "va_start", "va_arg", "va_end", "va_copy", "INT8_MAX", "INT16_MAX",
+        "INT32_MAX", "INT64_MAX", "UINT8_MAX", "UINT16_MAX", "UINT32_MAX", "UINT64_MAX"};
     const bool reserved =
-        (name == "defined") ||
+        (name == "defined") || (kLibraryMacros.count(name) != 0U) ||
         ((name.size() > 1U) && (name[0] == '_') &&
          ((name[1] == '_') || (std::isupper(static_cast<unsigned char>(name[1])) != 0)));
     if (reserved) {

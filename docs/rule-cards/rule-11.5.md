@@ -14,7 +14,7 @@ A conversion in the other direction (object pointer to void pointer) is complian
 
 ## Tested cases
 
-6 of 6 pass.
+9 of 9 pass.
 
 | Kind | Case | Result |
 |---|---|---|
@@ -22,6 +22,9 @@ A conversion in the other direction (object pointer to void pointer) is complian
 | Compliant (must stay silent) | void pointer stays void pointer | pass |
 | Violation (must be reported) | implicit conversion | pass |
 | Violation (must be reported) | explicit cast of a void pointer | pass |
+| Compliant (must stay silent) | object pointer passed to a void pointer parameter | pass |
+| Violation (must be reported) | void pointer returned as an object pointer | pass |
+| Compliant (must stay silent) | comparison of a void pointer with an object pointer | pass |
 | Violation (must be reported) | the result of a function returning void pointer assigned to an int pointer | pass |
 | Compliant (must stay silent) | stored in another void pointer | pass |
 
@@ -61,6 +64,32 @@ void f(void) { p = src(); } /*@V*/
 ```c
 void *src(void);
 int *g(void) { return (int *)src(); } /*@V*/
+```
+
+### Compliant (must stay silent): object pointer passed to a void pointer parameter
+
+`main.c`
+
+```c
+void use(void *p);
+void f(int *q) { use(q); }
+```
+
+### Violation (must be reported): void pointer returned as an object pointer
+
+`main.c`
+
+```c
+void *src(void);
+int *f(void) { return src(); } /*@V*/
+```
+
+### Compliant (must stay silent): comparison of a void pointer with an object pointer
+
+`main.c`
+
+```c
+int f(void *v, int *p) { return v == p; }
 ```
 
 ### Violation (must be reported): the result of a function returning void pointer assigned to an int pointer

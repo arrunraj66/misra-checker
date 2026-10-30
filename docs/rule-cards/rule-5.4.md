@@ -14,7 +14,7 @@ Only macros defined in project code are examined.
 
 ## Tested cases
 
-4 of 4 pass.
+6 of 6 pass.
 
 | Kind | Case | Result |
 |---|---|---|
@@ -22,6 +22,8 @@ Only macros defined in project code are examined.
 | Compliant (must stay silent) | 32-character macro names are distinct in C99 | pass |
 | Violation (must be reported) | 64-character macro names that differ only in the last character | pass |
 | Violation (must be reported) | 32-character macro names differ only after the 31st (C90 limit) | pass |
+| Compliant (must stay silent) | macro parameters repeat the macro name of another macro | pass |
+| Compliant (must stay silent) | two macros with different long names | pass |
 
 ## Case sources
 
@@ -63,5 +65,25 @@ int v = aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaax + aaaaa
 #define abcdefghijklmnopqrstuvwxyz12345a 1 /*@V*/
 #define abcdefghijklmnopqrstuvwxyz12345b 2 /*@V*/
 int v = abcdefghijklmnopqrstuvwxyz12345a + abcdefghijklmnopqrstuvwxyz12345b;
+```
+
+### Compliant (must stay silent): macro parameters repeat the macro name of another macro
+
+`main.c`
+
+```c
+#define A(x) (x)
+#define B(A2) (A2)
+int v = A(1) + B(2);
+```
+
+### Compliant (must stay silent): two macros with different long names
+
+`main.c`
+
+```c
+#define ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ0a 1
+#define BBCDEFGHIJKLMNOPQRSTUVWXYZ0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ0a 2
+int a = ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ0a + BBCDEFGHIJKLMNOPQRSTUVWXYZ0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ0a;
 ```
 

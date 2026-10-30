@@ -14,7 +14,7 @@ Functions that compile errors have made invalid, and functions whose body was em
 
 ## Tested cases
 
-7 of 7 pass.
+11 of 11 pass.
 
 | Kind | Case | Result |
 |---|---|---|
@@ -25,6 +25,10 @@ Functions that compile errors have made invalid, and functions whose body was em
 | Violation (must be reported) | one path has no return | pass |
 | Violation (must be reported) | a switch whose clauses do not all return | pass |
 | Violation (must be reported) | falls off the end after a loop | pass |
+| Compliant (must stay silent) | a function that ends with a call to a no-return function | pass |
+| Compliant (must stay silent) | if and else both return | pass |
+| Compliant (must stay silent) | switch with default where every clause returns | pass |
+| Violation (must be reported) | a loop that can end without returning | pass |
 
 ## Case sources
 
@@ -94,6 +98,60 @@ int g(int v) /*@V*/
 int k(int n) /*@V*/
 {
     while (n > 0) { n--; }
+}
+```
+
+### Compliant (must stay silent): a function that ends with a call to a no-return function
+
+`main.c`
+
+```c
+#include <stdlib.h>
+int f(int c)
+{
+    if (c) { return 1; }
+    abort();
+}
+```
+
+### Compliant (must stay silent): if and else both return
+
+`main.c`
+
+```c
+int f(int c)
+{
+    if (c) { return 1; } else { return 2; }
+}
+```
+
+### Compliant (must stay silent): switch with default where every clause returns
+
+`main.c`
+
+```c
+int f(int v)
+{
+    switch (v)
+    {
+        case 1: return 1;
+        default: return 0;
+    }
+}
+```
+
+### Violation (must be reported): a loop that can end without returning
+
+`main.c`
+
+```c
+int f(int n) /*@V*/
+{
+    while (n > 0)
+    {
+        if (n == 3) { return n; }
+        n--;
+    }
 }
 ```
 

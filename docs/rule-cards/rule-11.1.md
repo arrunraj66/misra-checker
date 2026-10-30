@@ -16,7 +16,7 @@ A cast to void of a function pointer is not reported (documented gap; the FreeRT
 
 ## Tested cases
 
-5 of 6 pass.
+8 of 9 pass.
 
 | Kind | Case | Result |
 |---|---|---|
@@ -26,6 +26,9 @@ A cast to void of a function pointer is not reported (documented gap; the FreeRT
 | Violation (must be reported) | function pointer cast to an integer | pass |
 | Violation (must be reported) | cast between two function pointer types | pass |
 | Known false negative (not detected yet) | a cast of a function pointer to void | documented limit |
+| Compliant (must stay silent) | casting a null constant to a function pointer type | pass |
+| Compliant (must stay silent) | a function designator compared with a function pointer | pass |
+| Violation (must be reported) | function pointer cast to unsigned long | pass |
 
 ## Case sources
 
@@ -84,5 +87,31 @@ long (*b)(long) = (long (*)(long))a; /*@V*/
 ```c
 void (*fp)(void);
 void f(void) { (void)fp; } /*@V*/
+```
+
+### Compliant (must stay silent): casting a null constant to a function pointer type
+
+`main.c`
+
+```c
+void (*fp)(void) = (void (*)(void))0;
+```
+
+### Compliant (must stay silent): a function designator compared with a function pointer
+
+`main.c`
+
+```c
+void g(void);
+int f(void (*fp)(void)) { return fp == g; }
+```
+
+### Violation (must be reported): function pointer cast to unsigned long
+
+`main.c`
+
+```c
+void g(void);
+unsigned long f(void) { return (unsigned long)&g; } /*@V*/
 ```
 

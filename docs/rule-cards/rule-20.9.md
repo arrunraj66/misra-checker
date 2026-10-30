@@ -14,7 +14,7 @@ Integer suffixes such as 1U are numbers, not identifiers.
 
 ## Tested cases
 
-7 of 7 pass.
+11 of 11 pass.
 
 | Kind | Case | Result |
 |---|---|---|
@@ -22,6 +22,10 @@ Integer suffixes such as 1U are numbers, not identifiers.
 | Compliant (must stay silent) | suffixed numbers | pass |
 | Violation (must be reported) | an identifier that is not defined | pass |
 | Violation (must be reported) | undefined in an elif | pass |
+| Violation (must be reported) | true is not defined in C99 | pass |
+| Compliant (must stay silent) | identifier guarded by defined in the same condition | pass |
+| Compliant (must stay silent) | function-like macro defined and called | pass |
+| Violation (must be reported) | an undefined name on the right of a comparison | pass |
 | Compliant (must stay silent) | macros defined on the command line style via a prior define | pass |
 | Compliant (must stay silent) | the __STDC_VERSION__ predefined macro | pass |
 | Compliant (must stay silent) | __has_include style checks are not identifiers to define | pass |
@@ -75,6 +79,49 @@ int a;
 int a;
 #elif B_UNDEFINED /*@V*/
 int b;
+#endif
+```
+
+### Violation (must be reported): true is not defined in C99
+
+`main.c`
+
+```c
+#if true /*@V*/
+int a;
+#endif
+```
+
+### Compliant (must stay silent): identifier guarded by defined in the same condition
+
+`main.c`
+
+```c
+#define X 2
+#if defined(X) && X > 1
+int a;
+#endif
+```
+
+### Compliant (must stay silent): function-like macro defined and called
+
+`main.c`
+
+```c
+#define MAX(a, b) ((a) > (b) ? (a) : (b))
+#if MAX(1, 2) > 1
+int a;
+#endif
+```
+
+### Violation (must be reported): an undefined name on the right of a comparison
+
+`main.c`
+
+```c
+#define A 1
+#if A == B /*@V*/
+int a;
 #endif
 ```
 

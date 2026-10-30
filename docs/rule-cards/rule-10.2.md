@@ -14,7 +14,7 @@ Only addition and subtraction are examined.
 
 ## Tested cases
 
-4 of 4 pass.
+8 of 8 pass.
 
 | Kind | Case | Result |
 |---|---|---|
@@ -22,6 +22,10 @@ Only addition and subtraction are examined.
 | Compliant (must stay silent) | character compared and not computed | pass |
 | Violation (must be reported) | two characters added | pass |
 | Violation (must be reported) | a character added to a character constant | pass |
+| Violation (must be reported) | integer minus character | pass |
+| Compliant (must stay silent) | character minus character | pass |
+| Compliant (must stay silent) | character plus an integer | pass |
+| Compliant (must stay silent) | digit conversion | pass |
 
 ## Case sources
 
@@ -56,5 +60,37 @@ int f(char a, char b) { return a + b; } /*@V*/
 
 ```c
 int g(char a) { return a + 'b'; } /*@V*/
+```
+
+### Violation (must be reported): integer minus character
+
+`main.c`
+
+```c
+int f(int i, char c) { return i - c; } /*@V*/
+```
+
+### Compliant (must stay silent): character minus character
+
+`main.c`
+
+```c
+int f(char a, char b) { return a - b; }
+```
+
+### Compliant (must stay silent): character plus an integer
+
+`main.c`
+
+```c
+char f(char c, int n) { return (char)(c + n); }
+```
+
+### Compliant (must stay silent): digit conversion
+
+`main.c`
+
+```c
+int f(char c) { return c - '0'; }
 ```
 

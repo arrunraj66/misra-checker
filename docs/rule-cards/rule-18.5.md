@@ -14,7 +14,7 @@ The levels are counted in the declaration as written; a typedef name counts as o
 
 ## Tested cases
 
-4 of 4 pass.
+7 of 7 pass.
 
 | Kind | Case | Result |
 |---|---|---|
@@ -22,6 +22,9 @@ The levels are counted in the declaration as written; a typedef name counts as o
 | Violation (must be reported) | three levels | pass |
 | Compliant (must stay silent) | a typedef counts as one level in the declaration that uses it | pass |
 | Violation (must be reported) | three levels written in a parameter | pass |
+| Violation (must be reported) | three levels in a structure member | pass |
+| Compliant (must stay silent) | array of pointers is one level | pass |
+| Compliant (must stay silent) | pointer to pointer | pass |
 
 ## Case sources
 
@@ -58,5 +61,29 @@ void f(pp_t *q);
 
 ```c
 void g(int ***r); /*@V*/
+```
+
+### Violation (must be reported): three levels in a structure member
+
+`main.c`
+
+```c
+struct s { int ***p; }; /*@V*/
+```
+
+### Compliant (must stay silent): array of pointers is one level
+
+`main.c`
+
+```c
+int *table[4];
+```
+
+### Compliant (must stay silent): pointer to pointer
+
+`main.c`
+
+```c
+int **pp;
 ```
 

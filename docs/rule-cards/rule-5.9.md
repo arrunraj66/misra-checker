@@ -14,13 +14,15 @@ Needs every translation unit of the program in one run; with a single translatio
 
 ## Tested cases
 
-3 of 3 pass.
+5 of 5 pass.
 
 | Kind | Case | Result |
 |---|---|---|
 | Compliant (must stay silent) | static names that are distinct across files | pass |
 | Violation (must be reported) | the same static name in two files | pass |
 | Violation (must be reported) | the same static object name in two files | pass |
+| Compliant (must stay silent) | a static inline function in a shared header is one declaration | pass |
+| Violation (must be reported) | static functions of the same name with different bodies in two files | pass |
 
 ## Case sources
 
@@ -70,5 +72,43 @@ int get_a(void) { return state; }
 ```c
 static int state = 2; /*@V*/
 int get_b(void) { return state; }
+```
+
+### Compliant (must stay silent): a static inline function in a shared header is one declaration
+
+`util.h`
+
+```c
+static inline int twice(int a) { return a * 2; }
+```
+
+`a.c`
+
+```c
+#include "util.h"
+int fa(int x) { return twice(x); }
+```
+
+`b.c`
+
+```c
+#include "util.h"
+int fb(int x) { return twice(x) + 1; }
+```
+
+### Violation (must be reported): static functions of the same name with different bodies in two files
+
+`a.c`
+
+```c
+static int step(int a) { return a + 1; }
+int fa(int x) { return step(x); }
+```
+
+`b.c`
+
+```c
+static int step(int a) { return a + 2; } /*@V*/
+int fb(int x) { return step(x); }
 ```
 

@@ -14,13 +14,15 @@ Only designated initializers are examined.
 
 ## Tested cases
 
-3 of 3 pass.
+5 of 5 pass.
 
 | Kind | Case | Result |
 |---|---|---|
 | Compliant (must stay silent) | distinct designators | pass |
 | Violation (must be reported) | the same array element twice | pass |
 | Violation (must be reported) | the same member twice | pass |
+| Violation (must be reported) | a designator repeated after other elements | pass |
+| Compliant (must stay silent) | designators on different members | pass |
 
 ## Case sources
 
@@ -48,5 +50,21 @@ int a[3] = { [1] = 1, [1] = 2 }; /*@V*/
 ```c
 struct s { int x; int y; };
 struct s v = { .x = 1, .x = 2 }; /*@V*/
+```
+
+### Violation (must be reported): a designator repeated after other elements
+
+`main.c`
+
+```c
+int a[3] = { [0] = 1, [1] = 2, [0] = 3 }; /*@V*/
+```
+
+### Compliant (must stay silent): designators on different members
+
+`main.c`
+
+```c
+struct s { int a; int b; } v = { .a = 1, .b = 2 };
 ```
 

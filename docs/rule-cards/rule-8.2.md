@@ -16,7 +16,7 @@ The unnamed-parameter form is reported on declarations and on definitions alike.
 
 ## Tested cases
 
-7 of 8 pass.
+12 of 13 pass.
 
 | Kind | Case | Result |
 |---|---|---|
@@ -25,6 +25,11 @@ The unnamed-parameter form is reported on declarations and on definitions alike.
 | Violation (must be reported) | an empty parameter list is not a prototype | pass |
 | Violation (must be reported) | an unnamed parameter | pass |
 | Violation (must be reported) | a definition in the old style | pass |
+| Violation (must be reported) | a prototype with only a type | pass |
+| Compliant (must stay silent) | a variadic prototype with a named first parameter | pass |
+| Compliant (must stay silent) | array and function pointer parameters with names | pass |
+| Compliant (must stay silent) | void parameter list | pass |
+| Violation (must be reported) | a definition with an empty parameter list | pass |
 | Compliant (must stay silent) | a function pointer type with named parameters | pass |
 | Compliant (must stay silent) | a function pointer object that takes no parameters | pass |
 | Known false negative (not detected yet) | a function pointer type with unnamed parameters (only function declarations are checked) | documented limit |
@@ -70,6 +75,46 @@ int g(int); /*@V*/
 
 ```c
 int h() { return 0; } /*@V*/
+```
+
+### Violation (must be reported): a prototype with only a type
+
+`main.c`
+
+```c
+void f(int); /*@V*/
+```
+
+### Compliant (must stay silent): a variadic prototype with a named first parameter
+
+`main.c`
+
+```c
+int p(const char *fmt, ...);
+```
+
+### Compliant (must stay silent): array and function pointer parameters with names
+
+`main.c`
+
+```c
+void f(int a[], int (*cb)(int x));
+```
+
+### Compliant (must stay silent): void parameter list
+
+`main.c`
+
+```c
+int f(void);
+```
+
+### Violation (must be reported): a definition with an empty parameter list
+
+`main.c`
+
+```c
+int f() { return 0; } /*@V*/
 ```
 
 ### Compliant (must stay silent): a function pointer type with named parameters

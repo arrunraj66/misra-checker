@@ -12,9 +12,11 @@ Detection contract: Report a read of an automatic object that the control-flow a
 
 Only automatic scalar objects are tracked. Values written through a pointer, and elements of arrays, are not followed.
 
+- **False negative:** struct member read before it is written (only scalar objects are tracked) (documented limit)
+
 ## Tested cases
 
-13 of 13 pass.
+20 of 21 pass.
 
 | Kind | Case | Result |
 |---|---|---|
@@ -24,6 +26,14 @@ Only automatic scalar objects are tracked. Values written through a pointer, and
 | Violation (must be reported) | read of an object that was never written | pass |
 | Violation (must be reported) | written on only one path | pass |
 | Violation (must be reported) | read in an expression before the assignment | pass |
+| Violation (must be reported) | increment of a never initialised object | pass |
+| Compliant (must stay silent) | assigned in a for initialiser | pass |
+| Compliant (must stay silent) | assigned by a do-while body before the read | pass |
+| Compliant (must stay silent) | a static object is zero initialised | pass |
+| Known false negative (not detected yet) | struct member read before it is written (only scalar objects are tracked) | documented limit |
+| Compliant (must stay silent) | struct passed by address is initialised there | pass |
+| Violation (must be reported) | switch with default that forgets to assign | pass |
+| Compliant (must stay silent) | assigned in both arms of a conditional operator statement | pass |
 | Compliant (must stay silent) | array with a complete initializer | pass |
 | Compliant (must stay silent) | written in a loop and then read | pass |
 | Compliant (must stay silent) | sizeof does not read the object | pass |
@@ -105,6 +115,117 @@ int f(void)
     int b = a + 1; /*@V*/
     a = 2;
     return b + a;
+}
+```
+
+### Violation (must be reported): increment of a never initialised object
+
+`main.c`
+
+```c
+int f(void)
+{
+    int x;
+    x++; /*@V*/
+    return x;
+}
+```
+
+### Compliant (must stay silent): assigned in a for initialiser
+
+`main.c`
+
+```c
+int f(int n)
+{
+    int i;
+    int s = 0;
+    for (i = 0; i < n; i++) { s += i; }
+    return s;
+}
+```
+
+### Compliant (must stay silent): assigned by a do-while body before the read
+
+`main.c`
+
+```c
+int f(void)
+{
+    int x;
+    do { x = 1; } while (0);
+    return x;
+}
+```
+
+### Compliant (must stay silent): a static object is zero initialised
+
+`main.c`
+
+```c
+int f(void)
+{
+    static int x;
+    return x;
+}
+```
+
+### Known false negative (not detected yet): struct member read before it is written (only scalar objects are tracked)
+
+`main.c`
+
+```c
+struct s { int a; int b; };
+int f(void)
+{
+    struct s v;
+    v.a = 1;
+    return v.b; /*@V*/
+}
+```
+
+### Compliant (must stay silent): struct passed by address is initialised there
+
+`main.c`
+
+```c
+struct s { int a; };
+void init(struct s *p);
+int f(void)
+{
+    struct s v;
+    init(&v);
+    return v.a;
+}
+```
+
+### Violation (must be reported): switch with default that forgets to assign
+
+`main.c`
+
+```c
+int f(int c)
+{
+    int x;
+    switch (c)
+    {
+        case 1: x = 1; break;
+        default: break;
+    }
+    return x; /*@V*/
+}
+```
+
+### Compliant (must stay silent): assigned in both arms of a conditional operator statement
+
+`main.c`
+
+```c
+int f(int c)
+{
+    int x;
+    if (c) { x = 1; } else { x = 0; }
+    return x + 1;
 }
 ```
 

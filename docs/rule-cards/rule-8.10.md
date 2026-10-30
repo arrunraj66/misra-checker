@@ -14,13 +14,15 @@ Only inline function definitions are examined.
 
 ## Tested cases
 
-3 of 3 pass.
+5 of 5 pass.
 
 | Kind | Case | Result |
 |---|---|---|
 | Compliant (must stay silent) | static inline | pass |
 | Compliant (must stay silent) | a plain function | pass |
 | Violation (must be reported) | inline without static | pass |
+| Violation (must be reported) | extern inline definition | pass |
+| Compliant (must stay silent) | a declaration only of a static inline function | pass |
 
 ## Case sources
 
@@ -47,5 +49,22 @@ int plain(int x) { return x; }
 
 ```c
 inline int twice(int x) { return x * 2; } /*@V*/
+```
+
+### Violation (must be reported): extern inline definition
+
+`main.c`
+
+```c
+extern inline int sq(int a) { return a * a; } /*@V*/
+```
+
+### Compliant (must stay silent): a declaration only of a static inline function
+
+`main.c`
+
+```c
+static inline int sq(int a);
+static inline int sq(int a) { return a * a; }
 ```
 

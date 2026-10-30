@@ -14,7 +14,7 @@ Only string and character literals are examined.
 
 ## Tested cases
 
-5 of 5 pass.
+12 of 12 pass.
 
 | Kind | Case | Result |
 |---|---|---|
@@ -23,6 +23,13 @@ Only string and character literals are examined.
 | Violation (must be reported) | hexadecimal escape followed by a letter | pass |
 | Violation (must be reported) | octal escape followed by a digit-like text | pass |
 | Violation (must be reported) | hexadecimal escape followed by ordinary text | pass |
+| Compliant (must stay silent) | adjacent literals terminate an escape | pass |
+| Compliant (must stay silent) | octal escape with three digits followed by text | pass |
+| Compliant (must stay silent) | nul escape at the end | pass |
+| Violation (must be reported) | nul escape followed by a digit text | pass |
+| Violation (must be reported) | octal escape followed by a letter | pass |
+| Compliant (must stay silent) | character constants | pass |
+| Violation (must be reported) | wide string hexadecimal escape followed by text | pass |
 
 ## Case sources
 
@@ -69,5 +76,63 @@ const char *b = "\1x"; /*@V*/
 
 ```c
 const char *c = "\x0Dtext"; /*@V*/
+```
+
+### Compliant (must stay silent): adjacent literals terminate an escape
+
+`main.c`
+
+```c
+const char *s = "\x41" "B";
+```
+
+### Compliant (must stay silent): octal escape with three digits followed by text
+
+`main.c`
+
+```c
+const char *s = "\101B";
+```
+
+### Compliant (must stay silent): nul escape at the end
+
+`main.c`
+
+```c
+const char s[] = "ab\0";
+```
+
+### Violation (must be reported): nul escape followed by a digit text
+
+`main.c`
+
+```c
+const char *s = "\08"; /*@V*/
+```
+
+### Violation (must be reported): octal escape followed by a letter
+
+`main.c`
+
+```c
+const char *s = "\1a"; /*@V*/
+```
+
+### Compliant (must stay silent): character constants
+
+`main.c`
+
+```c
+int c = '\x41';
+int d = '\101';
+```
+
+### Violation (must be reported): wide string hexadecimal escape followed by text
+
+`main.c`
+
+```c
+#include <stddef.h>
+const wchar_t *s = L"\x41g"; /*@V*/
 ```
 

@@ -14,7 +14,7 @@ Needs every translation unit of the program in one run (library functions and co
 
 ## Tested cases
 
-4 of 4 pass.
+7 of 7 pass.
 
 | Kind | Case | Result |
 |---|---|---|
@@ -22,6 +22,9 @@ Needs every translation unit of the program in one run (library functions and co
 | Violation (must be reported) | the same function defined in two files | pass |
 | Violation (must be reported) | a function that is referenced but defined nowhere | pass |
 | Compliant (must stay silent) | standard library functions are not reported | pass |
+| Compliant (must stay silent) | an extern declaration that nothing uses | pass |
+| Violation (must be reported) | an object used in one file and defined nowhere | pass |
+| Compliant (must stay silent) | a function used only through a pointer in another file | pass |
 
 ## Case sources
 
@@ -77,5 +80,50 @@ int main(void) { return top(); }
 ```c
 #include <string.h>
 unsigned long n(const char *s) { return strlen(s); }
+```
+
+### Compliant (must stay silent): an extern declaration that nothing uses
+
+`a.c`
+
+```c
+extern int unused_level;
+int run(void) { return 0; }
+```
+
+`b.c`
+
+```c
+int other(void) { return 1; }
+```
+
+### Violation (must be reported): an object used in one file and defined nowhere
+
+`a.c`
+
+```c
+extern int missing;
+int run(void) { return missing; } /*@V*/
+```
+
+`b.c`
+
+```c
+int other(void) { return 1; }
+```
+
+### Compliant (must stay silent): a function used only through a pointer in another file
+
+`a.c`
+
+```c
+int handler(int x) { return x; }
+```
+
+`b.c`
+
+```c
+int handler(int x);
+int (*table[1])(int) = { handler };
 ```
 

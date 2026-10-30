@@ -14,12 +14,14 @@ Only straight-line uses in the same block are found.
 
 ## Tested cases
 
-2 of 2 pass.
+4 of 4 pass.
 
 | Kind | Case | Result |
 |---|---|---|
 | Compliant (must stay silent) | reassigned after the close | pass |
 | Violation (must be reported) | used after fclose | pass |
+| Violation (must be reported) | the pointer tested after fclose | pass |
+| Compliant (must stay silent) | the pointer cleared after fclose | pass |
 
 ## Case sources
 
@@ -52,6 +54,33 @@ void f(void)
         (void)fclose(s);
         (void)fputc('x', s); /*@V*/
     }
+}
+```
+
+### Violation (must be reported): the pointer tested after fclose
+
+`main.c`
+
+```c
+#include <stdio.h>
+int f(FILE *p)
+{
+    (void)fclose(p);
+    if (p != NULL) { return 1; } /*@V*/
+    return 0;
+}
+```
+
+### Compliant (must stay silent): the pointer cleared after fclose
+
+`main.c`
+
+```c
+#include <stdio.h>
+void f(FILE *p)
+{
+    (void)fclose(p);
+    p = NULL;
 }
 ```
 

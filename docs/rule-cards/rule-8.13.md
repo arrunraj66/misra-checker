@@ -12,9 +12,11 @@ Detection contract: Subset: report a pointer parameter to non-const whose every 
 
 Only direct uses in the function are examined; a pointer passed to another function is assumed to be modified.
 
+- **False negative:** pointer to pointer that is only read (only the first level of pointers is examined) (documented limit)
+
 ## Tested cases
 
-15 of 15 pass.
+23 of 24 pass.
 
 | Kind | Case | Result |
 |---|---|---|
@@ -23,6 +25,15 @@ Only direct uses in the function are examined; a pointer passed to another funct
 | Compliant (must stay silent) | the pointer is passed on (it may be modified there) | pass |
 | Violation (must be reported) | read-only use of a non-const pointer parameter | pass |
 | Violation (must be reported) | indexed read-only use | pass |
+| Violation (must be reported) | a pointer only compared with null | pass |
+| Known false negative (not detected yet) | pointer to pointer that is only read (only the first level of pointers is examined) | documented limit |
+| Compliant (must stay silent) | a pointer stored into a pointer to non-const | pass |
+| Compliant (must stay silent) | a pointer passed to a function that may write | pass |
+| Violation (must be reported) | volatile register read only | pass |
+| Compliant (must stay silent) | function pointer parameters are not data pointers | pass |
+| Violation (must be reported) | pointer to a const-qualified struct member read | pass |
+| Compliant (must stay silent) | written through a member | pass |
+| Compliant (must stay silent) | member of the pointee modified through increment | pass |
 | Violation (must be reported) | a pointer that is advanced and read, never written through | pass |
 | Violation (must be reported) | a structure pointer that is only read | pass |
 | Compliant (must stay silent) | a structure pointer that is written through | pass |
@@ -75,6 +86,83 @@ int first(int *p) { return *p; } /*@V*/
 
 ```c
 int at(int *a, int i) { return a[i]; } /*@V*/
+```
+
+### Violation (must be reported): a pointer only compared with null
+
+`main.c`
+
+```c
+int f(int *p) { return p != 0; } /*@V*/
+```
+
+### Known false negative (not detected yet): pointer to pointer that is only read (only the first level of pointers is examined)
+
+`main.c`
+
+```c
+int f(char **argv) { return argv[0][0]; } /*@V*/
+```
+
+### Compliant (must stay silent): a pointer stored into a pointer to non-const
+
+`main.c`
+
+```c
+int *g;
+void f(int *p) { g = p; }
+```
+
+### Compliant (must stay silent): a pointer passed to a function that may write
+
+`main.c`
+
+```c
+void fill(int *out);
+void f(int *p) { fill(p); }
+```
+
+### Violation (must be reported): volatile register read only
+
+`main.c`
+
+```c
+int f(volatile int *reg) { return *reg; } /*@V*/
+```
+
+### Compliant (must stay silent): function pointer parameters are not data pointers
+
+`main.c`
+
+```c
+int f(int (*cb)(int)) { return cb(1); }
+```
+
+### Violation (must be reported): pointer to a const-qualified struct member read
+
+`main.c`
+
+```c
+struct s { int a; };
+int f(struct s *p) { return p->a + 1; } /*@V*/
+```
+
+### Compliant (must stay silent): written through a member
+
+`main.c`
+
+```c
+struct s { int a; };
+void f(struct s *p) { p->a = 1; }
+```
+
+### Compliant (must stay silent): member of the pointee modified through increment
+
+`main.c`
+
+```c
+struct s { int a; };
+void f(struct s *p) { p->a++; }
 ```
 
 ### Violation (must be reported): a pointer that is advanced and read, never written through

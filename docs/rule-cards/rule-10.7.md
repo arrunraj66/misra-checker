@@ -14,7 +14,7 @@ Constants are exempt.
 
 ## Tested cases
 
-4 of 4 pass.
+7 of 7 pass.
 
 | Kind | Case | Result |
 |---|---|---|
@@ -22,6 +22,9 @@ Constants are exempt.
 | Compliant (must stay silent) | a constant operand | pass |
 | Violation (must be reported) | a composite short operand combined with an int | pass |
 | Violation (must be reported) | a composite char-width operand combined with a long | pass |
+| Violation (must be reported) | composite int combined with long | pass |
+| Compliant (must stay silent) | composite widened first | pass |
+| Violation (must be reported) | a composite float combined with a double | pass |
 
 ## Case sources
 
@@ -55,5 +58,29 @@ int f(short a, short b, int c) { return (a + b) * c; } /*@V*/
 
 ```c
 long g(unsigned char a, unsigned char b, long c) { return (a + b) + c; } /*@V*/
+```
+
+### Violation (must be reported): composite int combined with long
+
+`main.c`
+
+```c
+long f(int a, int b, long c) { return (a + b) + c; } /*@V*/
+```
+
+### Compliant (must stay silent): composite widened first
+
+`main.c`
+
+```c
+long f(int a, int b, long c) { return ((long)a + b) + c; }
+```
+
+### Violation (must be reported): a composite float combined with a double
+
+`main.c`
+
+```c
+double f(float a, float b, double c) { return (a * b) + c; } /*@V*/
 ```
 

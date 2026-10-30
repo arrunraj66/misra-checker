@@ -14,7 +14,7 @@ Names of struct members, labels and tags live in other name spaces and are not c
 
 ## Tested cases
 
-6 of 6 pass.
+13 of 13 pass.
 
 | Kind | Case | Result |
 |---|---|---|
@@ -24,6 +24,13 @@ Names of struct members, labels and tags live in other name spaces and are not c
 | Violation (must be reported) | local variable hides a file-scope object | pass |
 | Violation (must be reported) | parameter hides a file-scope object | pass |
 | Violation (must be reported) | inner block variable hides an outer one | pass |
+| Violation (must be reported) | for loop variable hides an outer variable | pass |
+| Violation (must be reported) | local variable named like a function | pass |
+| Compliant (must stay silent) | label and variable with the same name use different name spaces | pass |
+| Compliant (must stay silent) | a tag and a variable share a name (different name space) | pass |
+| Violation (must be reported) | parameter in a function definition hides a typedef-free global function | pass |
+| Compliant (must stay silent) | sibling blocks reuse a name | pass |
+| Violation (must be reported) | block variable hides a parameter | pass |
 
 ## Case sources
 
@@ -91,6 +98,90 @@ int f(void)
     {
         int value = 2; /*@V*/
         return value;
+    }
+}
+```
+
+### Violation (must be reported): for loop variable hides an outer variable
+
+`main.c`
+
+```c
+void f(void)
+{
+    int i = 0;
+    for (int i = 0; i < 3; i++) { /*@V*/
+        (void)i;
+    }
+    (void)i;
+}
+```
+
+### Violation (must be reported): local variable named like a function
+
+`main.c`
+
+```c
+int process(int a);
+void g(void)
+{
+    int process = 1; /*@V*/
+    (void)process;
+}
+```
+
+### Compliant (must stay silent): label and variable with the same name use different name spaces
+
+`main.c`
+
+```c
+void f(int a)
+{
+    if (a) { goto a2; }
+a2:
+    a = 1;
+}
+```
+
+### Compliant (must stay silent): a tag and a variable share a name (different name space)
+
+`main.c`
+
+```c
+struct item { int a; };
+void f(void) { int item = 1; (void)item; }
+```
+
+### Violation (must be reported): parameter in a function definition hides a typedef-free global function
+
+`main.c`
+
+```c
+int count(void);
+int f(int count) { return count; } /*@V*/
+```
+
+### Compliant (must stay silent): sibling blocks reuse a name
+
+`main.c`
+
+```c
+void f(int a)
+{
+    if (a) { int t = 1; (void)t; } else { int t = 2; (void)t; }
+}
+```
+
+### Violation (must be reported): block variable hides a parameter
+
+`main.c`
+
+```c
+int f(int n)
+{
+    {
+        int n = 2; /*@V*/
+        return n;
     }
 }
 ```

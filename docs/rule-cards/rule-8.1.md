@@ -14,13 +14,17 @@ Only declarations that the compiler accepts with a warning are reachable; strict
 
 ## Tested cases
 
-3 of 3 pass.
+7 of 7 pass.
 
 | Kind | Case | Result |
 |---|---|---|
 | Compliant (must stay silent) | explicit types | pass |
 | Violation (must be reported) | object declared without a type | pass |
 | Violation (must be reported) | function defined without a return type | pass |
+| Violation (must be reported) | implicit int on a static object | pass |
+| Violation (must be reported) | const without a type | pass |
+| Compliant (must stay silent) | unsigned, long and short alone are explicit types | pass |
+| Violation (must be reported) | main without a return type | pass |
 
 ## Case sources
 
@@ -47,5 +51,40 @@ static a = 3; /*@V*/
 
 ```c
 f(void) { return 0; } /*@V*/
+```
+
+### Violation (must be reported): implicit int on a static object
+
+`main.c`
+
+```c
+static counter = 0; /*@V*/
+```
+
+### Violation (must be reported): const without a type
+
+`main.c`
+
+```c
+const limit = 4; /*@V*/
+```
+
+### Compliant (must stay silent): unsigned, long and short alone are explicit types
+
+`main.c`
+
+```c
+unsigned a;
+long b;
+short c;
+signed d;
+```
+
+### Violation (must be reported): main without a return type
+
+`main.c`
+
+```c
+main(void) { return 0; } /*@V*/
 ```
 

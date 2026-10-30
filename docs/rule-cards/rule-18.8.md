@@ -14,13 +14,16 @@ Only declarations whose size is not a constant are examined.
 
 ## Tested cases
 
-3 of 3 pass.
+6 of 6 pass.
 
 | Kind | Case | Result |
 |---|---|---|
 | Compliant (must stay silent) | constant sized arrays | pass |
 | Violation (must be reported) | size from a parameter | pass |
 | Violation (must be reported) | a variable-length array parameter type | pass |
+| Violation (must be reported) | a variable length array in a nested block | pass |
+| Compliant (must stay silent) | an enumeration constant as the size | pass |
+| Compliant (must stay silent) | sizeof based constant size | pass |
 
 ## Case sources
 
@@ -51,5 +54,37 @@ void f(int n)
 
 ```c
 void g(int n, int m[n]); /*@V*/
+```
+
+### Violation (must be reported): a variable length array in a nested block
+
+`main.c`
+
+```c
+void f(int n)
+{
+    if (n > 0)
+    {
+        int a[n]; /*@V*/
+        a[0] = 1;
+    }
+}
+```
+
+### Compliant (must stay silent): an enumeration constant as the size
+
+`main.c`
+
+```c
+enum { SIZE = 4 };
+int a[SIZE];
+```
+
+### Compliant (must stay silent): sizeof based constant size
+
+`main.c`
+
+```c
+int a[sizeof(int) * 2];
 ```
 

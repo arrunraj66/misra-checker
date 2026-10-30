@@ -14,7 +14,7 @@ Only calls whose result is discarded as a statement are examined.
 
 ## Tested cases
 
-7 of 7 pass.
+11 of 11 pass.
 
 | Kind | Case | Result |
 |---|---|---|
@@ -22,6 +22,10 @@ Only calls whose result is discarded as a statement are examined.
 | Compliant (must stay silent) | a void function | pass |
 | Violation (must be reported) | the result of a function is discarded | pass |
 | Violation (must be reported) | the result of a library function is discarded | pass |
+| Violation (must be reported) | memcpy result discarded | pass |
+| Violation (must be reported) | call through a function pointer with a discarded result | pass |
+| Compliant (must stay silent) | result assigned | pass |
+| Compliant (must stay silent) | result used in a return | pass |
 | Compliant (must stay silent) | a library call cast to void | pass |
 | Compliant (must stay silent) | the call is used in a condition | pass |
 | Violation (must be reported) | a call whose result is dropped inside a block | pass |
@@ -68,6 +72,48 @@ void f(char *d, const char *s)
 {
     strcpy(d, s); /*@V*/
 }
+```
+
+### Violation (must be reported): memcpy result discarded
+
+`main.c`
+
+```c
+#include <string.h>
+void f(char *d, const char *s)
+{
+    memcpy(d, s, 4); /*@V*/
+}
+```
+
+### Violation (must be reported): call through a function pointer with a discarded result
+
+`main.c`
+
+```c
+int f(int (*cb)(int))
+{
+    cb(1); /*@V*/
+    return 0;
+}
+```
+
+### Compliant (must stay silent): result assigned
+
+`main.c`
+
+```c
+int g(void);
+void f(void) { int r = g(); (void)r; }
+```
+
+### Compliant (must stay silent): result used in a return
+
+`main.c`
+
+```c
+int g(void);
+int f(void) { return g(); }
 ```
 
 ### Compliant (must stay silent): a library call cast to void
