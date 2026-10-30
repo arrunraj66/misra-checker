@@ -245,7 +245,14 @@ class RestVisitor final : public clang::RecursiveASTVisitor<RestVisitor> {
     clang::Expr::EvalResult index;
     if ((array != nullptr) && subscript->getIdx()->EvaluateAsInt(index, ast_)) {
       const llvm::APSInt value = index.Val.getInt();
-      if (value.isNegative() || (value.getZExtValue() >= array->getSize().getZExtValue())) {
+      // `&a[N]` is the address one past the end, which is allowed.
+      bool one_past = false;
+      if (!value.isNegative() && (value.getZExtValue() == array->getSize().getZExtValue())) {
+        const auto parents = ast_.getParents(*subscript);
+        one_past = !parents.empty() && (parents[0].get<clang::UnaryOperator>() != nullptr) &&
+                   (parents[0].get<clang::UnaryOperator>()->getOpcode() == clang::UO_AddrOf);
+      }
+      if (!one_past && (value.isNegative() || (value.getZExtValue() >= array->getSize().getZExtValue()))) {
         recorder_.add("array-index-constant-out-of-range", subscript->getExprLoc());
         recorder_.add("pointer-arithmetic-out-of-bounds", subscript->getExprLoc());
       }

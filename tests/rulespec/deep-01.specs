@@ -1,0 +1,124 @@
+##### rule 1.2
+summary: ignored (merged)
+
+--- bad: attribute on a variable
+int x __attribute__((unused)); /*@V*/
+
+--- bad: attribute on a function declaration
+void f(void) __attribute__((noreturn)); /*@V*/
+
+--- bad: binary literal
+int b = 0b101; /*@V*/
+
+--- bad: zero-length array
+struct s { int n; int d[0]; /*@V*/ };
+
+--- ok: flexible array member is C99
+struct s { int n; int d[]; };
+
+--- ok: restrict, inline, compound literal and long long are C99
+static inline int f(int *restrict p) { long long w = 1LL; return *p + (int)w + (int){3}; }
+
+--- ok: designated initializers are C99
+int a[4] = { [2] = 1 };
+struct p { int x; int y; } v = { .y = 2 };
+
+--- ok: a comment mentioning __attribute__ and asm
+/* __attribute__((x)) asm("nop") */
+const char *s = "__attribute__ typeof asm";
+
+--- bad: statement expression inside a macro use
+#define SQ(x) ({ int t = (x); t * t; })
+int f(int a) { return SQ(a); } /*@V*/
+
+--- bad: inline assembly with volatile
+void f(void)
+{
+    __asm__ volatile ("nop"); /*@V*/
+}
+
+--- bad: case range in a switch with several labels
+int f(int v)
+{
+    switch (v)
+    {
+        case 1: return 1;
+        case 2 ... 5: return 2; /*@V*/
+        default: return 0;
+    }
+}
+
+##### rule 1.3
+summary: ignored (merged)
+
+--- bad: modulo by a constant zero
+int f(int a) { return a % 0; } /*@V*/
+
+--- bad: compound division by a constant zero
+void f(int *a) { *a /= 0; } /*@V*/
+
+--- bad: negative constant index
+int a[4];
+int f(void) { return a[-1]; } /*@V*/
+
+--- bad: index equal to the array size
+int a[4];
+int f(void) { return a[4]; } /*@V*/
+
+--- ok: last valid index and the address one past the end
+int a[4];
+int f(void) { int *e = &a[4]; return a[3] + (e != 0); }
+
+--- bad: shift count equal to the width of int
+int f(int a) { return a << 32; } /*@V*/
+
+--- ok: shift count one less than the width
+int f(int a) { return a << 31; }
+
+--- bad: negative shift count
+int f(int a) { return a >> -1; } /*@V*/
+
+--- ok: offsetof idiom through a null pointer is not a dereference
+#include <stddef.h>
+struct s { int a; int b; };
+unsigned long off = offsetof(struct s, b);
+
+--- bad: member access through a null pointer constant
+struct s { int a; };
+int f(void) { return ((struct s *)0)->a; } /*@V*/
+
+--- ok: division where zero is excluded by the type of the divisor constant
+int f(int a) { return a / 2 + a % 3; }
+
+--- ok: two-dimensional index in range
+int m[3][4];
+int f(void) { return m[2][3]; }
+
+--- bad: second dimension index out of range
+int m[3][4];
+int f(void) { return m[1][4]; } /*@V*/
+
+--- ok: index into a pointer parameter is unknown
+int f(int *p) { return p[100]; }
+
+--- ok: zero literal as the dividend
+int f(int a) { return 0 / (a | 1); }
+
+--- bad: null dereference through the NULL macro
+#include <stddef.h>
+int f(void) { return *(int *)NULL; } /*@V*/
+
+--- ok: division by a macro that is non-zero
+#define SCALE 4
+int f(int a) { return a / SCALE; }
+
+--- bad: division by a macro that is zero
+#define SCALE 0
+int f(int a) { return a / SCALE; } /*@V*/
+
+--- bad: constant index into a string literal past its end
+char f(void) { return "ab"[3]; } /*@V*/
+
+--- ok: index at the terminator of a string literal
+char f(void) { return "ab"[2]; }
+

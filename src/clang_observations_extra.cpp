@@ -231,6 +231,11 @@ class ExtraVisitor final : public clang::RecursiveASTVisitor<ExtraVisitor> {
   }
 
   bool VisitFieldDecl(clang::FieldDecl* field) {
+    if (const auto* array = ast_.getAsConstantArrayType(field->getType())) {
+      if (array->getSize().isZero()) {
+        recorder_.add("language-extension", field->getLocation(), "zero-length-array");
+      }
+    }
     check_reserved(field, field->getLocation());
     check_attributes(field);
     return true;
@@ -624,6 +629,11 @@ class ExtraVisitor final : public clang::RecursiveASTVisitor<ExtraVisitor> {
   }
 
   bool VisitMemberExpr(clang::MemberExpr* member) {
+    if (member->isArrow() &&
+        member->getBase()->IgnoreParenCasts()->isNullPointerConstant(
+            ast_, clang::Expr::NPC_ValueDependentIsNull) != clang::Expr::NPCK_NotNull) {
+      recorder_.add("null-pointer-dereference", member->getOperatorLoc());
+    }
     if (member->isArrow() && points_to_file(member->getBase()->getType())) {
       recorder_.add("file-object-dereferenced", member->getMemberLoc());
     }
@@ -730,6 +740,12 @@ class ExtraVisitor final : public clang::RecursiveASTVisitor<ExtraVisitor> {
   }
 
   bool VisitIntegerLiteral(clang::IntegerLiteral* literal) {
+    {
+      const std::string text = spelling(literal->getBeginLoc());
+      if ((text.size() > 2U) && (text[0] == '0') && ((text[1] == 'b') || (text[1] == 'B'))) {
+        recorder_.add("language-extension", literal->getBeginLoc(), "binary-literal");
+      }
+    }
     if (literal->getType()->isUnsignedIntegerType()) {
       const std::string text = spelling(literal->getBeginLoc());
       if (text.find_first_of("uU") == std::string::npos) {
@@ -900,6 +916,20 @@ class ExtraVisitor final : public clang::RecursiveASTVisitor<ExtraVisitor> {
   }
 
   void check_attributes(const clang::Decl* declaration) {
+    // noreturn is kept in the function type, not as a declaration attribute; read the declaration text.
+    if (const auto* function = clang::dyn_cast<clang::FunctionDecl>(declaration)) {
+      clang::SourceRange range = function->getSourceRange();
+      if (function->doesThisDeclarationHaveABody() && function->getBody() != nullptr) {
+        range.setEnd(function->getBody()->getBeginLoc());
+      }
+      const llvm::StringRef text = clang::Lexer::getSourceText(
+          clang::CharSourceRange::getTokenRange(range), sm_, ast_.getLangOpts());
+      const std::size_t at = text.find("__attribute__");
+      if (at != llvm::StringRef::npos) {
+        recorder_.add("language-extension", range.getBegin().getLocWithOffset(static_cast<int>(at)), "attribute");
+        return;
+      }
+    }
     if (!declaration->hasAttrs()) {
       return;
     }
