@@ -1,0 +1,326 @@
+##### rule 17.1
+summary: ignored (merged)
+
+--- bad: va_start in a variadic function
+#include <stdarg.h>
+int f(int n, ...)
+{
+    va_list ap;
+    va_start(ap, n); /*@V*/
+    va_end(ap);
+    return n;
+}
+
+--- ok: calling a variadic library function
+#include <stdio.h>
+void f(void) { (void)printf("x"); }
+
+--- ok: declaring a variadic prototype
+int log_msg(const char *fmt, ...);
+
+##### rule 17.2
+summary: ignored (merged)
+
+--- bad: a cycle through three functions
+int b(int n);
+int c(int n);
+int a(int n) { return (n > 0) ? b(n - 1) : 0; } /*@V*/
+int b(int n) { return c(n); }
+int c(int n) { return a(n); }
+
+--- ok: a function calling a declared function that is not defined here
+int ext(int n);
+int f(int n) { return ext(n); }
+
+--- ok: same function name used as a variable elsewhere
+int count;
+int f(void) { return count; }
+
+--- bad: recursion in a static function
+static int fact(int n) { return (n <= 1) ? 1 : n * fact(n - 1); } /*@V*/
+int g(void) { return fact(3); }
+
+##### rule 17.3
+summary: ignored (merged)
+
+--- bad std=c90: implicit declaration is valid C90 but still not allowed
+int f(void) { return helper(1); } /*@V*/
+
+--- ok: function declared in an included header
+=== h.h
+int helper(int a);
+=== main.c
+#include "h.h"
+int f(void) { return helper(1); }
+
+##### rule 17.4
+summary: ignored (merged)
+
+--- ok: a function that ends with a call to a no-return function
+#include <stdlib.h>
+int f(int c)
+{
+    if (c) { return 1; }
+    abort();
+}
+
+--- ok: if and else both return
+int f(int c)
+{
+    if (c) { return 1; } else { return 2; }
+}
+
+--- ok: switch with default where every clause returns
+int f(int v)
+{
+    switch (v)
+    {
+        case 1: return 1;
+        default: return 0;
+    }
+}
+
+--- bad: a loop that can end without returning
+int f(int n) /*@V*/
+{
+    while (n > 0)
+    {
+        if (n == 3) { return n; }
+        n--;
+    }
+}
+
+##### rule 17.5
+summary: ignored (merged)
+
+--- bad: a smaller array passed to a two dimensional parameter
+void g(int a[2][4]);
+void f(void)
+{
+    int b[1][4];
+    g(b); /*@V*/
+}
+
+--- ok: a larger array than the parameter needs
+void g(int a[4]);
+void f(void)
+{
+    int b[8];
+    g(b);
+}
+
+--- ok: a pointer argument of unknown size
+void g(int a[4]);
+void f(int *p) { g(p); }
+
+##### rule 17.6
+summary: ignored (merged)
+
+--- ok: const inside the brackets
+void f(int a[const 4]);
+
+--- bad: static with a size in a prototype
+void f(char s[static 8]); /*@V*/
+
+##### rule 17.7
+summary: ignored (merged)
+
+--- bad: memcpy result discarded
+#include <string.h>
+void f(char *d, const char *s)
+{
+    memcpy(d, s, 4); /*@V*/
+}
+
+--- bad: call through a function pointer with a discarded result
+int f(int (*cb)(int))
+{
+    cb(1); /*@V*/
+    return 0;
+}
+
+--- ok: result assigned
+int g(void);
+void f(void) { int r = g(); (void)r; }
+
+--- ok: result used in a return
+int g(void);
+int f(void) { return g(); }
+
+##### rule 17.8
+summary: ignored (merged)
+
+--- bad: shift-assign on a parameter
+unsigned int f(unsigned int n)
+{
+    unsigned int c = 0;
+    while (n != 0u) { c++; n >>= 1; } /*@V*/
+    return c;
+}
+
+--- ok: array parameter elements modified
+void f(int a[4]) { a[0] = 1; }
+
+--- ok: a member of a structure pointer parameter modified
+struct s { int v; };
+void f(struct s *p) { p->v = 1; }
+
+--- bad: decrement of an integer parameter
+int f(int n)
+{
+    n--; /*@V*/
+    return n;
+}
+
+##### rule 18.1
+summary: ignored (merged)
+
+--- bad: pointer plus a constant beyond one past the end
+int a[4];
+int *f(void) { return a + 5; } /*@V*/
+
+--- ok: the one-past-the-end pointer through addition
+int a[4];
+int *f(void) { return a + 4; }
+
+--- ok: pointer parameters have unknown extent
+int *f(int *p) { return p + 100; }
+
+##### rule 18.2
+summary: ignored (merged)
+
+--- gap: members that are different arrays (only declared array objects are followed)
+struct s { int a[4]; int b[4]; };
+long f(struct s *p) { return &p->a[0] - &p->b[0]; } /*@V*/
+
+--- ok: pointer parameters of unknown origin
+long f(int *p, int *q) { return p - q; }
+
+##### rule 18.3
+summary: ignored (merged)
+
+--- ok: pointer parameters of unknown origin
+int f(int *p, int *q) { return p < q; }
+
+--- bad: relational comparison of two distinct arrays through addresses of elements
+int a[4];
+int b[4];
+int f(void) { return &a[1] >= &b[1]; } /*@V*/
+
+##### rule 18.4
+summary: ignored (merged)
+
+--- bad: dereference of pointer plus offset
+int f(int *p) { return *(p + 1); } /*@V*/
+
+--- ok: a pointer compared with another
+int f(int *p, int *q) { return p == q; }
+
+--- ok: arithmetic on an integer converted from a count
+int f(int *p, int i) { return p[i]; }
+
+--- bad: pointer subtraction assigned to a long
+long f(char *e, char *b) { return e - b; } /*@V*/
+
+##### rule 18.5
+summary: ignored (merged)
+
+--- bad: three levels in a structure member
+struct s { int ***p; }; /*@V*/
+
+--- ok: array of pointers is one level
+int *table[4];
+
+--- ok: pointer to pointer
+int **pp;
+
+##### rule 18.6
+summary: ignored (merged)
+
+--- bad: storing the address of a local through an output parameter
+void f(int **out)
+{
+    int x = 0;
+    *out = &x; /*@V*/
+}
+
+--- bad: returning the address of a parameter
+int *f(int a) { return &a; } /*@V*/
+
+--- ok: returning the address of a static local
+int *f(void)
+{
+    static int x;
+    return &x;
+}
+
+--- ok: a local pointer receives a local address
+int f(void)
+{
+    int x = 1;
+    int *p = &x;
+    return *p;
+}
+
+##### rule 18.7
+summary: ignored (merged)
+
+--- ok: the old one-element array idiom is a fixed array
+struct s { int n; int d[1]; };
+
+--- bad: flexible array member after several members
+struct s { int n; char tag; unsigned char d[]; }; /*@V*/
+
+##### rule 18.8
+summary: ignored (merged)
+
+--- bad: a variable length array in a nested block
+void f(int n)
+{
+    if (n > 0)
+    {
+        int a[n]; /*@V*/
+        a[0] = 1;
+    }
+}
+
+--- ok: an enumeration constant as the size
+enum { SIZE = 4 };
+int a[SIZE];
+
+--- ok: sizeof based constant size
+int a[sizeof(int) * 2];
+
+##### rule 19.1
+summary: ignored (merged)
+
+--- bad: array element assigned to itself
+void f(int *a, int i) { a[i] = a[i]; } /*@V*/
+
+--- bad: dereference assigned to itself
+void f(int *p) { *p = *p; } /*@V*/
+
+--- ok: different elements
+void f(int *a) { a[0] = a[1]; }
+
+--- bad: memcpy of a buffer onto itself through member
+#include <string.h>
+struct s { char b[8]; };
+void f(struct s *p) { memcpy(p->b, p->b, 8); } /*@V*/
+
+##### rule 19.2
+summary: ignored (merged)
+
+--- bad: a union nested in a structure
+struct s { int kind; union { int i; float f; } v; }; /*@V*/
+
+--- ok: a forward declaration of a union is not a definition
+union u;
+union u *p;
+
+--- bad: a named union definition inside a function
+void f(void)
+{
+    union local { int a; char b; } x; /*@V*/
+    (void)x;
+}

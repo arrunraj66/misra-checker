@@ -475,7 +475,9 @@ class RestVisitor final : public clang::RecursiveASTVisitor<RestVisitor> {
             break;
           }
         }
-        return is_automatic(referenced_variable(operand));
+        const clang::VarDecl* object = referenced_variable(operand);
+        // Parameters are automatic objects too: the address of a parameter dies with the call.
+        return (object != nullptr) && object->hasLocalStorage();
       }
     }
     if (const auto* variable = referenced_variable(stripped)) {
