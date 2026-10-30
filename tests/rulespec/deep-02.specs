@@ -1,0 +1,444 @@
+##### rule 2.1
+summary: ignored (merged)
+
+--- bad: code after break inside a loop body
+int f(int n)
+{
+    int i;
+    for (i = 0; i < n; i++)
+    {
+        break;
+        n--; /*@V*/
+    }
+    return i;
+}
+
+--- bad: code after continue
+int f(int n)
+{
+    int s = 0;
+    while (n > 0)
+    {
+        n--;
+        continue;
+        s++; /*@V*/
+    }
+    return s;
+}
+
+--- bad: statement after a switch whose every branch returns
+int f(int v)
+{
+    switch (v)
+    {
+        case 1: return 1;
+        default: return 0;
+    }
+    return 2; /*@V*/
+}
+
+--- ok: statement after a switch with a fall-out branch
+int f(int v)
+{
+    int r = 0;
+    switch (v)
+    {
+        case 1: r = 1; break;
+        default: break;
+    }
+    return r;
+}
+
+--- ok: a label reached only by a goto is reachable
+int f(int v)
+{
+    if (v) { goto done; }
+    v = 3;
+done:
+    return v;
+}
+
+--- bad: a label after return that nothing jumps to
+int f(int v)
+{
+    return v;
+fin:
+    v = 0; /*@V*/
+    return v;
+}
+
+--- bad: body of if(0)
+int f(int v)
+{
+    if (0)
+    {
+        v = 1; /*@V*/
+    }
+    return v;
+}
+
+--- ok: a defensive default after a switch over every enumerator
+enum e { A, B };
+int f(enum e v)
+{
+    switch (v)
+    {
+        case A: return 1;
+        case B: return 2;
+        default: return 0;
+    }
+}
+
+--- ok: code after a call to a function that may return
+void g(void);
+void f(void) { g(); g(); }
+
+--- ok: for(;;) with a return inside and nothing after
+int f(int *p)
+{
+    for (;;)
+    {
+        if (*p) { return 1; }
+        p++;
+    }
+}
+
+--- bad: statement after for(;;) without exit
+void f(int *p)
+{
+    for (;;) { (*p)++; }
+    *p = 0; /*@V*/
+}
+
+--- ok: statement after a while loop with a non-constant condition
+void f(int *p)
+{
+    while (*p) { p++; }
+    *p = 1;
+}
+
+##### rule 2.2
+summary: ignored (merged)
+
+--- bad: self assignment has no effect
+void f(int a)
+{
+    int x = a;
+    x = x; /*@V*/
+}
+
+--- ok: a value read in the next loop iteration
+int f(int n)
+{
+    int prev = 0;
+    int i;
+    for (i = 0; i < n; i++)
+    {
+        n += prev;
+        prev = i;
+    }
+    return n;
+}
+
+--- ok: assignment to a static local persists
+int f(void)
+{
+    static int count;
+    count = count + 1;
+    count = 0;
+    return 1;
+}
+
+--- ok: assignment to a file-scope object
+int g;
+void f(void) { g = 1; g = 2; }
+
+--- ok: a local whose address is taken may be read through the pointer
+void use(int *p);
+void f(void)
+{
+    int x;
+    x = 1;
+    use(&x);
+}
+
+--- bad: assignment before a return that ignores it
+int f(void)
+{
+    int x;
+    x = 5; /*@V*/
+    return 0;
+}
+
+--- ok: assignment read on only one path
+int f(int c)
+{
+    int x = 0;
+    if (c) { x = 1; }
+    return x;
+}
+
+--- ok: out parameter pointer write
+void f(int *out) { *out = 1; }
+
+--- ok: both branches assign then read
+int f(int c)
+{
+    int x;
+    if (c) { x = 1; } else { x = 2; }
+    return x;
+}
+
+--- bad: compound assignment whose result is never read
+void f(void)
+{
+    int x = 0;
+    x += 5; /*@V*/
+}
+
+--- ok: assignment used as a condition
+int f(int *p)
+{
+    int c;
+    while ((c = *p++) != 0) { }
+    return c;
+}
+
+--- ok: a local array element store is not tracked
+void f(void)
+{
+    int a[2];
+    a[0] = 1;
+}
+
+##### rule 2.3
+summary: ignored (merged)
+
+--- bad: unused typedef inside a function
+void f(void)
+{
+    typedef int local_t; /*@V*/
+}
+
+--- ok: typedef used as a struct member type
+typedef unsigned char byte_t;
+struct s { byte_t b; };
+struct s v;
+
+--- ok: typedef used in a function return type
+typedef int status_t;
+status_t f(void) { return 0; }
+
+--- ok: typedef used only in an array declaration
+typedef int cell_t;
+cell_t grid[4];
+
+##### rule 2.4
+summary: ignored (merged)
+
+--- bad: unused tag declared in a function
+void f(void)
+{
+    struct local { int a; }; /*@V*/
+}
+
+--- ok: tag completed after a forward declaration and then used
+struct node;
+struct node { struct node *next; };
+struct node head;
+
+--- ok: enum tag used as a parameter type
+enum mode { M_A, M_B };
+int f(enum mode m) { return (int)m; }
+
+--- ok: tag used in sizeof
+struct rec { int a; };
+unsigned long n = sizeof(struct rec);
+
+##### rule 2.5
+summary: ignored (merged)
+
+--- bad: macro used only in a skipped region
+#define ONLY_SKIPPED 1
+#if 0
+int a = ONLY_SKIPPED;
+#endif
+
+--- ok: macro redefined after undef and used
+#define LIMIT 1
+#undef LIMIT
+#define LIMIT 2
+int a = LIMIT;
+
+--- bad: function-like macro mentioned only by name
+#define CALL(x) (x)
+int CALL_COUNT;
+int f(int CALL2) { return CALL2; }
+
+--- ok: macro used as an argument of another macro
+#define ID(x) (x)
+#define VAL 5
+int a = ID(VAL);
+
+--- ok: macro tested with ifndef and defined in the same file
+#define FEATURE
+#ifndef FEATURE
+int a;
+#endif
+
+--- ok: stringised macro argument
+#define NAME(x) #x
+const char *s = NAME(hello);
+
+##### rule 2.6
+summary: ignored (merged)
+
+--- ok: backward goto to a label
+void f(int n)
+{
+again:
+    n--;
+    if (n > 0) { goto again; }
+}
+
+--- ok: goto from a nested block
+void f(int n)
+{
+    while (n)
+    {
+        if (n == 2) { goto out; }
+        n--;
+    }
+out:
+    n = 0;
+}
+
+--- bad: two labels where only one is used
+void f(int n)
+{
+    if (n) { goto used; }
+unused: /*@V*/
+    n = 1;
+used:
+    n = 2;
+}
+
+--- ok: labels in a switch (case) are not goto labels
+int f(int v)
+{
+    switch (v) { case 1: return 1; default: return 0; }
+}
+
+##### rule 2.7
+summary: ignored (merged)
+
+--- bad: unused parameter in a static function
+static int f(int a, int b) /*@V*/
+{
+    return a;
+}
+int g(void) { return f(1, 2); }
+
+--- ok: parameter used only as an array bound of another parameter
+void f(int n, int a[n])
+{
+    a[0] = 1;
+}
+
+--- ok: parameter passed on to another function
+int g(int);
+int f(int a) { return g(a); }
+
+--- ok: parameter used only by taking its address
+int *f(int a) { static int *p; p = &a; return p; }
+
+--- ok: parameter used only in a macro argument that expands to it
+#define TWICE(x) ((x) + (x))
+int f(int a) { return TWICE(a); }
+
+--- bad: parameter used only inside a macro that discards it
+#define DROP(x)
+int f(int a) /*@V*/
+{
+    DROP(a)
+    return 0;
+}
+
+##### rule 3.1
+summary: ignored (merged)
+
+--- bad: line comment containing a block-comment opener
+int a; // see /* here */ /*@V*/
+
+--- ok: two comments on one line
+int a; /* one *//* two */
+
+--- ok: comment ending with several stars
+/*** banner ***/
+int a;
+
+--- bad: a nested opener hidden at the end of a comment
+/* text /* */
+int a;
+
+--- ok: a division operator in code beside a comment
+int f(int x, int y) { return x / y; /* quotient */ }
+
+--- ok: slashes inside a character constant
+int c = '/';
+
+--- bad: web address inside a line comment (strict reading)
+// see http://example.org
+int a;
+
+##### rule 3.2
+summary: ignored (merged)
+
+--- ok: a line comment that ends with a backslash inside a string
+const char *s = "a\\";
+int a;
+
+--- ok: backslash followed by a space is not a continuation of a block comment
+/* text \ */
+int a;
+
+##### rule 4.1
+summary: ignored (merged)
+
+--- ok: adjacent literals terminate an escape
+const char *s = "\x41" "B";
+
+--- ok: octal escape with three digits followed by text
+const char *s = "\101B";
+
+--- ok: nul escape at the end
+const char s[] = "ab\0";
+
+--- bad: nul escape followed by a digit text
+const char *s = "\08"; /*@V*/
+
+--- bad: octal escape followed by a letter
+const char *s = "\1a"; /*@V*/
+
+--- ok: character constants
+int c = '\x41';
+int d = '\101';
+
+--- bad: wide string hexadecimal escape followed by text
+#include <stddef.h>
+const wchar_t *s = L"\x41g"; /*@V*/
+
+##### rule 4.2
+summary: ignored (merged)
+
+--- bad: question-mark trigraph for a bracket
+char *s = "??)"; /*@V*/
+
+--- bad: trigraph in a character constant
+int c = '??/'; /*@V*/
+
+--- ok: a lone question mark pair at the end of a string
+const char *s = "what??";
+
+--- ok: a ternary expression with question marks apart
+int f(int a) { return a ? a ? 1 : 2 : 3; }

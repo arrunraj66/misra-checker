@@ -108,7 +108,8 @@ class DeadStoreObserver final : public clang::LiveVariables::Observer {
       return;
     }
     const auto* assignment = llvm::dyn_cast<clang::BinaryOperator>(statement);
-    if ((assignment == nullptr) || (assignment->getOpcode() != clang::BO_Assign)) {
+    if ((assignment == nullptr) ||
+        ((assignment->getOpcode() != clang::BO_Assign) && !assignment->isCompoundAssignmentOp())) {
       return;
     }
     const auto* target =
@@ -201,6 +202,11 @@ void collect_cfg_observations(clang::ASTContext& ast, const Recorder& recorder) 
       work.pop_back();
       if (!visited.insert(block).second) {
         continue;
+      }
+      // A default clause that Clang proves unreachable (an enum switch covering every enumerator) is
+      // defensive code that Rule 16.4 requires, so it is not reported.
+      if (!covered && (block->getLabel() != nullptr) && llvm::isa<clang::DefaultStmt>(block->getLabel())) {
+        covered = true;
       }
       if (!covered) {
         if (const clang::Stmt* statement = first_code_statement(*block)) {
