@@ -322,6 +322,9 @@ class ObservationVisitor final
 
   bool VisitTypedefDecl(clang::TypedefDecl* declaration) {
     const clang::QualType type = declaration->getUnderlyingType();
+    if (type.isRestrictQualified()) {
+      recorder_.add("restrict-qualifier", declaration->getLocation());
+    }
     if (pointer_depth(type) > 2U) {
       recorder_.add("pointer-nesting", declaration->getLocation());
     }
