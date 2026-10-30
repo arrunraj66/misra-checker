@@ -236,6 +236,7 @@ class ExtraVisitor final : public clang::RecursiveASTVisitor<ExtraVisitor> {
         recorder_.add("language-extension", field->getLocation(), "zero-length-array");
       }
     }
+    note_named(field, field->getLocation());
     check_reserved(field, field->getLocation());
     check_attributes(field);
     return true;
@@ -898,6 +899,8 @@ class ExtraVisitor final : public clang::RecursiveASTVisitor<ExtraVisitor> {
       kind = 'g';
     } else if (llvm::isa<clang::EnumConstantDecl>(declaration)) {
       kind = 'e';
+    } else if (llvm::isa<clang::FieldDecl>(declaration)) {
+      kind = 'm';  // members live in their own name space: only the length and macro rules apply
     }
     entries_.push_back({declaration, kind, is_main(location), location});
   }
@@ -1365,7 +1368,7 @@ class ExtraVisitor final : public clang::RecursiveASTVisitor<ExtraVisitor> {
       }
       const std::string name = entry.declaration->getNameAsString();
       for (const NamedEntry& other : entries_) {
-        if ((other.declaration == entry.declaration) ||
+        if ((other.declaration == entry.declaration) || (other.kind == 'm') ||
             (other.declaration->getName() != name) ||
             (other.declaration->getCanonicalDecl() == entry.declaration->getCanonicalDecl())) {
           continue;
@@ -1729,6 +1732,7 @@ class ExtraMacroObserver final : public clang::PPCallbacks {
                       const clang::MacroDirective*) override {
     if (const clang::IdentifierInfo* identifier = name_token.getIdentifierInfo()) {
       check_reserved_macro(identifier->getName().str(), name_token.getLocation());
+      recorder_.add("macro-undefined", name_token.getLocation(), identifier->getName().str());
     }
   }
 
@@ -2026,8 +2030,15 @@ void collect_extra_observations(clang::ASTContext& ast, const Recorder& recorder
     }
   }
   std::set<std::string> macro_names;
+  std::set<std::string> undefined_macros;
   for (const Observation& observation : context.observations) {
-    if (observation.kind == "macro-definition") {
+    if (observation.kind == "macro-undefined") {
+      undefined_macros.insert(observation.detail);
+    }
+  }
+  for (const Observation& observation : context.observations) {
+    // A macro that is later undefined can be absent when an identifier is declared; stay quiet.
+    if ((observation.kind == "macro-definition") && (undefined_macros.count(observation.detail) == 0U)) {
       macro_names.insert(observation.detail);
     }
   }
