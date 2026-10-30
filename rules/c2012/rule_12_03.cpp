@@ -6,12 +6,16 @@
  * Analysis expansion: Analyze expression trees for precedence, operand ranges, operator constraints, array use, and target-dependent behavior.
  * Normative notice: Wording, amplification, exceptions, and examples remain in
  * the licensed MISRA specification and require independent approval.
- * Implementation status: Scaffold only; no compliance decision is made.
+ * Detection contract: Report every use of the comma operator.
+ * Evidence: AST/preprocessor observations recorded by the Clang adapter.
+ * Implementation status: Implemented; independent validation is pending.
  */
 
 #include "misra/c2012/rule_factories.hpp"
 
 #include <memory>
+
+#include "misra/observation_rule.hpp"
 
 namespace misra::c2012 {
 namespace {
@@ -28,15 +32,15 @@ class Rule_12_03 final : public Rule {
         "Expressions",
         "Independent checker contract for Rule 12.3 in the Expressions family. The exact normative predicate remains linked to the controlled licensed rule specification.",
         "Analyze expression trees for precedence, operand ranges, operator constraints, array use, and target-dependent behavior.",
-        ImplementationStatus::Scaffold,
+        ImplementationStatus::Implemented,
     };
     return descriptor;
   }
 
   [[nodiscard]] RuleEvaluation evaluate(
       const AnalysisContext& context) const override {
-    (void)context;
-    return {EvaluationStatus::NotImplemented};
+    return findings_from_observations(context, {"comma-operator"},
+                                      "misra-c2012-12.3-comma-operator");
   }
 };
 

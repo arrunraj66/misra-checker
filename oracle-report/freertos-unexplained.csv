@@ -1,0 +1,19 @@
+rule,file,line,check,source
+2.2,event_groups.c,556,misra-c2012-2.2-dead-code,BaseType_t xMatchFound = pdFAIL;
+2.2,stream_buffer.c,826,misra-c2012-2.2-dead-code,size_t xMaxReportedSpace = 0;
+2.2,tasks.c,3593,misra-c2012-2.2-dead-code,TaskFunction_t pxIdleTaskFunction = NULL;
+2.2,tasks.c,4301,misra-c2012-2.2-dead-code,TCB_t * pxTCB = NULL;
+8.6,event_groups.c,154,misra-c2012-8.6-no-definition,pxEventBits = ( EventGroup_t * ) pvPortMalloc( sizeof( EventGroup_t ) );
+8.6,event_groups.c,687,misra-c2012-8.6-no-definition,vPortFree( pxEventBits );
+10.5,tasks.c,1883,misra-c2012-10.5-inappropriate-cast,if( pcName[ x ] == ( char ) 0x00 )
+10.5,tasks.c,3606,misra-c2012-10.5-inappropriate-cast,if( cIdleName[ xIdleTaskNameIndex ] == ( char ) 0x00 )
+10.5,tasks.c,4332,misra-c2012-10.5-inappropriate-cast,else if( cNextChar == ( char ) 0x00 )
+11.3,queue.c,465,misra-c2012-11.3-pointer-type-mismatch-cast,*ppucQueueStorage = ( uint8_t * ) pxQueue->pcHead;
+11.3,queue.c,535,misra-c2012-11.3-pointer-type-mismatch-cast,pucQueueStorage = ( uint8_t * ) pxNewQueue;
+11.3,queue.c,585,misra-c2012-11.3-pointer-type-mismatch-cast,pxNewQueue->pcHead = ( int8_t * ) pxNewQueue;
+11.3,queue.c,590,misra-c2012-11.3-pointer-type-mismatch-cast,pxNewQueue->pcHead = ( int8_t * ) pucQueueStorage;
+11.3,stream_buffer.c,1036,misra-c2012-11.3-pointer-type-mismatch-cast,"xNextHead = prvWriteBytesToBuffer( pxStreamBuffer, ( const uint8_t * ) &( xMessageLength ), sbBYTES_TO_STORE_MESSAGE_LENGTH, xNextHead );"
+11.3,stream_buffer.c,1201,misra-c2012-11.3-pointer-type-mismatch-cast,"( void ) prvReadBytesFromBuffer( pxStreamBuffer, ( uint8_t * ) &xTempReturn, sbBYTES_TO_STORE_MESSAGE_LENGTH, pxStreamBuffer->xTail );"
+11.3,stream_buffer.c,1301,misra-c2012-11.3-pointer-type-mismatch-cast,"xNextTail = prvReadBytesFromBuffer( pxStreamBuffer, ( uint8_t * ) &xTempNextMessageLength, sbBYTES_TO_STORE_MESSAGE_LENGTH, xNextTail );"
+13.5,stream_buffer.c,628,misra-c2012-13.5-side-effect-in-logical-rhs,if( ( pxStreamBuffer->xTaskWaitingToReceive == NULL ) && ( pxStreamBuffer->xTaskWaitingToSend == NULL ) )
+13.5,stream_buffer.c,693,misra-c2012-13.5-side-effect-in-logical-rhs,if( ( pxStreamBuffer->xTaskWaitingToReceive == NULL ) && ( pxStreamBuffer->xTaskWaitingToSend == NULL ) )

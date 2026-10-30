@@ -6,12 +6,16 @@
  * Analysis expansion: Propagate essential types through expressions and verify ranks, conversions, operands, and composite-expression results.
  * Normative notice: Wording, amplification, exceptions, and examples remain in
  * the licensed MISRA specification and require independent approval.
- * Implementation status: Scaffold only; no compliance decision is made.
+ * Detection contract: Report binary arithmetic, relational, equality and bitwise operators whose non-constant operands have different essential type categories.
+ * Evidence: AST/preprocessor observations recorded by the Clang adapter.
+ * Implementation status: Implemented; independent validation is pending.
  */
 
 #include "misra/c2012/rule_factories.hpp"
 
 #include <memory>
+
+#include "misra/observation_rule.hpp"
 
 namespace misra::c2012 {
 namespace {
@@ -28,15 +32,15 @@ class Rule_10_04 final : public Rule {
         "Essential type model",
         "Independent checker contract for Rule 10.4 in the Essential type model family. The exact normative predicate remains linked to the controlled licensed rule specification.",
         "Propagate essential types through expressions and verify ranks, conversions, operands, and composite-expression results.",
-        ImplementationStatus::Scaffold,
+        ImplementationStatus::Implemented,
     };
     return descriptor;
   }
 
   [[nodiscard]] RuleEvaluation evaluate(
       const AnalysisContext& context) const override {
-    (void)context;
-    return {EvaluationStatus::NotImplemented};
+    return findings_from_observations(context, {"essential-type-mismatch"},
+                                      "misra-c2012-10.4-essential-type-mismatch");
   }
 };
 

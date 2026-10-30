@@ -1,0 +1,90 @@
+# Rule 9.4
+
+**Category:** Required · **Decidability:** Decidable · **Scope:** SingleTranslationUnit · **Topic:** Initialization
+
+## What the detector reports
+
+Reports an element that is designated more than once in one initializer list.
+
+Detection contract: Report an element designated more than once in one initializer list.
+
+## Known limits
+
+Only designated initializers are examined.
+
+## Tested cases
+
+7 of 7 pass.
+
+| Kind | Case | Result |
+|---|---|---|
+| Compliant (must stay silent) | distinct designators | pass |
+| Violation (must be reported) | the same array element twice | pass |
+| Violation (must be reported) | the same member twice | pass |
+| Violation (must be reported) | a designator repeated after other elements | pass |
+| Compliant (must stay silent) | designators on different members | pass |
+| Compliant (must stay silent) | designators on distinct array elements | pass |
+| Violation (must be reported) | a nested member designated twice | pass |
+
+## Case sources
+
+### Compliant (must stay silent): distinct designators
+
+`main.c`
+
+```c
+int a[3] = { [0] = 1, [2] = 3 };
+struct s { int x; int y; } v = { .x = 1, .y = 2 };
+```
+
+### Violation (must be reported): the same array element twice
+
+`main.c`
+
+```c
+int a[3] = { [1] = 1, [1] = 2 }; /*@V*/
+```
+
+### Violation (must be reported): the same member twice
+
+`main.c`
+
+```c
+struct s { int x; int y; };
+struct s v = { .x = 1, .x = 2 }; /*@V*/
+```
+
+### Violation (must be reported): a designator repeated after other elements
+
+`main.c`
+
+```c
+int a[3] = { [0] = 1, [1] = 2, [0] = 3 }; /*@V*/
+```
+
+### Compliant (must stay silent): designators on different members
+
+`main.c`
+
+```c
+struct s { int a; int b; } v = { .a = 1, .b = 2 };
+```
+
+### Compliant (must stay silent): designators on distinct array elements
+
+`main.c`
+
+```c
+int a[3] = { [2] = 1, [0] = 2 };
+```
+
+### Violation (must be reported): a nested member designated twice
+
+`main.c`
+
+```c
+struct in { int x; int y; };
+struct out { struct in i; };
+struct out o = { .i = { .x = 1, .x = 2 } }; /*@V*/
+```
+

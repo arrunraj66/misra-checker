@@ -6,12 +6,16 @@
  * Analysis expansion: Track pointer provenance, array bounds, arithmetic, comparisons, object lifetime, variable-length arrays, and flexible members.
  * Normative notice: Wording, amplification, exceptions, and examples remain in
  * the licensed MISRA specification and require independent approval.
- * Implementation status: Scaffold only; no compliance decision is made.
+ * Detection contract: Subset: report returning, or storing in longer-lived storage, the address of an automatic object.
+ * Evidence: AST, preprocessor, diagnostic and control-flow observations recorded by the Clang adapter.
+ * Implementation status: Implemented; independent validation is pending.
  */
 
 #include "misra/c2012/rule_factories.hpp"
 
 #include <memory>
+
+#include "misra/observation_rule.hpp"
 
 namespace misra::c2012 {
 namespace {
@@ -28,15 +32,15 @@ class Rule_18_06 final : public Rule {
         "Pointers and arrays",
         "Independent checker contract for Rule 18.6 in the Pointers and arrays family. The exact normative predicate remains linked to the controlled licensed rule specification.",
         "Track pointer provenance, array bounds, arithmetic, comparisons, object lifetime, variable-length arrays, and flexible members.",
-        ImplementationStatus::Scaffold,
+        ImplementationStatus::Implemented,
     };
     return descriptor;
   }
 
   [[nodiscard]] RuleEvaluation evaluate(
       const AnalysisContext& context) const override {
-    (void)context;
-    return {EvaluationStatus::NotImplemented};
+    return findings_from_observations(context, {"address-of-local-escapes"},
+                                      "misra-c2012-18.6-address-of-local-escapes", {}, {});
   }
 };
 

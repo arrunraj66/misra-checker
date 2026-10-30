@@ -1,0 +1,2 @@
+#define REG
+int v;

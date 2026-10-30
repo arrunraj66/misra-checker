@@ -1,0 +1,185 @@
+{
+  "findings": 575,
+  "documented": 32,
+  "project_deviated": 525,
+  "unexplained": 18,
+  "markers": 61,
+  "markers_detected": 32,
+  "markers_missed": 5,
+  "markers_inactive": 24,
+  "rules": {
+    "2.2": {
+      "project-deviated": 0,
+      "documented": 0,
+      "detected": 0,
+      "unexplained": 4
+    },
+    "2.5": {
+      "project-deviated": 16,
+      "documented": 0,
+      "detected": 0
+    },
+    "3.1": {
+      "project-deviated": 172,
+      "documented": 0,
+      "detected": 0
+    },
+    "8.4": {
+      "documented": 1,
+      "markers": 3,
+      "inactive": 2,
+      "detected": 1,
+      "project-deviated": 0
+    },
+    "8.6": {
+      "unexplained": 2,
+      "markers": 4,
+      "inactive": 4,
+      "documented": 0,
+      "project-deviated": 0,
+      "detected": 0
+    },
+    "8.7": {
+      "project-deviated": 115,
+      "documented": 0,
+      "detected": 0
+    },
+    "8.9": {
+      "project-deviated": 5,
+      "documented": 0,
+      "detected": 0
+    },
+    "8.13": {
+      "project-deviated": 3,
+      "documented": 0,
+      "detected": 0
+    },
+    "10.5": {
+      "unexplained": 3,
+      "documented": 0,
+      "project-deviated": 0,
+      "detected": 0
+    },
+    "11.1": {
+      "markers": 2,
+      "missed": 2,
+      "documented": 0,
+      "project-deviated": 0,
+      "detected": 0
+    },
+    "11.3": {
+      "documented": 11,
+      "unexplained": 7,
+      "markers": 12,
+      "detected": 11,
+      "inactive": 1,
+      "project-deviated": 0
+    },
+    "11.4": {
+      "project-deviated": 2,
+      "documented": 0,
+      "detected": 0
+    },
+    "11.5": {
+      "documented": 20,
+      "markers": 31,
+      "inactive": 11,
+      "detected": 20,
+      "project-deviated": 0
+    },
+    "13.5": {
+      "unexplained": 2,
+      "documented": 0,
+      "project-deviated": 0,
+      "detected": 0
+    },
+    "14.3": {
+      "markers": 2,
+      "missed": 2,
+      "documented": 0,
+      "project-deviated": 0,
+      "detected": 0
+    },
+    "14.4": {
+      "project-deviated": 168,
+      "documented": 0,
+      "detected": 0
+    },
+    "15.4": {
+      "project-deviated": 1,
+      "documented": 0,
+      "detected": 0
+    },
+    "15.5": {
+      "project-deviated": 4,
+      "documented": 0,
+      "detected": 0
+    },
+    "17.8": {
+      "project-deviated": 21,
+      "documented": 0,
+      "detected": 0
+    },
+    "18.1": {
+      "markers": 1,
+      "missed": 1,
+      "documented": 0,
+      "project-deviated": 0,
+      "detected": 0
+    },
+    "18.4": {
+      "project-deviated": 9,
+      "documented": 0,
+      "detected": 0
+    },
+    "19.2": {
+      "project-deviated": 3,
+      "documented": 0,
+      "detected": 0
+    },
+    "20.5": {
+      "project-deviated": 6,
+      "documented": 0,
+      "detected": 0
+    },
+    "21.6": {
+      "markers": 6,
+      "inactive": 6,
+      "documented": 0,
+      "project-deviated": 0,
+      "detected": 0
+    }
+  },
+  "missed": [
+    {
+      "rule": "14.3",
+      "file": "queue.c",
+      "line": 519,
+      "source": "( ( SIZE_MAX - sizeof( Queue_t ) ) >= ( size_t ) ( ( size_t ) uxQueueLength * ( size_t ) uxItemSize ) ) )"
+    },
+    {
+      "rule": "11.1",
+      "file": "stream_buffer.c",
+      "line": 1665,
+      "source": "( void ) pxSendCompletedCallback;"
+    },
+    {
+      "rule": "11.1",
+      "file": "stream_buffer.c",
+      "line": 1670,
+      "source": "( void ) pxReceiveCompletedCallback;"
+    },
+    {
+      "rule": "14.3",
+      "file": "tasks.c",
+      "line": 3599,
+      "source": "for( xIdleTaskNameIndex = 0U; xIdleTaskNameIndex < ( configMAX_TASK_NAME_LEN - taskRESERVED_TASK_NAME_LENGTH ); xIdleTaskNameIndex++ )"
+    },
+    {
+      "rule": "18.1",
+      "file": "tasks.c",
+      "line": 3604,
+      "source": "cIdleName[ xIdleTaskNameIndex ] = configIDLE_TASK_NAME[ xIdleTaskNameIndex ];"
+    }
+  ]
+}

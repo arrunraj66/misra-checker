@@ -1,0 +1,461 @@
+##### rule 1.1
+summary: Reports every compiler error (a syntax error or a constraint violation, including an include file that cannot be found) located in the main file.
+limits: After a missing header Clang may stop reading later includes, so code that depends on them can be reported as errors too (compile errors hide types and declarations).
+
+--- ok: valid code, including constructs that only warn
+int f(int unused_param) { int never_used; return 1; }
+
+--- bad: syntax error
+int x = ; /*@V*/
+
+--- bad: use of an undeclared identifier
+int f(void) { return missing_name; } /*@V*/
+
+--- bad: constraint violation (assigning a structure to an int)
+struct S { int a; };
+int g(struct S s) { int i = s; return i; } /*@V*/
+
+--- bad: include file that does not exist
+#include "no_such_header_anywhere.h" /*@V*/
+int a;
+
+--- bad: an error located in a project header is reported at the header
+=== main.c
+#include "bad.h"
+int a;
+=== bad.h
+int x = ; /*@V*/
+
+##### rule 1.2
+summary: Reports language extensions: statement expressions, inline assembly, computed goto and label addresses, case ranges, typeof, the omitted middle operand of ?:, and explicit attributes.
+limits: Compiler built-in functions and predefined macros are not reported. Only the extensions listed are detected.
+
+--- ok: standard C
+static inline int twice(int x) { return x * 2; }
+int f(int v) { return v ? twice(v) : 0; }
+
+--- bad: statement expression
+int f(void) { return ({ int t = 1; t; }); } /*@V*/
+
+--- bad: inline assembly
+void nop(void) { __asm__ volatile ("nop"); } /*@V*/
+
+--- bad: computed goto and label address
+void jump(void)
+{
+    void *target = &&there; /*@V*/
+    goto *target; /*@V*/
+there:
+    return;
+}
+
+--- bad: case range
+int f(int v)
+{
+    switch (v)
+    {
+        case 1 ... 3: /*@V*/
+            return 1;
+        default:
+            return 0;
+    }
+}
+
+--- bad: typeof (the reserved spelling works in strict C99)
+int a;
+__typeof__(a) b; /*@V*/
+
+--- bad std=gnu99: typeof (the plain spelling is a keyword only in GNU mode)
+int a;
+typeof(a) b; /*@V*/
+
+--- bad: omitted middle operand of the conditional operator
+int f(int x) { return x ?: 5; } /*@V*/
+
+--- bad: explicit attribute
+int unused_value __attribute__((unused)); /*@V*/
+
+--- ok: a function-like macro is not an extension
+#define SQUARE(x) ((x) * (x))
+int f(int v) { return SQUARE(v); }
+
+##### rule 1.3
+summary: Subset of undefined behaviour that is visible at compile time: constant division by zero, a constant array index outside the array, dereference of a null pointer constant, and out-of-range constant shifts.
+limits: Only constants are examined. Values that depend on run-time data or on flow between statements are not tracked.
+
+--- ok: in-range constants and a guarded division
+int arr[4];
+int f(int d) { arr[3] = 1; return d != 0 ? 8 / d : 0; }
+
+--- bad: division by a constant zero
+int f(void) { return 10 / 0; } /*@V*/
+
+--- bad: constant index past the end
+int arr[4];
+int f(void) { return arr[4]; } /*@V*/
+
+--- bad: constant shift count that is too large
+int f(int v) { return v << 40; } /*@V*/
+
+--- bad: dereference of a null pointer constant
+int f(void) { return *(int *)0; } /*@V*/
+
+--- ok: a memory-mapped register at a fixed non-zero address
+int read_register(void) { return *(volatile int *)0x4000; }
+
+--- ok: dereference of a pointer that was checked against null
+int f(int *p) { return (p != 0) ? *p : 0; }
+
+--- gap: a pointer variable that is known to be null
+int f(void)
+{
+    int *p = 0;
+    return *p; /*@V*/
+}
+
+--- gap: division by a zero that is only known through a variable
+int f(void)
+{
+    int zero = 0;
+    return 10 / zero; /*@V*/
+}
+
+##### rule 2.1
+summary: Reports the first statement of each region that the control-flow graph shows can never be reached.
+limits: Reachability follows the constant conditions the compiler front end folds. Code made unreachable only by run-time values is not found, and a region is reported once, at its first statement.
+
+--- ok: both branches are reachable
+int f(int v)
+{
+    if (v > 0) { return 1; }
+    return 0;
+}
+
+--- ok: code after an infinite loop with a break is reachable
+int f(int v)
+{
+    for (;;)
+    {
+        if (v > 3) { break; }
+        v++;
+    }
+    return v;
+}
+
+--- ok: every switch clause is reachable
+int f(int v)
+{
+    switch (v)
+    {
+        case 1: return 10;
+        default: return 0;
+    }
+}
+
+--- bad: statement after return
+int f(void)
+{
+    return 1;
+    return 2; /*@V*/
+}
+
+--- bad: statement after goto
+void g(int *p)
+{
+    goto end;
+    *p = 1; /*@V*/
+end:
+    return;
+}
+
+--- bad: code after an infinite loop without break
+int h(void)
+{
+    for (;;) { }
+    return 1; /*@V*/
+}
+
+--- bad: statements after a call to a no-return construct (infinite loop in a while)
+void k(void)
+{
+    while (1) { }
+    k(); /*@V*/
+}
+
+##### rule 2.2
+summary: Reports an expression statement without any effect (a cast to void is accepted) and an assignment to a local object whose value is never read afterwards.
+limits: Dead stores are found for local objects with liveness analysis. Stores to globals, through pointers or to volatile objects are not examined.
+
+--- ok: a void cast marks the discard as intentional
+void f(int x) { (void)x; }
+
+--- ok: the stored value is used
+int f(void)
+{
+    int a = 1;
+    a = a + 2;
+    return a;
+}
+
+--- ok: a call is an effect
+void g(void);
+void h(void) { g(); }
+
+--- bad: expression statement with no effect
+void f(int x)
+{
+    x + 1; /*@V*/
+}
+
+--- bad: expression statement that is just a name
+void g(int x)
+{
+    x; /*@V*/
+}
+
+--- bad: the first assignment is overwritten before it is read
+int f(void)
+{
+    int a;
+    a = 1; /*@V*/
+    a = 2;
+    return a;
+}
+
+--- bad: a value computed and never used
+int g(int x)
+{
+    int unused = x * 2; /*@V*/
+    return x;
+}
+
+--- ok: initializer that is read later
+int f(int x)
+{
+    int doubled = x * 2;
+    return doubled;
+}
+
+--- ok: initializer overwritten only after it was read
+int g(int x)
+{
+    int a = x;
+    int b = a + 1;
+    a = b;
+    return a;
+}
+
+--- gap: a store through a pointer is not tracked
+void h(int *p)
+{
+    *p = 1; /*@V*/
+    *p = 2;
+}
+
+##### rule 2.3
+summary: Reports a typedef declared in the main file that no type in the translation unit refers to.
+limits: Only typedefs declared in the main file are examined, and a typedef used only in another translation unit is reported here.
+
+--- ok: typedef that is used
+typedef unsigned int count_t;
+count_t total;
+
+--- ok: typedef used only to build another typedef that is used
+typedef int base_t;
+typedef base_t derived_t;
+derived_t v;
+
+--- bad: unused typedef
+typedef int unused_t; /*@V*/
+
+--- bad: unused function-pointer typedef
+typedef void (*callback_t)(int); /*@V*/
+
+--- bad: typedef whose only user is also unused (the outer one is reported)
+typedef int inner_t;
+typedef inner_t outer_t; /*@V*/
+
+##### rule 2.4
+summary: Reports a struct, union or enum tag declared in the main file that is never used as a type.
+limits: A tag used only inside a macro that is never expanded is reported. Anonymous types are not tags.
+
+--- ok: tag used for an object
+struct point { int x; int y; };
+struct point origin;
+
+--- ok: tag used through a typedef
+typedef struct node { struct node *next; } node_t;
+node_t head;
+
+--- ok: an anonymous struct has no tag
+struct { int a; } anon;
+
+--- bad: unused struct tag
+struct unused_tag { int a; }; /*@V*/
+
+--- bad: unused enum tag
+enum unused_enum { A, B }; /*@V*/
+
+--- bad: unused union tag
+union unused_union { int i; float f; }; /*@V*/
+
+##### rule 2.5
+summary: Reports a macro defined in the main file that is never expanded or tested.
+limits: A macro used only in another translation unit, or only in a header that is not part of this analysis, is reported.
+
+--- ok: macro that is expanded
+#define LIMIT 10
+int arr[LIMIT];
+
+--- ok: macro that is only tested with defined
+#define FEATURE
+#ifdef FEATURE
+int on;
+#endif
+
+--- ok: macro used by another macro that is used
+#define BASE 4
+#define TWICE (BASE * 2)
+int v = TWICE;
+
+--- bad: unused object-like macro
+#define UNUSED_LIMIT 5 /*@V*/
+
+--- bad: unused function-like macro
+#define SQUARE(x) ((x) * (x)) /*@V*/
+
+##### rule 2.6
+summary: Reports a label in a function body that no goto statement or label-address expression refers to.
+limits: Labels inside macros that are expanded elsewhere are judged where they are written.
+
+--- ok: label that is a goto target
+void f(int v)
+{
+    if (v) { goto done; }
+    v = 1;
+done:
+    return;
+}
+
+--- bad: unused label
+void f(void)
+{
+unused_label: /*@V*/
+    return;
+}
+
+--- bad: label that only a different function's goto uses (labels are per function)
+void g(void)
+{
+    goto end;
+end:
+    return;
+}
+void h(void)
+{
+end: /*@V*/
+    return;
+}
+
+##### rule 2.7
+summary: Reports a named parameter of a function definition that the body never refers to.
+limits: A parameter referenced only inside a macro that is not expanded counts as unused. Function declarations (without a body) are not examined.
+
+--- ok: all parameters used
+int add(int a, int b) { return a + b; }
+
+--- ok: a void cast counts as a reference
+int pick(int a, int b) { (void)b; return a; }
+
+--- ok: a prototype never uses its parameters
+int proto(int a, int b);
+
+--- bad: one parameter unused
+int first(int a, int b) { return a; } /*@V*/
+
+--- bad: all parameters unused
+void nothing(int a, char *b) { } /*@V*/
+
+##### rule 3.1
+summary: Reports a comment whose text contains a comment-opening marker (slash-star or double slash).
+limits: A web address inside a block comment contains a double slash and is reported (strict reading). Comments inside string literals are not comments.
+
+--- ok: ordinary comments
+/* a normal comment */
+// a line comment
+int a; /* trailing comment */
+
+--- ok: the markers appear only inside a string literal
+const char *s = "/* not a comment */";
+
+--- ok: a block comment that contains a single slash
+/* path a/b and 4/2 */
+int b;
+
+--- bad: block comment containing a slash-star
+/* outer /* inner */ /*@V*/
+int a;
+
+--- bad: block comment containing a double slash
+/* see // note */ /*@V*/
+int a;
+
+--- bad: web address inside a block comment (strict reading)
+/* docs: http://example.com/page */ /*@V*/
+int a;
+
+##### rule 3.2
+summary: Reports a line comment that is continued onto the next line by a trailing backslash.
+limits: Only line comments are examined.
+
+--- ok: line comment without a continuation
+// plain
+int a;
+
+--- ok: block comment may end a line with a backslash
+/* text \
+   continues */
+int b;
+
+--- bad: line comment continued by a backslash (the next line becomes part of the comment)
+// continued comment \
+int hidden_by_comment;
+int c;
+
+##### rule 4.1
+summary: Reports an octal or hexadecimal escape sequence that is not terminated: it must be followed by the closing quote or by another escape sequence (a complete three-digit octal escape counts as terminated).
+limits: Only string and character literals are examined.
+
+--- ok: terminated escapes
+const char *a = "\x41";
+const char *b = "\x41\x42";
+const char *c = "\0";
+const char *d = "\123";
+const char *e = "plain\n";
+char f = '\x41';
+
+--- ok: simple escapes followed by text
+const char *g = "tab\there";
+
+--- bad: hexadecimal escape followed by a letter
+const char *a = "\x41g"; /*@V*/
+
+--- bad: octal escape followed by a digit-like text
+const char *b = "\1x"; /*@V*/
+
+--- bad: hexadecimal escape followed by ordinary text
+const char *c = "\x0Dtext"; /*@V*/
+
+##### rule 4.2
+summary: Reports a trigraph sequence found in the raw text of the main file.
+limits: Detected on the raw text, also inside comments and strings. Compilers with trigraphs disabled still contain the sequence, so it is reported.
+
+--- ok: question marks that do not form a trigraph
+const char *a = "what? really?";
+const char *b = "??";
+
+--- bad: trigraph in a string
+const char *a = "??="; /*@V*/
+
+--- bad: trigraph in code position
+int a = 0; ??/ /*@V*/

@@ -1,0 +1,167 @@
+# Rule 16.1
+
+**Category:** Required · **Decidability:** Decidable · **Scope:** SingleTranslationUnit · **Topic:** Switch statements
+
+## What the detector reports
+
+Reports any violation of the structure rules for switch statements (labels at the top level of the body, a break per clause, default placement, clause count, and an essentially non-Boolean controlling expression).
+
+Detection contract: Report any violation of the switch-structure constituents (labels at top level, break per clause, default placement, clause count, non-Boolean controlling expression).
+
+## Known limits
+
+A summary rule that overlaps 16.2 to 16.7; those individual rules are reported as well.
+
+## Tested cases
+
+7 of 7 pass.
+
+| Kind | Case | Result |
+|---|---|---|
+| Compliant (must stay silent) | a well formed switch | pass |
+| Violation (must be reported) | a clause that falls through | pass |
+| Violation (must be reported) | a switch without default | pass |
+| Compliant (must stay silent) | default listed first | pass |
+| Violation (must be reported) | switch with a single clause | pass |
+| Compliant (must stay silent) | stacked labels, breaks, and a default last | pass |
+| Violation (must be reported) | statement before the first label in the switch body | pass |
+
+## Case sources
+
+### Compliant (must stay silent): a well formed switch
+
+`main.c`
+
+```c
+int f(int v)
+{
+    int r;
+    switch (v)
+    {
+        case 1:
+            r = 10;
+            break;
+        case 2:
+            r = 20;
+            break;
+        default:
+            r = 0;
+            break;
+    }
+    return r;
+}
+```
+
+### Violation (must be reported): a clause that falls through
+
+`main.c`
+
+```c
+int f(int v)
+{
+    int r = 0;
+    switch (v)
+    {
+        case 1: /*@V*/
+            r = 1;
+        case 2:
+            r = 2;
+            break;
+        default:
+            break;
+    }
+    return r;
+}
+```
+
+### Violation (must be reported): a switch without default
+
+`main.c`
+
+```c
+int g(int v)
+{
+    int r = 0;
+    switch (v) /*@V*/
+    {
+        case 1:
+            r = 1;
+            break;
+        case 2:
+            r = 2;
+            break;
+    }
+    return r;
+}
+```
+
+### Compliant (must stay silent): default listed first
+
+`main.c`
+
+```c
+void f(int v)
+{
+    switch (v)
+    {
+        default:
+            break;
+        case 1:
+            v = 2;
+            break;
+    }
+}
+```
+
+### Violation (must be reported): switch with a single clause
+
+`main.c`
+
+```c
+void f(int v)
+{
+    switch (v)
+    {
+        default: v = 1; break;
+    }
+}
+```
+
+### Compliant (must stay silent): stacked labels, breaks, and a default last
+
+`main.c`
+
+```c
+void f(int v)
+{
+    switch (v)
+    {
+        case 1:
+        case 2:
+            v = 0;
+            break;
+        case 3:
+            v = 1;
+            break;
+        default:
+            break;
+    }
+}
+```
+
+### Violation (must be reported): statement before the first label in the switch body
+
+`main.c`
+
+```c
+void f(int v)
+{
+    switch (v)
+    {
+        v = 1; /*@V*/
+        case 1: break;
+        default: break;
+    }
+}
+```
+

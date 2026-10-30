@@ -1,0 +1,313 @@
+##### rule 10.1
+summary: ignored (merged)
+
+--- bad: logical negation of an integer
+int f(int x) { return !x; } /*@V*/
+
+--- bad: logical and of integer operands
+int f(int x, int y) { return x && y; } /*@V*/
+
+--- ok: logical operators on comparison results
+int f(int x, int y) { return (x > 1) && (y < 2); }
+
+--- bad: bitwise complement of a signed value
+int f(int x) { return ~x; } /*@V*/
+
+--- ok: bitwise complement of an unsigned value
+unsigned int f(unsigned int x) { return ~x; }
+
+--- ok: shift of an unsigned value by a signed constant count
+unsigned int f(unsigned int x) { return x << 2; }
+
+--- bad: Boolean used as an array index in arithmetic
+int f(_Bool b, int x) { return x + b; } /*@V*/
+
+--- ok: Boolean combined logically
+int f(_Bool a, _Bool b) { return a && b; }
+
+##### rule 10.2
+summary: ignored (merged)
+
+--- bad: integer minus character
+int f(int i, char c) { return i - c; } /*@V*/
+
+--- ok: character minus character
+int f(char a, char b) { return a - b; }
+
+--- ok: character plus an integer
+char f(char c, int n) { return (char)(c + n); }
+
+--- ok: digit conversion
+int f(char c) { return c - '0'; }
+
+##### rule 10.3
+summary: ignored (merged)
+
+--- bad: wider integer passed to a narrower parameter
+void g(unsigned char c);
+void f(int i) { g(i); } /*@V*/
+
+--- bad: wider value returned from a narrower function
+unsigned char f(int i) { return i; } /*@V*/
+
+--- bad: integer assigned to an enumeration
+enum e { A, B };
+void f(int i) { enum e v = i; (void)v; } /*@V*/
+
+--- ok: same type returned
+int f(int i) { return i; }
+
+--- ok: unsigned char passed as an unsigned int (wider, same category)
+void g(unsigned int c);
+void f(unsigned char c) { g(c); }
+
+--- ok: float assigned to double
+void f(float x) { double d = x; (void)d; }
+
+--- bad: double assigned to float
+void f(double x) { float d = x; (void)d; } /*@V*/
+
+##### rule 10.4
+summary: ignored (merged)
+
+--- bad: unsigned compared with a negative constant
+int f(unsigned int u) { return u < -1; } /*@V*/
+
+--- bad: floating variable compared with an integer variable
+int f(float a, int b) { return a < b; } /*@V*/
+
+--- ok: unsigned with a non-negative integer constant
+unsigned int f(unsigned int u) { return u + 1; }
+
+--- ok: character compared with a character constant
+int f(char c) { return c == 'a'; }
+
+--- ok: signed variables of different widths
+int f(short a, long b) { return a < b; }
+
+--- bad: enum compared with an integer variable
+enum e { A, B };
+int f(enum e v, int i) { return v == i; } /*@V*/
+
+##### rule 10.5
+summary: ignored (merged)
+
+--- bad: Boolean cast to integer
+int f(_Bool b) { return (int)b; } /*@V*/
+
+--- ok: float cast to int and back
+int f(float x) { return (int)x; }
+
+--- ok: cast from signed to unsigned of the same width
+unsigned int f(int x) { return (unsigned int)x; }
+
+--- bad: cast of a constant to an enumeration
+enum e { A, B };
+enum e v = (enum e)1; /*@V*/
+
+##### rule 10.6
+summary: ignored (merged)
+
+--- ok: composite computed in the wider type
+unsigned int f(unsigned short a, unsigned short b) { unsigned int r = (unsigned int)a + b; return r; }
+
+--- bad: a signed char sum stored in a long
+long f(signed char a, signed char b) { long r = a + b; return r; } /*@V*/
+
+--- ok: a non-composite operand assigned to a wider type
+long f(int a) { long r = a; return r; }
+
+##### rule 10.7
+summary: ignored (merged)
+
+--- bad: composite int combined with long
+long f(int a, int b, long c) { return (a + b) + c; } /*@V*/
+
+--- ok: composite widened first
+long f(int a, int b, long c) { return ((long)a + b) + c; }
+
+--- bad: a composite float combined with a double
+double f(float a, float b, double c) { return (a * b) + c; } /*@V*/
+
+##### rule 10.8
+summary: ignored (merged)
+
+--- ok: narrowing cast of a composite expression within the category
+signed char f(int a, int b) { return (signed char)(a + b); }
+
+--- bad: composite cast to a floating type
+float f(int a, int b) { return (float)(a + b); } /*@V*/
+
+--- ok: cast of a plain variable
+long f(int a) { return (long)a; }
+
+##### rule 11.1
+summary: ignored (merged)
+
+--- ok: casting a null constant to a function pointer type
+void (*fp)(void) = (void (*)(void))0;
+
+--- ok: a function designator compared with a function pointer
+void g(void);
+int f(void (*fp)(void)) { return fp == g; }
+
+--- bad: function pointer cast to unsigned long
+void g(void);
+unsigned long f(void) { return (unsigned long)&g; } /*@V*/
+
+##### rule 11.2
+summary: ignored (merged)
+
+--- ok: a pointer to an incomplete type stored and returned unchanged
+struct opaque;
+struct opaque *keep(struct opaque *p) { return p; }
+
+--- bad: incomplete pointer cast to char pointer
+struct opaque;
+char *f(struct opaque *p) { return (char *)p; } /*@V*/
+
+##### rule 11.3
+summary: ignored (merged)
+
+--- ok: cast through a typedef of the same type
+typedef int word_t;
+word_t *f(int *p) { return (word_t *)p; }
+
+--- bad: pointer to double cast to pointer to long
+long *f(double *p) { return (long *)p; } /*@V*/
+
+--- ok: a cast that only adds a qualifier is Rule 11.8 compliant and not a type change
+const int *f(int *p) { return (const int *)p; }
+
+--- ok: array decays to a pointer of its own element type
+char buf[4];
+char *f(void) { return (char *)buf; }
+
+##### rule 11.4
+summary: ignored (merged)
+
+--- bad: pointer cast to unsigned long
+unsigned long f(int *p) { return (unsigned long)p; } /*@V*/
+
+--- ok: integer constant zero cast to pointer
+int *f(void) { return (int *)0; }
+
+##### rule 11.5
+summary: ignored (merged)
+
+--- ok: object pointer passed to a void pointer parameter
+void use(void *p);
+void f(int *q) { use(q); }
+
+--- bad: void pointer returned as an object pointer
+void *src(void);
+int *f(void) { return src(); } /*@V*/
+
+--- ok: comparison of a void pointer with an object pointer
+int f(void *v, int *p) { return v == p; }
+
+##### rule 11.6
+summary: ignored (merged)
+
+--- bad: a nonzero integer cast to void pointer
+void *f(void) { return (void *)8; } /*@V*/
+
+--- ok: the null pointer cast to void pointer
+void *f(void) { return (void *)0; }
+
+##### rule 11.8
+summary: ignored (merged)
+
+--- bad: casting away const from a const void pointer
+void f(const void *v) { int *p = (int *)v; (void)p; } /*@V*/
+
+--- ok: casting to a pointer with more qualifiers
+const volatile int *f(int *p) { return (const volatile int *)p; }
+
+##### rule 11.9
+summary: ignored (merged)
+
+--- bad: zero returned from a pointer function
+int *f(void) { return 0; } /*@V*/
+
+--- bad: zero in a conditional operator
+int *f(int c, int *p) { return c ? p : 0; } /*@V*/
+
+--- bad: a character constant used as a null pointer
+char *p = '\0'; /*@V*/
+
+--- ok: cast of NULL
+#include <stddef.h>
+int *p = (int *)NULL;
+
+--- ok: negation of a pointer
+int f(int *p) { return !p; }
+
+--- ok: pointer compared with another pointer
+int f(int *p, int *q) { return p == q; }
+
+##### rule 12.1
+summary: ignored (merged)
+
+--- ok: assignment from an arithmetic expression
+int f(int a, int b, int c) { int r; r = a + b; return r + c; }
+
+--- ok: expressions in function arguments and subscripts
+int g(int a, int b);
+int f(int *t, int a, int b) { return g(a + b, a * b) + t[a + b]; }
+
+--- ok: unary minus with multiplication
+int f(int a, int b) { return -a * b; }
+
+--- bad: shift with addition inside one expression
+int f(int a, int b) { return a << 1 + b; } /*@V*/
+
+--- ok: chained same operator
+int f(int a, int b, int c) { return a + b + c; }
+
+##### rule 12.2
+summary: ignored (merged)
+
+--- bad: shifting a char-width value by its full width
+unsigned char f(unsigned char a) { return (unsigned char)(a << 8); } /*@V*/
+
+--- ok: a long shift by 40
+unsigned long f(unsigned long a) { return a << 40; }
+
+--- bad: an int shifted by 40
+int f(int a) { return a << 40; } /*@V*/
+
+--- ok: shift by zero
+int f(int a) { return a >> 0; }
+
+##### rule 12.3
+summary: ignored (merged)
+
+--- bad: comma operator in a macro
+#define LAST(a, b) ((void)(a), (b))
+int f(int x, int y) { return LAST(x, y); } /*@V*/
+
+--- bad: two comma operators in one for header
+void f(int n)
+{
+    int i, j;
+    for (i = 0, j = n; i < j; i++, j--) { } /*@V*/
+}
+
+--- ok: a declaration list
+int a, b, c;
+
+##### rule 12.4
+summary: ignored (merged)
+
+--- bad: complement plus one
+unsigned int a = ~0u + 1u; /*@V*/
+
+--- bad: multiplication that wraps
+unsigned int a = 0xFFFFFFFFu * 2u; /*@V*/
+
+--- ok: shift that fits
+unsigned int a = 1u << 3;
+
+--- ok: signed constants are another matter
+int a = 2147483647 - 1;

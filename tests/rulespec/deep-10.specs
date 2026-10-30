@@ -1,0 +1,802 @@
+##### rule 20.6
+summary: ignored (merged)
+
+--- bad: #define inside macro arguments
+#define F(x) (x)
+int a = F(
+#define K 1 /*@V*/
+    K);
+
+--- bad: #ifdef inside macro arguments
+#define F(x) (x)
+int b = F(
+#ifdef Q /*@V*/
+    1
+#else
+    2
+#endif /*@V*/
+    );
+
+--- ok: a directive after the invocation ends
+#define F(x) (x)
+int a = F(1);
+#define K 2
+int b = F(K);
+
+--- ok: a hash character inside a string argument
+#define F(x) (x)
+const char *s = F("#define X");
+
+--- ok: a directive inside a function body, outside any invocation
+#define F(x) (x)
+int g(void)
+{
+#if 1
+    return F(1);
+#else
+    return F(2);
+#endif
+}
+
+##### rule 20.11
+summary: ignored (merged)
+
+--- bad: stringize then paste in an object-like context with two parameters
+#define M(a, b) #a ## b /*@V*/
+const char *s = M(x, y);
+
+--- ok: paste then stringize in separate macros
+#define P(a, b) a ## b
+#define S(a) #a
+#define SX(a) S(a)
+const char *s = SX(P(1, 2));
+
+--- ok: a stringized parameter next to a paste of other operands
+#define M(a, b, c) #a, b ## c
+int v12 = 3;
+const char *s[] = {M(x, v, 12)};
+
+--- ok: hash inside a string literal followed by a paste
+#define M(a) "#" a
+const char *s = M("x");
+
+--- ok: variadic stringizing
+#define LOG(...) #__VA_ARGS__
+const char *s = LOG(a, b);
+
+##### rule 11.7
+summary: ignored (merged)
+
+--- ok: a pointer converted to an integer and back through void
+void f(int *p)
+{
+    void *v = p;
+    int *q = (int *)v;
+    (void)q;
+}
+
+--- ok: a floating value cast to another floating type
+double f(float x) { return (double)x; }
+
+--- ok: a pointer to a floating object dereferenced
+double f(const double *p) { return *p + 1.0; }
+
+--- ok: floating zero is not a null pointer constant
+double d = 0.0;
+
+##### rule 8.5
+summary: ignored (merged)
+
+--- bad: a variable declared extern in two source files
+=== a.c
+extern int shared;
+int get_a(void) { return shared; }
+=== b.c
+extern int shared; /*@V*/
+int get_b(void) { return shared; }
+=== c.c
+int shared = 1;
+
+--- ok: static declarations of the same name in two files
+=== a.c
+static int local = 1;
+int get_a(void) { return local; }
+=== b.c
+static int local = 2;
+int get_b(void) { return local; }
+
+--- ok: one header with the declaration, included by three files
+=== h.h
+extern int shared;
+int get_a(void);
+=== a.c
+#include "h.h"
+int get_a(void) { return shared; }
+=== b.c
+#include "h.h"
+int shared = 3;
+
+##### rule 21.5
+summary: ignored (merged)
+
+--- gap: a signal constant used without calling a signal function (only the functions are followed)
+#include <signal.h>
+int f(void)
+{
+    return SIGINT; /*@V*/
+}
+
+--- ok: a struct member named raise
+struct ops { int raise; };
+int f(struct ops *o) { return o->raise; }
+
+--- ok: a macro named like a signal constant but unrelated
+#define SIGNAL_COUNT 3
+int n = SIGNAL_COUNT;
+
+##### rule 21.9
+summary: ignored (merged)
+
+--- bad: qsort called through a wrapper
+#include <stdlib.h>
+static int cmp(const void *a, const void *b) { return *(const int *)a - *(const int *)b; }
+void sort(int *v, size_t n)
+{
+    qsort(v, n, sizeof(int), cmp); /*@V*/
+}
+
+--- ok: a macro named bsearch_limit
+#define bsearch_limit 8
+int n = bsearch_limit;
+
+--- ok: stdlib.h used only for abs
+#include <stdlib.h>
+int f(int x) { return abs(x); }
+
+##### rule 21.10
+summary: ignored (merged)
+
+--- bad: localtime
+#include <time.h>
+void f(const time_t *t)
+{
+    (void)localtime(t); /*@V*/
+}
+
+--- ok: a variable named time
+int f(void)
+{
+    int time = 3;
+    return time;
+}
+
+--- ok: a struct tm declared without calling any time function
+#include <time.h>
+struct tm g;
+
+##### rule 21.11
+summary: ignored (merged)
+
+--- bad: tgmath.h as the only include
+#include <tgmath.h> /*@V*/
+double f(double x) { return sqrt(x); }
+
+--- ok: math.h functions
+#include <math.h>
+double f(double x) { return sqrt(x) + fabs(x); }
+
+--- ok: a local header called tgmath_helper.h that is not the library header
+=== tgmath_helper.h
+int helper(void);
+=== main.c
+#include "tgmath_helper.h"
+int helper(void) { return 1; }
+
+##### rule 21.12
+summary: ignored (merged)
+
+--- bad: feclearexcept
+#include <fenv.h>
+void f(void)
+{
+    (void)feclearexcept(FE_ALL_EXCEPT); /*@V*/
+}
+
+--- ok: fesetround is not one of the banned exception functions
+#include <fenv.h>
+void f(void)
+{
+    (void)fesetround(FE_TONEAREST);
+}
+
+--- ok: a function called fetch_exception
+int fetch_exception(void);
+int f(void) { return fetch_exception(); }
+
+##### rule 22.5
+summary: ignored (merged)
+
+--- ok: passing the stream to a library function
+#include <stdio.h>
+int f(FILE *p) { return fgetc(p); }
+
+--- bad: assigning through the stream pointer
+#include <stdio.h>
+void f(FILE *p, FILE *q)
+{
+    *p = *q; /*@V*/
+}
+
+--- ok: a pointer to a user struct dereferenced
+struct s { int a; };
+int f(const struct s *p) { return p->a; }
+
+##### rule 18.2
+summary: ignored (merged)
+
+--- bad: subtracting pointers into two local arrays
+int f(void)
+{
+    int a[4];
+    int b[4];
+    int *p = &a[1];
+    int *q = &b[2];
+    return (int)(q - p); /*@V*/
+}
+
+--- ok: subtracting pointers into the same array
+int f(void)
+{
+    int a[8];
+    int *p = &a[1];
+    int *q = &a[6];
+    return (int)(q - p);
+}
+
+--- ok: subtracting through a pointer to the same array parameter
+int f(int *base, int *end) { return (int)(end - base); }
+
+##### rule 18.3
+summary: ignored (merged)
+
+--- bad: less than between pointers into two arrays
+int f(void)
+{
+    int a[4];
+    int b[4];
+    int *p = &a[1];
+    int *q = &b[2];
+    return p < q; /*@V*/
+}
+
+--- ok: equality between pointers to different arrays
+int f(void)
+{
+    int a[4];
+    int b[4];
+    int *p = &a[1];
+    int *q = &b[2];
+    return p == q;
+}
+
+--- ok: relational comparison inside the same array
+int f(void)
+{
+    int a[8];
+    int *p = &a[1];
+    int *q = &a[6];
+    return p <= q;
+}
+
+##### rule 18.3
+summary: ignored (merged)
+
+--- ok: a pointer that is reassigned is not tied to its first array
+int f(void)
+{
+    int a[4];
+    int b[4];
+    int *p = &a[1];
+    int *q = &b[2];
+    q = &a[3];
+    return p < q;
+}
+
+##### rule 18.2
+summary: ignored (merged)
+
+--- ok: a pointer that is advanced is not tied to its first array
+int f(void)
+{
+    int a[4];
+    int b[4];
+    int *p = &a[1];
+    int *q = &b[2];
+    q = p + 2;
+    return (int)(q - p);
+}
+
+##### rule 16.2
+summary: ignored (merged)
+
+--- bad: a case label inside a nested block of the switch
+void f(int x)
+{
+    switch (x) {
+    case 1:
+        {
+        case 2: /*@V*/
+            break;
+        }
+    default:
+        break;
+    }
+}
+
+--- ok: a case label inside a nested switch that owns it
+void f(int x, int y)
+{
+    switch (x) {
+    case 1:
+        switch (y) {
+        case 2:
+            break;
+        default:
+            break;
+        }
+        break;
+    default:
+        break;
+    }
+}
+
+##### rule 16.5
+summary: ignored (merged)
+
+--- bad: default in the middle of three clauses
+void f(int x)
+{
+    switch (x) { /*@V*/
+    case 1:
+        break;
+    default:
+        break;
+    case 2:
+        break;
+    }
+}
+
+--- ok: default last
+void f(int x)
+{
+    switch (x) {
+    case 1:
+        break;
+    case 2:
+        break;
+    default:
+        break;
+    }
+}
+
+##### rule 20.5
+summary: ignored (merged)
+
+--- bad: #undef of a macro defined in an included header
+=== h.h
+#define LIMIT 4
+=== main.c
+#include "h.h"
+#undef LIMIT /*@V*/
+int x;
+
+--- ok: no #undef anywhere
+#define A 1
+#define B (A + 1)
+int x = B;
+
+##### rule 21.4
+summary: ignored (merged)
+
+--- bad: longjmp
+#include <setjmp.h>
+void f(jmp_buf b)
+{
+    longjmp(b, 1); /*@V*/
+}
+
+--- ok: a function named setjmp_count
+int setjmp_count(void);
+int f(void) { return setjmp_count(); }
+
+##### rule 21.7
+summary: ignored (merged)
+
+--- bad: atoi
+#include <stdlib.h>
+int f(const char *s)
+{
+    return atoi(s); /*@V*/
+}
+
+--- bad: atof
+#include <stdlib.h>
+double f(const char *s)
+{
+    return atof(s); /*@V*/
+}
+
+--- ok: strtol
+#include <stdlib.h>
+long f(const char *s)
+{
+    return strtol(s, (char **)0, 10);
+}
+
+##### rule 21.8
+summary: ignored (merged)
+
+--- bad: system
+#include <stdlib.h>
+int f(void)
+{
+    return system("ls"); /*@V*/
+}
+
+--- bad: getenv
+#include <stdlib.h>
+const char *f(void)
+{
+    return getenv("HOME"); /*@V*/
+}
+
+--- ok: a variable called exit_code
+int f(void)
+{
+    int exit_code = 2;
+    return exit_code;
+}
+
+##### rule 22.3
+summary: ignored (merged)
+
+--- bad: the same file opened for reading and for writing
+#include <stdio.h>
+void f(void)
+{
+    FILE *a = fopen("data.txt", "r");
+    FILE *b = fopen("data.txt", "w"); /*@V*/
+    (void)a;
+    (void)b;
+}
+
+--- ok: two different files
+#include <stdio.h>
+void f(void)
+{
+    FILE *a = fopen("in.txt", "r");
+    FILE *b = fopen("out.txt", "w");
+    (void)a;
+    (void)b;
+}
+
+--- ok: the same file opened twice for reading
+#include <stdio.h>
+void f(void)
+{
+    FILE *a = fopen("data.txt", "r");
+    FILE *b = fopen("data.txt", "r");
+    (void)a;
+    (void)b;
+}
+
+##### rule 22.4
+summary: ignored (merged)
+
+--- bad: putc to a read-only stream
+#include <stdio.h>
+void f(void)
+{
+    FILE *a = fopen("x", "r");
+    (void)putc('a', a); /*@V*/
+}
+
+--- ok: writing to a stream opened for writing
+#include <stdio.h>
+void f(void)
+{
+    FILE *a = fopen("x", "w");
+    (void)fputc('a', a);
+}
+
+--- ok: writing to a stream opened for appending
+#include <stdio.h>
+void f(void)
+{
+    FILE *a = fopen("x", "a");
+    (void)fputc('a', a);
+}
+
+##### rule 22.6
+summary: ignored (merged)
+
+--- bad: reading a stream after it is closed
+#include <stdio.h>
+int f(FILE *p)
+{
+    (void)fclose(p);
+    return fgetc(p); /*@V*/
+}
+
+--- ok: reopening into a new variable
+#include <stdio.h>
+int f(FILE *p)
+{
+    (void)fclose(p);
+    FILE *q = fopen("x", "r");
+    return (q != (FILE *)0) ? fgetc(q) : -1;
+}
+
+##### rule 8.7
+summary: ignored (merged)
+
+--- bad: an external function used by one file only
+=== a.c
+int helper(void) { return 1; } /*@V*/
+int main(void) { return helper(); }
+=== b.c
+int other(void) { return 2; }
+
+--- ok: an external function used by both files
+=== a.c
+int shared(void);
+int main(void) { return shared(); }
+=== b.c
+int shared(void) { return 1; }
+
+##### rule 8.8
+summary: ignored (merged)
+
+--- bad: static declared after an extern declaration is missing on the definition
+static int f(void);
+int f(void) { return 1; } /*@V*/
+
+--- ok: static on both declaration and definition
+static int f(void);
+static int f(void) { return 1; }
+
+##### rule 11.2
+summary: ignored (merged)
+
+--- ok: a pointer to a complete struct converted through void
+struct s { int a; };
+void f(void *p)
+{
+    struct s *q = (struct s *)p;
+    (void)q;
+}
+
+--- ok: a pointer to an incomplete type kept as the same type
+struct opaque;
+struct opaque *f(struct opaque *p) { return p; }
+
+--- bad: an incomplete struct pointer cast to an integer pointer
+struct opaque;
+int *f(struct opaque *p)
+{
+    return (int *)p; /*@V*/
+}
+
+##### rule 11.6
+summary: ignored (merged)
+
+--- bad: void pointer cast to an integer
+void f(void *p)
+{
+    unsigned long v = (unsigned long)p; /*@V*/
+    (void)v;
+}
+
+--- bad: an integer cast to a void pointer
+void *f(unsigned long v)
+{
+    return (void *)v; /*@V*/
+}
+
+--- ok: a void pointer cast to an object pointer
+int *f(void *p) { return (int *)p; }
+
+##### rule 11.8
+summary: ignored (merged)
+
+--- bad: const removed by a cast
+void f(const int *p)
+{
+    int *q = (int *)p; /*@V*/
+    (void)q;
+}
+
+--- bad: volatile removed by a cast
+void f(volatile int *p)
+{
+    int *q = (int *)p; /*@V*/
+    (void)q;
+}
+
+--- ok: const kept by the cast
+const int *f(const int *p) { return (const int *)p; }
+
+##### rule 18.8
+summary: ignored (merged)
+
+--- bad: a variable length array parameter size
+void f(int n)
+{
+    int a[n]; /*@V*/
+    a[0] = 0;
+}
+
+--- ok: a constant length array
+void f(void)
+{
+    int a[8];
+    a[0] = 0;
+}
+
+--- ok: a pointer to a runtime sized buffer
+void f(int *buffer, int n)
+{
+    buffer[n - 1] = 0;
+}
+
+##### rule 15.1
+summary: ignored (merged)
+
+--- bad: a goto forward
+void f(int x)
+{
+    if (x) { goto end; } /*@V*/
+    x = 1;
+end:
+    x = 2;
+}
+
+--- ok: no goto
+void f(int x)
+{
+    if (x) { x = 1; }
+}
+
+##### rule 15.2
+summary: ignored (merged)
+
+--- bad: a goto backward
+void f(int x)
+{
+again:
+    x--;
+    if (x > 0) { goto again; } /*@V*/
+}
+
+--- ok: a forward goto
+void f(int x)
+{
+    if (x) { goto end; }
+    x = 1;
+end:
+    x = 2;
+}
+
+##### rule 15.3
+summary: ignored (merged)
+
+--- bad: a goto into a nested block
+void f(int x)
+{
+    if (x) { goto inner; } /*@V*/
+    {
+inner:
+        x = 2;
+    }
+}
+
+--- ok: a goto to a label in an enclosing block
+void f(int x)
+{
+    {
+        if (x) { goto end; }
+    }
+end:
+    x = 2;
+}
+
+##### rule 16.7
+summary: ignored (merged)
+
+--- bad: a switch on a comparison
+void f(int x)
+{
+    switch (x == 1) { /*@V*/
+    case 0:
+        break;
+    default:
+        break;
+    }
+}
+
+--- ok: a switch on an integer
+void f(int x)
+{
+    switch (x) {
+    case 0:
+        break;
+    default:
+        break;
+    }
+}
+
+##### rule 20.12
+summary: ignored (merged)
+
+--- gap: a macro name passed as the argument of a stringizing macro (only the macro definition is examined)
+#define A 1
+#define S(x) #x
+const char *s = S(A); /*@V*/
+
+--- ok: a parameter only stringized
+#define S(x) #x
+const char *s = S(abc);
+
+--- ok: a parameter used twice and never with # or ##
+#define TWICE(x) ((x) + (x))
+int v = TWICE(2);
+
+##### rule 5.6
+summary: ignored (merged)
+
+--- gap: typedef name reused for a different type in another file (names are compared inside one translation unit)
+=== a.c
+typedef int count_t;
+count_t a;
+=== b.c
+typedef long count_t; /*@V*/
+count_t b;
+
+--- ok: the same typedef from one header
+=== h.h
+typedef int count_t;
+=== a.c
+#include "h.h"
+count_t a;
+=== b.c
+#include "h.h"
+count_t b;
+
+##### rule 5.7
+summary: ignored (merged)
+
+--- gap: a tag name used for two different struct types in two files (names are compared inside one translation unit)
+=== a.c
+struct point { int x; };
+struct point p;
+=== b.c
+struct point { long y; }; /*@V*/
+struct point q;
+
+--- ok: the same tag from one header
+=== h.h
+struct point { int x; };
+=== a.c
+#include "h.h"
+struct point p;
+=== b.c
+#include "h.h"
+struct point q;
+
+##### rule 20.12
+summary: ignored (merged)
+
+--- bad: pasting and plain use in one replacement list
+#define MIX(a, b) a##b + a /*@V*/
+int xy = 1, x = 2;
+int v = MIX(x, y);

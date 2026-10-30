@@ -1,0 +1,700 @@
+##### rule 5.1
+summary: Reports external identifiers (functions and objects with external linkage) that are longer than 31 characters and identical in their first 31 characters.
+limits: Only the translation-unit view is examined. 31 significant characters are used for external names in every language standard.
+
+--- ok: external names that differ within 31 characters
+int abcdefghijklmnopqrstuvwxyz12345;
+int bbcdefghijklmnopqrstuvwxyz12345x;
+
+--- ok: internal names are not external identifiers
+static int abcdefghijklmnopqrstuvwxyz12345a;
+static int abcdefghijklmnopqrstuvwxyz12345b;
+
+--- ok: one object declared twice is one identifier
+extern int abcdefghijklmnopqrstuvwxyz12345a;
+int abcdefghijklmnopqrstuvwxyz12345a;
+
+--- bad: two external objects identical in the first 31 characters
+int abcdefghijklmnopqrstuvwxyz12345a; /*@V*/
+int abcdefghijklmnopqrstuvwxyz12345b; /*@V*/
+
+--- bad: two external functions identical in the first 31 characters
+void abcdefghijklmnopqrstuvwxyz12345a(void) { } /*@V*/
+void abcdefghijklmnopqrstuvwxyz12345b(void) { } /*@V*/
+
+##### rule 5.2
+summary: Reports identifiers declared in one scope that are identical in their significant characters (63 from C99, 31 in C90) and differ only afterwards.
+limits: Only identifiers that exceed the significance limit are examined; the limit follows the language standard of the compilation.
+
+--- ok: 32-character names are distinct in C99
+static int abcdefghijklmnopqrstuvwxyz12345a;
+static int abcdefghijklmnopqrstuvwxyz12345b;
+
+--- ok: names that differ early
+static int first_counter_value;
+static int second_counter_value;
+
+--- ok: the same long name in two different functions
+void f(void) { int abcdefghijklmnopqrstuvwxyz1234567890abcdefghijklmnopqrstuvwxyz1234567890x = 1; (void)abcdefghijklmnopqrstuvwxyz1234567890abcdefghijklmnopqrstuvwxyz1234567890x; }
+void g(void) { int abcdefghijklmnopqrstuvwxyz1234567890abcdefghijklmnopqrstuvwxyz1234567890y = 1; (void)abcdefghijklmnopqrstuvwxyz1234567890abcdefghijklmnopqrstuvwxyz1234567890y; }
+
+--- bad: 64-character names that differ only in the last character (C99)
+static int aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaax;
+static int aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaay;
+
+--- bad std=c90: 32-character names that differ only after the 31st (C90 limit)
+static int abcdefghijklmnopqrstuvwxyz12345a; /*@V*/
+static int abcdefghijklmnopqrstuvwxyz12345b; /*@V*/
+
+##### rule 5.3
+summary: Reports a declaration in an inner scope (a block or a parameter) whose name matches an identifier of an enclosing scope.
+limits: Names of struct members, labels and tags live in other name spaces and are not compared here.
+
+--- ok: distinct names in nested scopes
+int global_count;
+int f(int local_value) { int inner = local_value; return inner + global_count; }
+
+--- ok: the same local name in two separate functions
+int f(void) { int tmp = 1; return tmp; }
+int g(void) { int tmp = 2; return tmp; }
+
+--- ok: a struct member may share a name with a variable
+int size;
+struct S { int size; };
+struct S s;
+
+--- bad: local variable hides a file-scope object
+int level;
+int f(void)
+{
+    int level = 2; /*@V*/
+    return level;
+}
+
+--- bad: parameter hides a file-scope object
+int speed;
+int f(int speed) /*@V*/
+{
+    return speed;
+}
+
+--- bad: inner block variable hides an outer one
+int f(void)
+{
+    int value = 1;
+    {
+        int value = 2; /*@V*/
+        return value;
+    }
+}
+
+##### rule 5.4
+summary: Reports macro names that exceed the significance limit (63 characters from C99, 31 in C90) and differ only after it.
+limits: Only macros defined in project code are examined.
+
+--- ok: long macro names that differ early
+#define MACRO_NUMBER_ONE_WITH_A_VERY_LONG_NAME_THAT_KEEPS_GOING_AND_GOING_X 1
+#define MACRO_NUMBER_TWO_WITH_A_VERY_LONG_NAME_THAT_KEEPS_GOING_AND_GOING_X 2
+int v = MACRO_NUMBER_ONE_WITH_A_VERY_LONG_NAME_THAT_KEEPS_GOING_AND_GOING_X + MACRO_NUMBER_TWO_WITH_A_VERY_LONG_NAME_THAT_KEEPS_GOING_AND_GOING_X;
+
+--- ok: 32-character macro names are distinct in C99
+#define abcdefghijklmnopqrstuvwxyz12345a 1
+#define abcdefghijklmnopqrstuvwxyz12345b 2
+int v = abcdefghijklmnopqrstuvwxyz12345a + abcdefghijklmnopqrstuvwxyz12345b;
+
+--- bad: 64-character macro names that differ only in the last character
+#define aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaax 1 /*@V*/
+#define aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaay 2 /*@V*/
+int v = aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaax + aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaay;
+
+--- bad std=c90: 32-character macro names differ only after the 31st (C90 limit)
+#define abcdefghijklmnopqrstuvwxyz12345a 1 /*@V*/
+#define abcdefghijklmnopqrstuvwxyz12345b 2 /*@V*/
+int v = abcdefghijklmnopqrstuvwxyz12345a + abcdefghijklmnopqrstuvwxyz12345b;
+
+##### rule 5.5
+summary: Reports a declared identifier that has the same name as a macro defined in the main file.
+limits: A macro defined in a header is not compared with identifiers of the main file.
+
+--- ok: macro and identifier with different names
+#define LIMIT 10
+int count[LIMIT];
+
+--- ok: an unrelated macro defined after the declarations
+int level;
+#define OTHER 3
+int v = OTHER;
+
+--- bad: identifier declared before a macro of the same name
+int level; /*@V*/
+#define level_unused 1
+#define level 3
+int v = 0;
+
+--- bad: a function declared before a function-like macro of the same name
+int maxi(int a, int b); /*@V*/
+#define maxi(a, b) (((a) > (b)) ? (a) : (b))
+int use(int x) { return maxi(x, 1); }
+
+##### rule 5.6
+summary: Reports a typedef name that is reused by another declaration (a tag that names the same type is accepted). The finding is reported at the typedef declaration.
+limits: Typedefs from system headers are not examined.
+
+--- ok: typedef and struct tag naming the same type
+typedef struct node node;
+struct node { int v; };
+node n;
+
+--- ok: unique typedef names
+typedef unsigned int count_t;
+typedef int index_t;
+count_t c;
+index_t i;
+
+--- bad: a local variable reuses a typedef name
+typedef int count_t; /*@V*/
+count_t total;
+int f(void)
+{
+    int count_t = 1;
+    return count_t;
+}
+
+--- bad: a file-scope variable named like a typedef in an inner scope function
+typedef int width_t; /*@V*/
+width_t w;
+void f(void)
+{
+    int width_t;
+    width_t = 1;
+}
+
+##### rule 5.7
+summary: Reports a tag name that is reused by another declaration (a typedef that names the same type is accepted). The finding is reported at the tag declaration.
+limits: Tags from system headers are not examined.
+
+--- ok: tag and typedef naming the same type
+struct point { int x; };
+typedef struct point point;
+point p;
+
+--- ok: unique tags
+struct a_tag { int x; };
+struct b_tag { int y; };
+struct a_tag a;
+struct b_tag b;
+
+--- bad: a variable reuses a tag name
+struct shape { int sides; }; /*@V*/
+struct shape s;
+int shape;
+
+--- bad: two different types with the same tag name in different scopes
+struct item { int a; };
+struct item first;
+void f(void)
+{
+    struct item { long b; }; /*@V*/
+    struct item second;
+    (void)second;
+}
+
+##### rule 5.8
+summary: Whole-program check: reports an identifier with external linkage that is also used as an identifier with internal linkage elsewhere in the program.
+limits: Needs every translation unit of the program in one run; with a single translation unit the rule is not assessed.
+
+--- ok: distinct names across files
+=== a.c
+int shared_counter;
+static int local_a;
+int use_a(void) { return shared_counter + local_a; }
+=== b.c
+extern int shared_counter;
+static int local_b;
+int use_b(void) { return shared_counter + local_b; }
+
+--- bad: an external name that another file uses as a static name
+=== a.c
+int counter = 1;
+int use_a(void) { return counter; }
+=== b.c
+static int counter = 2; /*@V*/
+int use_b(void) { return counter; }
+
+--- bad: an external function whose name is a static function elsewhere
+=== a.c
+int helper(void) { return 1; }
+=== b.c
+static int helper(void) { return 2; } /*@V*/
+int use(void) { return helper(); }
+
+##### rule 5.9
+summary: Whole-program check: reports internal-linkage functions or objects that share a name but are defined at different places in the program.
+limits: Needs every translation unit of the program in one run; with a single translation unit the rule is not assessed.
+
+--- ok: static names that are distinct across files
+=== a.c
+static int helper_a(void) { return 1; }
+int use_a(void) { return helper_a(); }
+=== b.c
+static int helper_b(void) { return 2; }
+int use_b(void) { return helper_b(); }
+
+--- bad: the same static name in two files
+=== a.c
+static int helper(void) { return 1; } /*@V*/
+int use_a(void) { return helper(); }
+=== b.c
+static int helper(void) { return 2; } /*@V*/
+int use_b(void) { return helper(); }
+
+--- bad: the same static object name in two files
+=== a.c
+static int state = 1; /*@V*/
+int get_a(void) { return state; }
+=== b.c
+static int state = 2; /*@V*/
+int get_b(void) { return state; }
+
+##### rule 6.1
+summary: Reports a bit-field whose type is not int, unsigned int or _Bool.
+limits: The implementation-defined types a compiler may allow are not accepted unless they are one of those three.
+
+--- ok: the permitted bit-field types
+struct flags { unsigned int a : 3; int b : 4; _Bool c : 1; };
+struct flags f;
+
+--- bad: a char bit-field
+struct s1 { unsigned char a : 3; } v1; /*@V*/
+
+--- bad: a short and a long bit-field
+struct s2
+{
+    unsigned short a : 3; /*@V*/
+    long b : 5; /*@V*/
+} v2;
+
+--- bad: an enumerated bit-field
+enum e { E1, E2 };
+struct s3 { enum e a : 2; } v3; /*@V*/
+
+##### rule 6.2
+summary: Reports a named bit-field of signed integer type with a width of one bit.
+limits: Unnamed bit-fields are not reported. Only signed integer types are examined.
+
+--- ok: unsigned single-bit field
+struct a { unsigned int flag : 1; } va;
+
+--- ok: signed field wider than one bit
+struct b { int level : 2; } vb;
+
+--- ok: unnamed single-bit signed field (padding)
+struct c { int : 1; unsigned int x : 3; } vc;
+
+--- bad: named signed single-bit field
+struct d { int flag : 1; } vd; /*@V*/
+
+--- bad: two fields, one of them signed single-bit
+struct e
+{
+    unsigned int ok_flag : 1;
+    int bad_flag : 1; /*@V*/
+} ve;
+
+##### rule 7.1
+summary: Reports an integer literal that is written with a leading zero followed by further digits (an octal constant), including one in an unexpanded macro body.
+limits: A plain 0 is not octal. Octal escape sequences in strings are Rule 4.1 and 7.x does not examine them.
+
+--- ok: zero, decimal, hexadecimal and floating literals
+int a = 0;
+int b = 10;
+int c = 0x1F;
+double d = 0.5;
+double e = 01.5e0;
+unsigned int f = 0U;
+
+--- ok: an octal escape inside a string is not an octal constant
+const char *s = "\101";
+
+--- bad: octal constant
+int a = 010; /*@V*/
+
+--- bad: octal constant in an expression and as an array size
+int arr[0777]; /*@V*/
+int f(int x) { return x + 011; } /*@V*/
+
+--- bad: zero followed by a zero digit
+int a = 00; /*@V*/
+
+--- bad: octal constant in a macro body that is never expanded
+#define MASK 0755 /*@V*/
+
+##### rule 7.2
+summary: Reports an integer literal of unsigned type that is written without a u or U suffix.
+limits: Only integer literals are examined. Whether a literal is unsigned depends on the target's integer sizes.
+
+--- ok: decimal and hexadecimal literals that fit int
+int a = 10;
+int b = 0x7FFF;
+
+--- ok: unsigned literals with the suffix
+unsigned int a = 0xFFFFFFFFU;
+unsigned long b = 10UL;
+
+--- ok: a decimal literal too big for int is a signed long, not unsigned
+long a = 4294967295;
+
+--- bad: hexadecimal literal that is unsigned int without a suffix
+unsigned int a = 0xFFFFFFFF; /*@V*/
+
+--- bad: octal-style literal that is unsigned without a suffix (also Rule 7.1)
+unsigned int b = 037777777777; /*@V*/
+
+##### rule 7.3
+summary: Reports an integer or floating literal whose suffix uses a lowercase l.
+limits: Only the suffix is examined.
+
+--- ok: uppercase suffixes
+long a = 10L;
+unsigned long b = 10UL;
+long long c = 10LL;
+long double d = 1.0L;
+float e = 1.0f;
+
+--- bad: lowercase l on an integer
+long a = 10l; /*@V*/
+
+--- bad: lowercase l combined with u, and on long long
+unsigned long b = 10ul; /*@V*/
+long long c = 10ll; /*@V*/
+
+--- bad: lowercase l on a floating literal
+long double d = 1.0l; /*@V*/
+
+##### rule 7.4
+summary: Reports a string literal that converts to a pointer to non-const char outside subscript and dereference contexts.
+limits: Only conversions the compiler shows as a pointer decay are examined; a literal that initializes a char array copies the characters and is accepted.
+
+--- ok: pointer to const char
+const char *p = "text";
+
+--- ok: the literal initializes an array
+char buffer[] = "text";
+
+--- ok: subscript, dereference and sizeof
+char first(void) { return "abc"[1]; }
+char second(void) { return *"abc"; }
+unsigned long n = sizeof("abc");
+
+--- bad: pointer to non-const char initialized with a literal
+char *p = "text"; /*@V*/
+
+--- bad: assignment of a literal to a char pointer
+void f(void)
+{
+    char *q;
+    q = "other"; /*@V*/
+    (void)q;
+}
+
+--- bad: literal passed to a function that takes char *
+void take(char *s);
+void g(void) { take("literal"); } /*@V*/
+
+--- ok: literal passed to a function that takes const char *
+void take_const(const char *s);
+void h(void) { take_const("literal"); }
+
+##### rule 8.1
+summary: Reports a declaration written without a type specifier (implicit int).
+limits: Only declarations that the compiler accepts with a warning are reachable; strict compilers reject them as errors.
+
+--- ok: explicit types
+static int a = 3;
+int f(void) { return 0; }
+
+--- bad: object declared without a type
+static a = 3; /*@V*/
+
+--- bad: function defined without a return type
+f(void) { return 0; } /*@V*/
+
+##### rule 8.2
+summary: Reports a function declared without a prototype (an empty parameter list) or with an unnamed parameter.
+limits: The unnamed-parameter form is reported on declarations and on definitions alike.
+
+--- ok: prototypes with named parameters
+int add(int a, int b);
+void nothing(void);
+
+--- ok: a definition with named parameters
+int add(int a, int b) { return a + b; }
+
+--- bad: an empty parameter list is not a prototype
+int f(); /*@V*/
+
+--- bad: an unnamed parameter
+int g(int); /*@V*/
+
+--- bad: a definition in the old style
+int h() { return 0; } /*@V*/
+
+##### rule 8.3
+summary: Reports declarations of one external name whose type (qualifiers included) or parameter names differ from the first declaration seen.
+limits: Only declarations in the analysed translation unit are compared; conflicts with a declaration in a header that is not visible are not found.
+
+--- ok: identical declarations
+int f(int a, int b);
+int f(int a, int b) { return a + b; }
+
+--- ok: declarations of different functions
+int f(int a);
+int g(int b);
+
+--- bad: parameter names differ between declaration and definition
+int f(int a);
+int f(int b) { return b; } /*@V*/
+
+--- bad: a top-level parameter qualifier differs (the compiler accepts it)
+void put(const int count);
+void put(int count) { } /*@V*/
+
+##### rule 8.4
+summary: Reports the definition of an externally visible function or object that has no earlier declaration in the translation unit (main is exempt).
+limits: A declaration in a header counts as earlier only when it is visible in the same translation unit; whether the declarations are compatible is Rule 8.3.
+
+--- ok: prototype before the definition
+int get(void);
+int get(void) { return 1; }
+
+--- ok: static functions and objects need no declaration
+static int hidden(void) { return 1; }
+static int counter;
+
+--- ok: main is exempt
+int main(void) { return 0; }
+
+--- ok: object declared extern before its definition
+extern int level;
+int level = 3;
+
+--- bad: function defined without a prior declaration
+int compute(int a) /*@V*/
+{
+    return a;
+}
+
+--- bad: object defined without a prior declaration
+int total = 0; /*@V*/
+
+--- bad: a prototype that appears after the definition does not help
+int late(void) { return 1; } /*@V*/
+int late(void);
+
+##### rule 8.5
+summary: Reports an external function or object that has non-defining declarations in more than one file: declare it once, in a header that both the definition and the users include.
+limits: Compares the files in which the declarations are written; it needs the whole program in one run to see more than one user.
+
+--- ok: one header declares it, everyone includes the header
+=== common.h
+extern int shared;
+=== a.c
+#include "common.h"
+int shared = 1;
+=== b.c
+#include "common.h"
+int read_shared(void) { return shared; }
+
+--- bad: two source files each declare the same external object
+=== a.c
+int shared = 1;
+extern int unused_decl_a;
+extern int declared_twice; /*@V*/
+=== b.c
+extern int declared_twice; /*@V*/
+int read_twice(void) { return declared_twice; }
+=== c.c
+int declared_twice = 0;
+
+##### rule 8.6
+summary: Whole-program check: reports an external name defined in more than one translation unit, or referenced but never defined.
+limits: Needs every translation unit of the program in one run (library functions and compiler built-ins are not reported as undefined).
+
+--- ok: defined once, used elsewhere
+=== a.c
+int value(void) { return 1; }
+=== b.c
+int value(void);
+int use(void) { return value(); }
+
+--- bad: the same function defined in two files
+=== a.c
+int dup(void) { return 1; } /*@V*/
+=== b.c
+int dup(void) { return 2; } /*@V*/
+
+--- bad: a function that is referenced but defined nowhere
+=== a.c
+int missing(void);
+int use(void) { return missing(); } /*@V*/
+=== b.c
+int top(void);
+int main(void) { return top(); }
+
+--- ok: standard library functions are not reported
+#include <string.h>
+unsigned long n(const char *s) { return strlen(s); }
+
+##### rule 8.7
+summary: Whole-program check: reports an externally visible function or object that is defined but referenced only from its own translation unit (main is exempt).
+limits: Needs every translation unit of the program in one run.
+
+--- ok: external function used from another file
+=== a.c
+int shared(void) { return 1; }
+=== b.c
+int shared(void);
+int main(void) { return shared(); }
+
+--- ok: main is exempt
+int main(void) { return 0; }
+
+--- bad: external function used only in its own file
+=== a.c
+int only_here(void) { return 1; } /*@V*/
+int caller(void) { return only_here(); }
+=== b.c
+int caller(void);
+int top(void) { return caller(); }
+
+--- bad: external object used only in its own file
+=== a.c
+int only_obj = 1; /*@V*/
+int get(void) { return only_obj; }
+=== b.c
+int get(void);
+int top(void) { return get(); }
+
+##### rule 8.8
+summary: Reports a redeclaration of an internal-linkage function or object that omits the static specifier.
+limits: Only redeclarations in the same translation unit are compared.
+
+--- ok: static on every declaration
+static int f(void);
+static int f(void) { return 1; }
+
+--- ok: a different function without static
+int g(void);
+
+--- bad: the definition omits static after a static declaration
+static int f(void);
+int f(void) { return 1; } /*@V*/
+
+--- bad: an extern redeclaration of a static function
+static int g(void);
+extern int g(void) { return 1; } /*@V*/
+
+##### rule 8.9
+summary: Reports a file-scope static object that is referenced from exactly one function.
+limits: Counts references by function in the main file; an object used only at file scope or from several functions is accepted.
+
+--- ok: static object used by two functions
+static int shared;
+void set(int v) { shared = v; }
+int get(void) { return shared; }
+
+--- ok: an object declared inside the function
+int f(void) { static int calls; calls++; return calls; }
+
+--- bad: file-scope static used by one function only
+static int counter; /*@V*/
+int next(void) { counter++; return counter; }
+
+--- bad: file-scope static constant used by one function
+static const int limit = 5; /*@V*/
+int clamp(int v) { return v > limit ? limit : v; }
+
+##### rule 8.10
+summary: Reports an inline function definition that is not declared static.
+limits: Only inline function definitions are examined.
+
+--- ok: static inline
+static inline int twice(int x) { return x * 2; }
+int use(int v) { return twice(v); }
+
+--- ok: a plain function
+int plain(int x) { return x; }
+
+--- bad: inline without static
+inline int twice(int x) { return x * 2; } /*@V*/
+
+##### rule 8.11
+summary: Reports an extern array declaration without an explicit size.
+limits: Array parameters (which decay to pointers) and defined arrays are not extern declarations and are accepted.
+
+--- ok: extern array with its size
+extern int table[10];
+
+--- ok: an array parameter without a size
+int sum(int values[], int n);
+
+--- ok: a defined array sized by its initializer
+int primes[] = { 2, 3, 5 };
+
+--- bad: extern array of unspecified size
+extern int table[]; /*@V*/
+
+--- bad: extern two-dimensional array with the first size missing
+extern int grid[][4]; /*@V*/
+
+##### rule 8.12
+summary: Reports an implicitly valued enumerator whose value equals the value of another enumerator in the same list.
+limits: Explicit duplicate values are allowed; only an implicit value that coincides with another is reported.
+
+--- ok: all implicit
+enum a { A0, A1, A2 };
+
+--- ok: explicit values only
+enum b { B0 = 1, B1 = 5, B2 = 9 };
+
+--- ok: the first is explicit and the rest follow implicitly without a clash
+enum c { C0 = 5, C1, C2 };
+
+--- bad: an implicit value equals an earlier explicit one
+enum d { D0 = 1, D1 = 0, D2 }; /*@V*/
+
+--- bad: an implicit enumerator follows a value that makes it equal to another
+enum e { E0 = 2, E1 = 1, E2, E3 = 3 }; /*@V*/
+
+##### rule 8.13
+summary: Subset: reports a pointer parameter to non-const whose every use in the function body is read-only.
+limits: Only direct uses in the function are examined; a pointer passed to another function is assumed to be modified.
+
+--- ok: a pointer to const
+int sum(const int *p, int n) { int s = 0; int i; for (i = 0; i < n; i++) { s += p[i]; } return s; }
+
+--- ok: the pointee is modified
+void clear(int *p) { *p = 0; }
+
+--- ok: the pointer is passed on (it may be modified there)
+void sink(int *p);
+void forward(int *p) { sink(p); }
+
+--- bad: read-only use of a non-const pointer parameter
+int first(int *p) { return *p; } /*@V*/
+
+--- bad: indexed read-only use
+int at(int *a, int i) { return a[i]; } /*@V*/
+
+##### rule 8.14
+summary: Reports any object, parameter or member declared with a restrict-qualified type.
+limits: The qualifier is reported wherever it is written.
+
+--- ok: no restrict
+void copy(int *dst, const int *src, int n);
+
+--- bad: restrict parameters
+void copy(int *restrict dst, const int *restrict src, int n) { } /*@V*/
+
+--- bad: restrict pointer object
+int *restrict global_ptr; /*@V*/

@@ -6,12 +6,16 @@
  * Analysis expansion: Reconcile declarations, definitions, linkage, prototypes, qualifiers, and cross-translation-unit symbol records.
  * Normative notice: Wording, amplification, exceptions, and examples remain in
  * the licensed MISRA specification and require independent approval.
- * Implementation status: Scaffold only; no compliance decision is made.
+ * Detection contract: Whole-program: report an external name defined in more than one translation unit, or referenced but never defined (requires every translation unit of the program in one run; Inconclusive otherwise).
+ * Evidence: file-scope symbol facts merged across all translation units of the run.
+ * Implementation status: Implemented; independent validation is pending.
  */
 
 #include "misra/c2012/rule_factories.hpp"
 
 #include <memory>
+
+#include "misra/symbol_rule.hpp"
 
 namespace misra::c2012 {
 namespace {
@@ -28,15 +32,40 @@ class Rule_08_06 final : public Rule {
         "Declarations and definitions",
         "Independent checker contract for Rule 8.6 in the Declarations and definitions family. The exact normative predicate remains linked to the controlled licensed rule specification.",
         "Reconcile declarations, definitions, linkage, prototypes, qualifiers, and cross-translation-unit symbol records.",
-        ImplementationStatus::Scaffold,
+        ImplementationStatus::Implemented,
     };
     return descriptor;
   }
 
   [[nodiscard]] RuleEvaluation evaluate(
       const AnalysisContext& context) const override {
-    (void)context;
-    return {EvaluationStatus::NotImplemented};
+    if (!has_multiple_units(context)) {
+      return {EvaluationStatus::Inconclusive};
+    }
+    RuleEvaluation evaluation{EvaluationStatus::Complete, {}};
+    for (const auto& [name, facts] : group_symbols(context, true)) {
+      std::set<std::string> defining_units;
+      std::vector<const SymbolFact*> definitions;
+      const SymbolFact* first_reference = nullptr;
+      for (const SymbolFact* fact : facts) {
+        if (fact->role == SymbolRole::Definition) {
+          defining_units.insert(fact->translation_unit);
+          definitions.push_back(fact);
+        } else if ((fact->role == SymbolRole::Reference) && (first_reference == nullptr)) {
+          first_reference = fact;
+        }
+      }
+      if (defining_units.size() > 1U) {
+        for (const SymbolFact* definition : definitions) {
+          evaluation.findings.push_back({"misra-c2012-8.6-multiple-definitions",
+                                         definition->location, FindingCertainty::Definite});
+        }
+      } else if (definitions.empty() && (first_reference != nullptr)) {
+        evaluation.findings.push_back({"misra-c2012-8.6-no-definition",
+                                       first_reference->location, FindingCertainty::Possible});
+      }
+    }
+    return evaluation;
   }
 };
 

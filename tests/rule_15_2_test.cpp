@@ -18,7 +18,8 @@ misra::GotoStatementFact make_goto(const bool target_declared_later) {
           {"example.c", target_declared_later ? 12U : 3U, 1U},
           target_declared_later,
           false,
-          false};
+          false,
+          true};
 }
 
 }  // namespace

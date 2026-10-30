@@ -1,0 +1,304 @@
+##### rule 5.1
+summary: ignored (merged)
+
+--- ok: external names differing exactly at the 31st character
+int abcdefghijklmnopqrstuvwxyz0123a;
+int abcdefghijklmnopqrstuvwxyz0123b;
+
+--- bad: external names identical in 31 characters, one an object and one a function
+int abcdefghijklmnopqrstuvwxyz01234_x;
+int abcdefghijklmnopqrstuvwxyz01234_y(void) { return 0; }
+
+--- ok: long internal names are Rule 5.2 matters, not 5.1
+static int abcdefghijklmnopqrstuvwxyz01234_x;
+static int abcdefghijklmnopqrstuvwxyz01234_y;
+
+--- ok: a long external name that is unique
+int a_very_long_external_identifier_name_that_is_unique_a;
+int b_very_long_external_identifier_name_that_is_unique_b;
+
+##### rule 5.2
+summary: ignored (merged)
+
+--- bad: structure members identical in significant characters
+struct s {
+    int abcdefghijklmnopqrstuvwxyz0123456789abcdefghijklmnopqrstuvwxyz0a;
+    int abcdefghijklmnopqrstuvwxyz0123456789abcdefghijklmnopqrstuvwxyz0b; /*@V*/
+};
+
+--- ok: members of different structures may repeat names
+struct a { int value; };
+struct b { int value; };
+
+--- bad: enumerators identical in significant characters
+enum e {
+    abcdefghijklmnopqrstuvwxyz0123456789abcdefghijklmnopqrstuvwxyz0a,
+    abcdefghijklmnopqrstuvwxyz0123456789abcdefghijklmnopqrstuvwxyz0b /*@V*/
+};
+
+--- ok: a local and a global with different long names
+int abcdefghijklmnopqrstuvwxyz0123456789abcdefghijklmnopqrstuvwxy_g;
+void f(void) { int abcdefghijklmnopqrstuvwxyz0123456789abcdefghijklmnopqrstuvwxy_l; (void)abcdefghijklmnopqrstuvwxyz0123456789abcdefghijklmnopqrstuvwxy_l; }
+
+##### rule 5.3
+summary: ignored (merged)
+
+--- bad: for loop variable hides an outer variable
+void f(void)
+{
+    int i = 0;
+    for (int i = 0; i < 3; i++) { /*@V*/
+        (void)i;
+    }
+    (void)i;
+}
+
+--- bad: local variable named like a function
+int process(int a);
+void g(void)
+{
+    int process = 1; /*@V*/
+    (void)process;
+}
+
+--- ok: label and variable with the same name use different name spaces
+void f(int a)
+{
+    if (a) { goto a2; }
+a2:
+    a = 1;
+}
+
+--- ok: a tag and a variable share a name (different name space)
+struct item { int a; };
+void f(void) { int item = 1; (void)item; }
+
+--- bad: parameter in a function definition hides a typedef-free global function
+int count(void);
+int f(int count) { return count; } /*@V*/
+
+--- ok: sibling blocks reuse a name
+void f(int a)
+{
+    if (a) { int t = 1; (void)t; } else { int t = 2; (void)t; }
+}
+
+--- bad: block variable hides a parameter
+int f(int n)
+{
+    {
+        int n = 2; /*@V*/
+        return n;
+    }
+}
+
+##### rule 5.4
+summary: ignored (merged)
+
+--- ok: macro parameters repeat the macro name of another macro
+#define A(x) (x)
+#define B(A2) (A2)
+int v = A(1) + B(2);
+
+--- ok: two macros with different long names
+#define ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ0a 1
+#define BBCDEFGHIJKLMNOPQRSTUVWXYZ0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ0a 2
+int a = ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ0a + BBCDEFGHIJKLMNOPQRSTUVWXYZ0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ0a;
+
+##### rule 5.5
+summary: ignored (merged)
+
+--- ok: identifier whose macro was undefined before the declaration
+#define count 1
+#undef count
+int count;
+
+--- bad: a struct member that shares the name of a later macro
+struct s { int width; };
+#define width 8
+int w = width;
+
+--- ok: a macro and a label name differ
+#define FLAG 1
+void f(void) { goto done; done: ; }
+
+##### rule 5.6
+summary: ignored (merged)
+
+--- bad: a parameter named like a typedef
+typedef int id_t2; /*@V*/
+int f(int id_t2) { return id_t2; }
+
+--- ok: the same typedef name for the same type is not repeated
+typedef unsigned char byte_t;
+byte_t b;
+
+##### rule 5.7
+summary: ignored (merged)
+
+--- bad: a function named like a tag
+struct node { int a; }; /*@V*/
+int node(void) { return 1; }
+
+--- ok: a tag used in the tag name space only
+struct a { int x; };
+struct b { struct a inner; };
+
+##### rule 5.8
+summary: ignored (merged)
+
+--- ok: the same external name declared in a header and defined once
+=== common.h
+extern int shared;
+int get(void);
+=== a.c
+#include "common.h"
+int shared = 1;
+int get(void) { return shared; }
+=== b.c
+#include "common.h"
+int use(void) { return shared + get(); }
+
+--- bad: a static function shares a name with an external function elsewhere
+=== a.c
+int helper(void) { return 1; }
+=== b.c
+static int helper(void) { return 2; } /*@V*/
+int use(void) { return helper(); }
+
+##### rule 5.9
+summary: ignored (merged)
+
+--- ok: a static inline function in a shared header is one declaration
+=== util.h
+static inline int twice(int a) { return a * 2; }
+=== a.c
+#include "util.h"
+int fa(int x) { return twice(x); }
+=== b.c
+#include "util.h"
+int fb(int x) { return twice(x) + 1; }
+
+--- bad: static functions of the same name with different bodies in two files
+=== a.c
+static int step(int a) { return a + 1; }
+int fa(int x) { return step(x); }
+=== b.c
+static int step(int a) { return a + 2; } /*@V*/
+int fb(int x) { return step(x); }
+
+##### rule 6.1
+summary: ignored (merged)
+
+--- ok: typedef of unsigned int used as a bit-field
+typedef unsigned int bits_t;
+struct s { bits_t a : 3; };
+
+--- ok: plain unsigned and signed int bit-fields
+struct s { unsigned a : 3; signed int b : 3; };
+
+--- bad: an unsigned char bit-field
+struct s { unsigned char a : 3; }; /*@V*/
+
+--- ok: zero-width unnamed bit-field
+struct s { unsigned a : 3; unsigned : 0; unsigned b : 2; };
+
+--- ok: a boolean bit-field
+struct s { _Bool flag : 1; };
+
+##### rule 6.2
+summary: ignored (merged)
+
+--- bad: plain int single-bit field (implementation-defined signedness)
+struct s { int a : 1; }; /*@V*/
+
+--- bad: signed int single-bit field
+struct s { signed int a : 1; }; /*@V*/
+
+--- ok: unsigned and boolean single-bit fields
+struct s { unsigned a : 1; _Bool b : 1; };
+
+--- ok: wide signed field
+struct s { int a : 8; };
+
+##### rule 7.2
+summary: ignored (merged)
+
+--- bad: a decimal literal above LONG_MAX is unsigned long and needs the suffix
+unsigned long a = 9223372036854775808; /*@V*/
+
+--- ok: a decimal literal beyond int is signed long in C99
+long a = 4294967295;
+
+--- ok: negative constants and ones that fit
+int a = -1;
+int b = 2147483647;
+
+--- bad: hexadecimal unsigned literal used as an array index
+int t[4];
+int f(void) { return t[0x80000000 >> 31]; } /*@V*/
+
+--- ok: a literal inside a preprocessor condition is not an object
+#if 0xFFFFFFFF > 1
+int a;
+#endif
+
+##### rule 7.3
+summary: ignored (merged)
+
+--- bad: lowercase l on a hexadecimal literal
+long a = 0x1l; /*@V*/
+
+--- ok: lowercase letters that are not a suffix l
+int a = 0xabc;
+float f = 1.5f;
+double d = 1e3;
+
+--- ok: uppercase suffix combinations
+unsigned long long a = 1ULL;
+long double b = 1.0L;
+
+--- ok: l inside a string and character constant
+const char *s = "1l";
+int c = 'l';
+
+--- bad: lowercase ll
+long long a = 1ll; /*@V*/
+
+##### rule 7.4
+summary: ignored (merged)
+
+--- bad: literal returned from a function that returns char *
+char *f(void) { return "x"; } /*@V*/
+
+--- bad: array of char pointers initialized with literals
+char *names[2] = { "a", "b" }; /*@V*/
+
+--- ok: array of const char pointers
+const char *names[2] = { "a", "b" };
+
+--- ok: literal passed to printf-like const char * parameter
+int p(const char *fmt, ...);
+void f(void) { (void)p("x"); }
+
+--- bad: conditional of two literals assigned to char *
+char *f(int c)
+{
+    char *p = c ? "a" : "b"; /*@V*/
+    return p;
+}
+
+--- ok: conditional of two literals assigned to const char *
+const char *f(int c) { return c ? "a" : "b"; }
+
+--- ok: comparison of a literal pointer with another pointer
+int f(const char *p) { return p == "x"; }
+
+--- ok: char array initialised from a literal
+char buf[4] = "abc";
+char big[] = "abcdef";
+
+--- ok: literal as an argument to a char-array safe function taking const
+unsigned long len(const char *s);
+unsigned long n = 0;
+void f(void) { n = len("abc"); }

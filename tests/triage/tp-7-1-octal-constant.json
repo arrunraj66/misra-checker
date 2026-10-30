@@ -1,0 +1,21 @@
+{
+ "id": "tp-7-1-octal-constant",
+ "kind": "true-positive",
+ "rule": "7.1",
+ "file": "main.c",
+ "line": 3,
+ "note": "Octal constant 010 in code.",
+ "files": {
+  "main.c": "int f(void)\n{\n    int x = 010;\n    return x;\n}\n"
+ },
+ "build": {
+  "std": "c99",
+  "clang_flags": [],
+  "defines": [],
+  "include_dirs": [
+   ""
+  ]
+ },
+ "state": "fixed",
+ "tool_version": "misra-checker 0.4.0"
+}

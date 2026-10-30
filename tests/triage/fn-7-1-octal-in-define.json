@@ -1,0 +1,21 @@
+{
+ "id": "fn-7-1-octal-in-define",
+ "kind": "false-negative",
+ "rule": "7.1",
+ "file": "main.c",
+ "line": 1,
+ "note": "Octal constant inside a #define that is never expanded. cppcheck reports it; misra-checker does not.",
+ "files": {
+  "main.c": "#define BIG 0777\nint f(void)\n{\n    return 1;\n}\n"
+ },
+ "build": {
+  "std": "c99",
+  "clang_flags": [],
+  "defines": [],
+  "include_dirs": [
+   ""
+  ]
+ },
+ "state": "fixed",
+ "tool_version": "misra-checker 0.4.0"
+}
