@@ -14,7 +14,7 @@ strtol and friends are not reported.
 
 ## Tested cases
 
-6 of 6 pass.
+9 of 9 pass.
 
 | Kind | Case | Result |
 |---|---|---|
@@ -24,6 +24,9 @@ strtol and friends are not reported.
 | Compliant (must stay silent) | strtoul | pass |
 | Violation (must be reported) | atof | pass |
 | Compliant (must stay silent) | strtod | pass |
+| Violation (must be reported) | atoi | pass |
+| Violation (must be reported) | atof | pass |
+| Compliant (must stay silent) | strtol | pass |
 
 ## Case sources
 
@@ -84,5 +87,41 @@ double f(const char *s) { return atof(s); } /*@V*/
 ```c
 #include <stdlib.h>
 double f(const char *s) { return strtod(s, 0); }
+```
+
+### Violation (must be reported): atoi
+
+`main.c`
+
+```c
+#include <stdlib.h>
+int f(const char *s)
+{
+    return atoi(s); /*@V*/
+}
+```
+
+### Violation (must be reported): atof
+
+`main.c`
+
+```c
+#include <stdlib.h>
+double f(const char *s)
+{
+    return atof(s); /*@V*/
+}
+```
+
+### Compliant (must stay silent): strtol
+
+`main.c`
+
+```c
+#include <stdlib.h>
+long f(const char *s)
+{
+    return strtol(s, (char **)0, 10);
+}
 ```
 

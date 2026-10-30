@@ -14,7 +14,7 @@ setjmp is a macro in some libraries; it is found when the compiler expands it to
 
 ## Tested cases
 
-6 of 6 pass.
+8 of 8 pass.
 
 | Kind | Case | Result |
 |---|---|---|
@@ -24,6 +24,8 @@ setjmp is a macro in some libraries; it is found when the compiler expands it to
 | Violation (must be reported) | longjmp through a jmp_buf | pass |
 | Compliant (must stay silent) | a variable named setjmp_count | pass |
 | Compliant (must stay silent) | a user function that wraps its own non-local jump with a different name | pass |
+| Violation (must be reported) | longjmp | pass |
+| Compliant (must stay silent) | a function named setjmp_count | pass |
 
 ## Case sources
 
@@ -89,5 +91,26 @@ int setjmp_count;
 ```c
 void restart(void);
 void f(void) { restart(); }
+```
+
+### Violation (must be reported): longjmp
+
+`main.c`
+
+```c
+#include <setjmp.h>
+void f(jmp_buf b)
+{
+    longjmp(b, 1); /*@V*/
+}
+```
+
+### Compliant (must stay silent): a function named setjmp_count
+
+`main.c`
+
+```c
+int setjmp_count(void);
+int f(void) { return setjmp_count(); }
 ```
 

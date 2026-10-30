@@ -14,7 +14,7 @@ A null pointer constant is exempt.
 
 ## Tested cases
 
-6 of 6 pass.
+9 of 9 pass.
 
 | Kind | Case | Result |
 |---|---|---|
@@ -24,6 +24,9 @@ A null pointer constant is exempt.
 | Violation (must be reported) | void pointer cast to integer | pass |
 | Violation (must be reported) | a nonzero integer cast to void pointer | pass |
 | Compliant (must stay silent) | the null pointer cast to void pointer | pass |
+| Violation (must be reported) | void pointer cast to an integer | pass |
+| Violation (must be reported) | an integer cast to a void pointer | pass |
+| Compliant (must stay silent) | a void pointer cast to an object pointer | pass |
 
 ## Case sources
 
@@ -74,5 +77,36 @@ void *f(void) { return (void *)8; } /*@V*/
 
 ```c
 void *f(void) { return (void *)0; }
+```
+
+### Violation (must be reported): void pointer cast to an integer
+
+`main.c`
+
+```c
+void f(void *p)
+{
+    unsigned long v = (unsigned long)p; /*@V*/
+    (void)v;
+}
+```
+
+### Violation (must be reported): an integer cast to a void pointer
+
+`main.c`
+
+```c
+void *f(unsigned long v)
+{
+    return (void *)v; /*@V*/
+}
+```
+
+### Compliant (must stay silent): a void pointer cast to an object pointer
+
+`main.c`
+
+```c
+int *f(void *p) { return (int *)p; }
 ```
 

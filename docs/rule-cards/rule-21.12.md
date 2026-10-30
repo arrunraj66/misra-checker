@@ -14,7 +14,7 @@ The exception macros are not examined.
 
 ## Tested cases
 
-5 of 5 pass.
+8 of 8 pass.
 
 | Kind | Case | Result |
 |---|---|---|
@@ -23,6 +23,9 @@ The exception macros are not examined.
 | Violation (must be reported) | feraiseexcept | pass |
 | Violation (must be reported) | fetestexcept | pass |
 | Compliant (must stay silent) | including fenv.h without calling its functions | pass |
+| Violation (must be reported) | feclearexcept | pass |
+| Compliant (must stay silent) | fesetround is not one of the banned exception functions | pass |
+| Compliant (must stay silent) | a function called fetch_exception | pass |
 
 ## Case sources
 
@@ -72,5 +75,38 @@ int f(void) { return fetestexcept(FE_ALL_EXCEPT); } /*@V*/
 ```c
 #include <fenv.h>
 int x;
+```
+
+### Violation (must be reported): feclearexcept
+
+`main.c`
+
+```c
+#include <fenv.h>
+void f(void)
+{
+    (void)feclearexcept(FE_ALL_EXCEPT); /*@V*/
+}
+```
+
+### Compliant (must stay silent): fesetround is not one of the banned exception functions
+
+`main.c`
+
+```c
+#include <fenv.h>
+void f(void)
+{
+    (void)fesetround(FE_TONEAREST);
+}
+```
+
+### Compliant (must stay silent): a function called fetch_exception
+
+`main.c`
+
+```c
+int fetch_exception(void);
+int f(void) { return fetch_exception(); }
 ```
 

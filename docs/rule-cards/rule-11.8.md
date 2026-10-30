@@ -14,7 +14,7 @@ Only explicit casts are examined; an implicit conversion that drops a qualifier 
 
 ## Tested cases
 
-6 of 6 pass.
+9 of 9 pass.
 
 | Kind | Case | Result |
 |---|---|---|
@@ -24,6 +24,9 @@ Only explicit casts are examined; an implicit conversion that drops a qualifier 
 | Violation (must be reported) | casting away volatile | pass |
 | Violation (must be reported) | casting away const from a const void pointer | pass |
 | Compliant (must stay silent) | casting to a pointer with more qualifiers | pass |
+| Violation (must be reported) | const removed by a cast | pass |
+| Violation (must be reported) | volatile removed by a cast | pass |
+| Compliant (must stay silent) | const kept by the cast | pass |
 
 ## Case sources
 
@@ -73,5 +76,37 @@ void f(const void *v) { int *p = (int *)v; (void)p; } /*@V*/
 
 ```c
 const volatile int *f(int *p) { return (const volatile int *)p; }
+```
+
+### Violation (must be reported): const removed by a cast
+
+`main.c`
+
+```c
+void f(const int *p)
+{
+    int *q = (int *)p; /*@V*/
+    (void)q;
+}
+```
+
+### Violation (must be reported): volatile removed by a cast
+
+`main.c`
+
+```c
+void f(volatile int *p)
+{
+    int *q = (int *)p; /*@V*/
+    (void)q;
+}
+```
+
+### Compliant (must stay silent): const kept by the cast
+
+`main.c`
+
+```c
+const int *f(const int *p) { return (const int *)p; }
 ```
 

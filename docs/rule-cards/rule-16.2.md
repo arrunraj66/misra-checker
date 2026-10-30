@@ -14,7 +14,7 @@ Only labels nested in blocks inside the switch body are reported.
 
 ## Tested cases
 
-6 of 6 pass.
+8 of 8 pass.
 
 | Kind | Case | Result |
 |---|---|---|
@@ -24,6 +24,8 @@ Only labels nested in blocks inside the switch body are reported.
 | Violation (must be reported) | a case in a loop inside the switch (Duff's device) | pass |
 | Compliant (must stay silent) | nested switch has its own top-level labels | pass |
 | Violation (must be reported) | a case label inside an if within the switch | pass |
+| Violation (must be reported) | a case label inside a nested block of the switch | pass |
+| Compliant (must stay silent) | a case label inside a nested switch that owns it | pass |
 
 ## Case sources
 
@@ -139,6 +141,47 @@ void f(int v, int c)
             break;
         default:
             break;
+    }
+}
+```
+
+### Violation (must be reported): a case label inside a nested block of the switch
+
+`main.c`
+
+```c
+void f(int x)
+{
+    switch (x) {
+    case 1:
+        {
+        case 2: /*@V*/
+            break;
+        }
+    default:
+        break;
+    }
+}
+```
+
+### Compliant (must stay silent): a case label inside a nested switch that owns it
+
+`main.c`
+
+```c
+void f(int x, int y)
+{
+    switch (x) {
+    case 1:
+        switch (y) {
+        case 2:
+            break;
+        default:
+            break;
+        }
+        break;
+    default:
+        break;
     }
 }
 ```

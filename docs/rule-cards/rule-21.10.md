@@ -14,7 +14,7 @@ Only the functions of time.h that read or format the time are covered.
 
 ## Tested cases
 
-5 of 5 pass.
+8 of 8 pass.
 
 | Kind | Case | Result |
 |---|---|---|
@@ -23,6 +23,9 @@ Only the functions of time.h that read or format the time are covered.
 | Violation (must be reported) | difftime and mktime | pass |
 | Compliant (must stay silent) | a user function called clock_tick | pass |
 | Violation (must be reported) | time | pass |
+| Violation (must be reported) | localtime | pass |
+| Compliant (must stay silent) | a variable named time | pass |
+| Compliant (must stay silent) | a struct tm declared without calling any time function | pass |
 
 ## Case sources
 
@@ -73,5 +76,38 @@ void f(void) { clock_tick(); }
 ```c
 #include <time.h>
 time_t f(void) { return time(0); } /*@V*/
+```
+
+### Violation (must be reported): localtime
+
+`main.c`
+
+```c
+#include <time.h>
+void f(const time_t *t)
+{
+    (void)localtime(t); /*@V*/
+}
+```
+
+### Compliant (must stay silent): a variable named time
+
+`main.c`
+
+```c
+int f(void)
+{
+    int time = 3;
+    return time;
+}
+```
+
+### Compliant (must stay silent): a struct tm declared without calling any time function
+
+`main.c`
+
+```c
+#include <time.h>
+struct tm g;
 ```
 

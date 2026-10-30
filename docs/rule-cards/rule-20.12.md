@@ -12,9 +12,11 @@ Detection contract: Report a macro parameter used both as an operand of # or ## 
 
 Whether the second use is expanded is not analysed; the combined use is reported.
 
+- **False negative:** a macro name passed as the argument of a stringizing macro (only the macro definition is examined) (documented limit)
+
 ## Tested cases
 
-6 of 6 pass.
+9 of 10 pass.
 
 | Kind | Case | Result |
 |---|---|---|
@@ -24,6 +26,10 @@ Whether the second use is expanded is not analysed; the combined use is reported
 | Violation (must be reported) | used with ## and also on its own | pass |
 | Compliant (must stay silent) | the two-level stringizing idiom | pass |
 | Violation (must be reported) | pasting an operand that is also used on its own | pass |
+| Known false negative (not detected yet) | a macro name passed as the argument of a stringizing macro (only the macro definition is examined) | documented limit |
+| Compliant (must stay silent) | a parameter only stringized | pass |
+| Compliant (must stay silent) | a parameter used twice and never with # or ## | pass |
+| Violation (must be reported) | pasting and plain use in one replacement list | pass |
 
 ## Case sources
 
@@ -82,5 +88,43 @@ const char *s = XSTR(42);
 ```c
 #define MK(x) x##_t x /*@V*/
 typedef int MK(a);
+```
+
+### Known false negative (not detected yet): a macro name passed as the argument of a stringizing macro (only the macro definition is examined)
+
+`main.c`
+
+```c
+#define A 1
+#define S(x) #x
+const char *s = S(A); /*@V*/
+```
+
+### Compliant (must stay silent): a parameter only stringized
+
+`main.c`
+
+```c
+#define S(x) #x
+const char *s = S(abc);
+```
+
+### Compliant (must stay silent): a parameter used twice and never with # or ##
+
+`main.c`
+
+```c
+#define TWICE(x) ((x) + (x))
+int v = TWICE(2);
+```
+
+### Violation (must be reported): pasting and plain use in one replacement list
+
+`main.c`
+
+```c
+#define MIX(a, b) a##b + a /*@V*/
+int xy = 1, x = 2;
+int v = MIX(x, y);
 ```
 

@@ -14,7 +14,7 @@ Compilers reject such casts, so the check is reached only through compiler exten
 
 ## Tested cases
 
-4 of 4 pass.
+8 of 8 pass.
 
 | Kind | Case | Result |
 |---|---|---|
@@ -22,6 +22,10 @@ Compilers reject such casts, so the check is reached only through compiler exten
 | Compliant (must stay silent) | casts that are not between pointers and floating types | pass |
 | Compliant (must stay silent) | pointer to integer to float is two separate steps | pass |
 | Compliant (must stay silent) | float to integer and nothing else | pass |
+| Compliant (must stay silent) | a pointer converted to an integer and back through void | pass |
+| Compliant (must stay silent) | a floating value cast to another floating type | pass |
+| Compliant (must stay silent) | a pointer to a floating object dereferenced | pass |
+| Compliant (must stay silent) | floating zero is not a null pointer constant | pass |
 
 ## Case sources
 
@@ -58,5 +62,42 @@ float f(char *p) { unsigned long n = (unsigned long)p; return (float)n; }
 
 ```c
 long f(float x) { return (long)x; }
+```
+
+### Compliant (must stay silent): a pointer converted to an integer and back through void
+
+`main.c`
+
+```c
+void f(int *p)
+{
+    void *v = p;
+    int *q = (int *)v;
+    (void)q;
+}
+```
+
+### Compliant (must stay silent): a floating value cast to another floating type
+
+`main.c`
+
+```c
+double f(float x) { return (double)x; }
+```
+
+### Compliant (must stay silent): a pointer to a floating object dereferenced
+
+`main.c`
+
+```c
+double f(const double *p) { return *p + 1.0; }
+```
+
+### Compliant (must stay silent): floating zero is not a null pointer constant
+
+`main.c`
+
+```c
+double d = 0.0;
 ```
 

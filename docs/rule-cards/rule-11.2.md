@@ -14,7 +14,7 @@ Only conversions of pointers to incomplete struct or union types are examined.
 
 ## Tested cases
 
-6 of 6 pass.
+9 of 9 pass.
 
 | Kind | Case | Result |
 |---|---|---|
@@ -24,6 +24,9 @@ Only conversions of pointers to incomplete struct or union types are examined.
 | Violation (must be reported) | pointer to incomplete type cast to another pointer type | pass |
 | Compliant (must stay silent) | a pointer to an incomplete type stored and returned unchanged | pass |
 | Violation (must be reported) | incomplete pointer cast to char pointer | pass |
+| Compliant (must stay silent) | a pointer to a complete struct converted through void | pass |
+| Compliant (must stay silent) | a pointer to an incomplete type kept as the same type | pass |
+| Violation (must be reported) | an incomplete struct pointer cast to an integer pointer | pass |
 
 ## Case sources
 
@@ -81,5 +84,39 @@ struct opaque *keep(struct opaque *p) { return p; }
 ```c
 struct opaque;
 char *f(struct opaque *p) { return (char *)p; } /*@V*/
+```
+
+### Compliant (must stay silent): a pointer to a complete struct converted through void
+
+`main.c`
+
+```c
+struct s { int a; };
+void f(void *p)
+{
+    struct s *q = (struct s *)p;
+    (void)q;
+}
+```
+
+### Compliant (must stay silent): a pointer to an incomplete type kept as the same type
+
+`main.c`
+
+```c
+struct opaque;
+struct opaque *f(struct opaque *p) { return p; }
+```
+
+### Violation (must be reported): an incomplete struct pointer cast to an integer pointer
+
+`main.c`
+
+```c
+struct opaque;
+int *f(struct opaque *p)
+{
+    return (int *)p; /*@V*/
+}
 ```
 

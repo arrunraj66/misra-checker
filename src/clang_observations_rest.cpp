@@ -426,10 +426,50 @@ class RestVisitor final : public clang::RecursiveASTVisitor<RestVisitor> {
   }
 
   // The declared object a pointer expression is derived from, when obvious.
+  // True when the function that owns the variable never assigns to it again, never takes its
+  // address and never applies ++ or -- to it.
+  [[nodiscard]] bool set_only_once(const clang::VarDecl* variable) const {
+    const auto* function = llvm::dyn_cast<clang::FunctionDecl>(variable->getDeclContext());
+    if ((function == nullptr) || (function->getBody() == nullptr)) {
+      return false;
+    }
+    struct Scan : clang::RecursiveASTVisitor<Scan> {
+      const clang::VarDecl* target;
+      bool modified = false;
+      bool is_target(const clang::Expr* e) const {
+        const auto* ref = llvm::dyn_cast<clang::DeclRefExpr>(e->IgnoreParenImpCasts());
+        return (ref != nullptr) && (ref->getDecl() == target);
+      }
+      bool VisitBinaryOperator(clang::BinaryOperator* op) {
+        if (op->isAssignmentOp() && is_target(op->getLHS())) modified = true;
+        return true;
+      }
+      bool VisitUnaryOperator(clang::UnaryOperator* op) {
+        if ((op->isIncrementDecrementOp() || (op->getOpcode() == clang::UO_AddrOf)) &&
+            is_target(op->getSubExpr())) {
+          modified = true;
+        }
+        return true;
+      }
+    } scan;
+    scan.target = variable;
+    scan.TraverseStmt(function->getBody());
+    return !scan.modified;
+  }
+
   [[nodiscard]] const clang::VarDecl* pointed_object(const clang::Expr* expression) const {
     const clang::Expr* stripped = expression->IgnoreParenImpCasts();
     if (const auto* variable = referenced_variable(stripped)) {
-      return variable->getType()->isArrayType() ? variable : nullptr;
+      if (variable->getType()->isArrayType()) {
+        return variable;
+      }
+      // A local pointer that is set once, at its definition, stands for what it was set to.
+      if (variable->getType()->isPointerType() && variable->hasLocalStorage() &&
+          variable->hasInit() && !llvm::isa<clang::ParmVarDecl>(variable) &&
+          set_only_once(variable)) {
+        return pointed_object(variable->getInit());
+      }
+      return nullptr;
     }
     if (const auto* unary = llvm::dyn_cast<clang::UnaryOperator>(stripped)) {
       if (unary->getOpcode() == clang::UO_AddrOf) {

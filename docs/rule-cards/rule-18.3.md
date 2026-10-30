@@ -14,7 +14,7 @@ Only pointers formed directly from named arrays are examined.
 
 ## Tested cases
 
-5 of 5 pass.
+9 of 9 pass.
 
 | Kind | Case | Result |
 |---|---|---|
@@ -23,6 +23,10 @@ Only pointers formed directly from named arrays are examined.
 | Violation (must be reported) | with the other relational operators | pass |
 | Compliant (must stay silent) | pointer parameters of unknown origin | pass |
 | Violation (must be reported) | relational comparison of two distinct arrays through addresses of elements | pass |
+| Violation (must be reported) | less than between pointers into two arrays | pass |
+| Compliant (must stay silent) | equality between pointers to different arrays | pass |
+| Compliant (must stay silent) | relational comparison inside the same array | pass |
+| Compliant (must stay silent) | a pointer that is reassigned is not tied to its first array | pass |
 
 ## Case sources
 
@@ -71,5 +75,65 @@ int f(int *p, int *q) { return p < q; }
 int a[4];
 int b[4];
 int f(void) { return &a[1] >= &b[1]; } /*@V*/
+```
+
+### Violation (must be reported): less than between pointers into two arrays
+
+`main.c`
+
+```c
+int f(void)
+{
+    int a[4];
+    int b[4];
+    int *p = &a[1];
+    int *q = &b[2];
+    return p < q; /*@V*/
+}
+```
+
+### Compliant (must stay silent): equality between pointers to different arrays
+
+`main.c`
+
+```c
+int f(void)
+{
+    int a[4];
+    int b[4];
+    int *p = &a[1];
+    int *q = &b[2];
+    return p == q;
+}
+```
+
+### Compliant (must stay silent): relational comparison inside the same array
+
+`main.c`
+
+```c
+int f(void)
+{
+    int a[8];
+    int *p = &a[1];
+    int *q = &a[6];
+    return p <= q;
+}
+```
+
+### Compliant (must stay silent): a pointer that is reassigned is not tied to its first array
+
+`main.c`
+
+```c
+int f(void)
+{
+    int a[4];
+    int b[4];
+    int *p = &a[1];
+    int *q = &b[2];
+    q = &a[3];
+    return p < q;
+}
 ```
 

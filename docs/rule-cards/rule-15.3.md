@@ -14,7 +14,7 @@ Needs a successfully parsed translation unit with the label resolved.
 
 ## Tested cases
 
-6 of 6 pass.
+8 of 8 pass.
 
 | Kind | Case | Result |
 |---|---|---|
@@ -24,6 +24,8 @@ Needs a successfully parsed translation unit with the label resolved.
 | Violation (must be reported) | a jump into a sibling block | pass |
 | Violation (must be reported) | a jump into a block of a loop | pass |
 | Compliant (must stay silent) | a jump out of a nested block to the function level | pass |
+| Violation (must be reported) | a goto into a nested block | pass |
+| Compliant (must stay silent) | a goto to a label in an enclosing block | pass |
 
 ## Case sources
 
@@ -116,6 +118,36 @@ void f(int n)
     while (n) { if (n == 2) { goto done; } n--; }
 done:
     n = 0;
+}
+```
+
+### Violation (must be reported): a goto into a nested block
+
+`main.c`
+
+```c
+void f(int x)
+{
+    if (x) { goto inner; } /*@V*/
+    {
+inner:
+        x = 2;
+    }
+}
+```
+
+### Compliant (must stay silent): a goto to a label in an enclosing block
+
+`main.c`
+
+```c
+void f(int x)
+{
+    {
+        if (x) { goto end; }
+    }
+end:
+    x = 2;
 }
 ```
 

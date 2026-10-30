@@ -14,7 +14,7 @@ Only declarations whose size is not a constant are examined.
 
 ## Tested cases
 
-6 of 6 pass.
+9 of 9 pass.
 
 | Kind | Case | Result |
 |---|---|---|
@@ -24,6 +24,9 @@ Only declarations whose size is not a constant are examined.
 | Violation (must be reported) | a variable length array in a nested block | pass |
 | Compliant (must stay silent) | an enumeration constant as the size | pass |
 | Compliant (must stay silent) | sizeof based constant size | pass |
+| Violation (must be reported) | a variable length array parameter size | pass |
+| Compliant (must stay silent) | a constant length array | pass |
+| Compliant (must stay silent) | a pointer to a runtime sized buffer | pass |
 
 ## Case sources
 
@@ -86,5 +89,40 @@ int a[SIZE];
 
 ```c
 int a[sizeof(int) * 2];
+```
+
+### Violation (must be reported): a variable length array parameter size
+
+`main.c`
+
+```c
+void f(int n)
+{
+    int a[n]; /*@V*/
+    a[0] = 0;
+}
+```
+
+### Compliant (must stay silent): a constant length array
+
+`main.c`
+
+```c
+void f(void)
+{
+    int a[8];
+    a[0] = 0;
+}
+```
+
+### Compliant (must stay silent): a pointer to a runtime sized buffer
+
+`main.c`
+
+```c
+void f(int *buffer, int n)
+{
+    buffer[n - 1] = 0;
+}
 ```
 

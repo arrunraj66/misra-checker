@@ -14,7 +14,7 @@ Compares the files in which the declarations are written; it needs the whole pro
 
 ## Tested cases
 
-5 of 5 pass.
+8 of 8 pass.
 
 | Kind | Case | Result |
 |---|---|---|
@@ -23,6 +23,9 @@ Compares the files in which the declarations are written; it needs the whole pro
 | Violation (must be reported) | a function declared in two source files | pass |
 | Compliant (must stay silent) | a declaration in a header repeated by the defining file only | pass |
 | Compliant (must stay silent) | an extern declaration of a function in one source file only | pass |
+| Violation (must be reported) | a variable declared extern in two source files | pass |
+| Compliant (must stay silent) | static declarations of the same name in two files | pass |
+| Compliant (must stay silent) | one header with the declaration, included by three files | pass |
 
 ## Case sources
 
@@ -122,5 +125,66 @@ int run(void) { return helper(); }
 
 ```c
 int helper(void) { return 1; }
+```
+
+### Violation (must be reported): a variable declared extern in two source files
+
+`a.c`
+
+```c
+extern int shared;
+int get_a(void) { return shared; }
+```
+
+`b.c`
+
+```c
+extern int shared; /*@V*/
+int get_b(void) { return shared; }
+```
+
+`c.c`
+
+```c
+int shared = 1;
+```
+
+### Compliant (must stay silent): static declarations of the same name in two files
+
+`a.c`
+
+```c
+static int local = 1;
+int get_a(void) { return local; }
+```
+
+`b.c`
+
+```c
+static int local = 2;
+int get_b(void) { return local; }
+```
+
+### Compliant (must stay silent): one header with the declaration, included by three files
+
+`h.h`
+
+```c
+extern int shared;
+int get_a(void);
+```
+
+`a.c`
+
+```c
+#include "h.h"
+int get_a(void) { return shared; }
+```
+
+`b.c`
+
+```c
+#include "h.h"
+int shared = 3;
 ```
 

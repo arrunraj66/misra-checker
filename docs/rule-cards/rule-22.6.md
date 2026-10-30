@@ -14,7 +14,7 @@ Only straight-line uses in the same block are found.
 
 ## Tested cases
 
-6 of 6 pass.
+8 of 8 pass.
 
 | Kind | Case | Result |
 |---|---|---|
@@ -24,6 +24,8 @@ Only straight-line uses in the same block are found.
 | Compliant (must stay silent) | the pointer cleared after fclose | pass |
 | Violation (must be reported) | fprintf after fclose | pass |
 | Compliant (must stay silent) | close in one branch and use in the other | pass |
+| Violation (must be reported) | reading a stream after it is closed | pass |
+| Compliant (must stay silent) | reopening into a new variable | pass |
 
 ## Case sources
 
@@ -108,6 +110,33 @@ void f(FILE *p)
 void f(FILE *p, int c)
 {
     if (c) { (void)fclose(p); } else { (void)fputs("x", p); }
+}
+```
+
+### Violation (must be reported): reading a stream after it is closed
+
+`main.c`
+
+```c
+#include <stdio.h>
+int f(FILE *p)
+{
+    (void)fclose(p);
+    return fgetc(p); /*@V*/
+}
+```
+
+### Compliant (must stay silent): reopening into a new variable
+
+`main.c`
+
+```c
+#include <stdio.h>
+int f(FILE *p)
+{
+    (void)fclose(p);
+    FILE *q = fopen("x", "r");
+    return (q != (FILE *)0) ? fgetc(q) : -1;
 }
 ```
 

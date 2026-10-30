@@ -14,7 +14,7 @@ Only file names written as literals in one function are compared.
 
 ## Tested cases
 
-6 of 6 pass.
+9 of 9 pass.
 
 | Kind | Case | Result |
 |---|---|---|
@@ -24,6 +24,9 @@ Only file names written as literals in one function are compared.
 | Compliant (must stay silent) | opened for reading with read plus mode twice | pass |
 | Violation (must be reported) | append and read of the same name | pass |
 | Violation (must be reported) | the same file for reading and updating | pass |
+| Violation (must be reported) | the same file opened for reading and for writing | pass |
+| Compliant (must stay silent) | two different files | pass |
+| Compliant (must stay silent) | the same file opened twice for reading | pass |
 
 ## Case sources
 
@@ -111,6 +114,51 @@ void f(void)
     FILE *a = fopen("x", "r");
     FILE *b = fopen("x", "r+"); /*@V*/
     (void)a; (void)b;
+}
+```
+
+### Violation (must be reported): the same file opened for reading and for writing
+
+`main.c`
+
+```c
+#include <stdio.h>
+void f(void)
+{
+    FILE *a = fopen("data.txt", "r");
+    FILE *b = fopen("data.txt", "w"); /*@V*/
+    (void)a;
+    (void)b;
+}
+```
+
+### Compliant (must stay silent): two different files
+
+`main.c`
+
+```c
+#include <stdio.h>
+void f(void)
+{
+    FILE *a = fopen("in.txt", "r");
+    FILE *b = fopen("out.txt", "w");
+    (void)a;
+    (void)b;
+}
+```
+
+### Compliant (must stay silent): the same file opened twice for reading
+
+`main.c`
+
+```c
+#include <stdio.h>
+void f(void)
+{
+    FILE *a = fopen("data.txt", "r");
+    FILE *b = fopen("data.txt", "r");
+    (void)a;
+    (void)b;
 }
 ```
 

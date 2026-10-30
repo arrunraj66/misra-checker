@@ -14,7 +14,7 @@ None; every #undef is reported.
 
 ## Tested cases
 
-6 of 6 pass.
+8 of 8 pass.
 
 | Kind | Case | Result |
 |---|---|---|
@@ -24,6 +24,8 @@ None; every #undef is reported.
 | Violation (must be reported) | #undef inside a function | pass |
 | Compliant (must stay silent) | only #define and #if | pass |
 | Violation (must be reported) | #undef followed by redefinition | pass |
+| Violation (must be reported) | #undef of a macro defined in an included header | pass |
+| Compliant (must stay silent) | no #undef anywhere | pass |
 
 ## Case sources
 
@@ -86,5 +88,31 @@ int x;
 #undef LEVEL /*@V*/
 #define LEVEL 2
 int x = LEVEL;
+```
+
+### Violation (must be reported): #undef of a macro defined in an included header
+
+`h.h`
+
+```c
+#define LIMIT 4
+```
+
+`main.c`
+
+```c
+#include "h.h"
+#undef LIMIT /*@V*/
+int x;
+```
+
+### Compliant (must stay silent): no #undef anywhere
+
+`main.c`
+
+```c
+#define A 1
+#define B (A + 1)
+int x = B;
 ```
 

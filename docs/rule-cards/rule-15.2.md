@@ -14,7 +14,7 @@ Needs a successfully parsed translation unit with the label resolved.
 
 ## Tested cases
 
-6 of 6 pass.
+8 of 8 pass.
 
 | Kind | Case | Result |
 |---|---|---|
@@ -24,6 +24,8 @@ Needs a successfully parsed translation unit with the label resolved.
 | Violation (must be reported) | a backward jump out of a nested block | pass |
 | Compliant (must stay silent) | a forward goto past a loop | pass |
 | Violation (must be reported) | a backward goto forming a loop | pass |
+| Violation (must be reported) | a goto backward | pass |
+| Compliant (must stay silent) | a forward goto | pass |
 
 ## Case sources
 
@@ -102,6 +104,33 @@ void f(int n)
 top:
     n--;
     if (n > 0) { goto top; } /*@V*/
+}
+```
+
+### Violation (must be reported): a goto backward
+
+`main.c`
+
+```c
+void f(int x)
+{
+again:
+    x--;
+    if (x > 0) { goto again; } /*@V*/
+}
+```
+
+### Compliant (must stay silent): a forward goto
+
+`main.c`
+
+```c
+void f(int x)
+{
+    if (x) { goto end; }
+    x = 1;
+end:
+    x = 2;
 }
 ```
 

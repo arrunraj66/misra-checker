@@ -14,7 +14,7 @@ Only the type of the controlling expression is examined.
 
 ## Tested cases
 
-6 of 6 pass.
+8 of 8 pass.
 
 | Kind | Case | Result |
 |---|---|---|
@@ -24,6 +24,8 @@ Only the type of the controlling expression is examined.
 | Violation (must be reported) | negation as the controlling expression | pass |
 | Compliant (must stay silent) | character controlling expression | pass |
 | Compliant (must stay silent) | enum controlling expression | pass |
+| Violation (must be reported) | a switch on a comparison | pass |
+| Compliant (must stay silent) | a switch on an integer | pass |
 
 ## Case sources
 
@@ -107,6 +109,38 @@ void f(enum e v)
     {
         case A: break;
         default: break;
+    }
+}
+```
+
+### Violation (must be reported): a switch on a comparison
+
+`main.c`
+
+```c
+void f(int x)
+{
+    switch (x == 1) { /*@V*/
+    case 0:
+        break;
+    default:
+        break;
+    }
+}
+```
+
+### Compliant (must stay silent): a switch on an integer
+
+`main.c`
+
+```c
+void f(int x)
+{
+    switch (x) {
+    case 0:
+        break;
+    default:
+        break;
     }
 }
 ```

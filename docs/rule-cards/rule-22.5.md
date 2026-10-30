@@ -14,7 +14,7 @@ Passing the pointer to library functions is the intended use and is accepted.
 
 ## Tested cases
 
-5 of 5 pass.
+8 of 8 pass.
 
 | Kind | Case | Result |
 |---|---|---|
@@ -23,6 +23,9 @@ Passing the pointer to library functions is the intended use and is accepted.
 | Compliant (must stay silent) | sizeof of the dereferenced pointer is not evaluated | pass |
 | Violation (must be reported) | member access through a stream pointer | pass |
 | Violation (must be reported) | copy of the FILE object | pass |
+| Compliant (must stay silent) | passing the stream to a library function | pass |
+| Violation (must be reported) | assigning through the stream pointer | pass |
+| Compliant (must stay silent) | a pointer to a user struct dereferenced | pass |
 
 ## Case sources
 
@@ -77,5 +80,35 @@ void f(FILE *p)
     FILE copy = *p; /*@V*/
     (void)copy;
 }
+```
+
+### Compliant (must stay silent): passing the stream to a library function
+
+`main.c`
+
+```c
+#include <stdio.h>
+int f(FILE *p) { return fgetc(p); }
+```
+
+### Violation (must be reported): assigning through the stream pointer
+
+`main.c`
+
+```c
+#include <stdio.h>
+void f(FILE *p, FILE *q)
+{
+    *p = *q; /*@V*/
+}
+```
+
+### Compliant (must stay silent): a pointer to a user struct dereferenced
+
+`main.c`
+
+```c
+struct s { int a; };
+int f(const struct s *p) { return p->a; }
 ```
 

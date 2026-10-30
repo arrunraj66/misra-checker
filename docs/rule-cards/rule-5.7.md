@@ -12,9 +12,11 @@ Detection contract: Report a tag whose name is reused by another declaration (a 
 
 Tags from system headers are not examined.
 
+- **False negative:** a tag name used for two different struct types in two files (names are compared inside one translation unit) (documented limit)
+
 ## Tested cases
 
-6 of 6 pass.
+7 of 8 pass.
 
 | Kind | Case | Result |
 |---|---|---|
@@ -24,6 +26,8 @@ Tags from system headers are not examined.
 | Violation (must be reported) | two different types with the same tag name in different scopes | pass |
 | Violation (must be reported) | a function named like a tag | pass |
 | Compliant (must stay silent) | a tag used in the tag name space only | pass |
+| Known false negative (not detected yet) | a tag name used for two different struct types in two files (names are compared inside one translation unit) | documented limit |
+| Compliant (must stay silent) | the same tag from one header | pass |
 
 ## Case sources
 
@@ -89,5 +93,43 @@ int node(void) { return 1; }
 ```c
 struct a { int x; };
 struct b { struct a inner; };
+```
+
+### Known false negative (not detected yet): a tag name used for two different struct types in two files (names are compared inside one translation unit)
+
+`a.c`
+
+```c
+struct point { int x; };
+struct point p;
+```
+
+`b.c`
+
+```c
+struct point { long y; }; /*@V*/
+struct point q;
+```
+
+### Compliant (must stay silent): the same tag from one header
+
+`h.h`
+
+```c
+struct point { int x; };
+```
+
+`a.c`
+
+```c
+#include "h.h"
+struct point p;
+```
+
+`b.c`
+
+```c
+#include "h.h"
+struct point q;
 ```
 

@@ -14,7 +14,7 @@ Only streams opened with a literal mode in the same function are tracked.
 
 ## Tested cases
 
-6 of 6 pass.
+9 of 9 pass.
 
 | Kind | Case | Result |
 |---|---|---|
@@ -24,6 +24,9 @@ Only streams opened with a literal mode in the same function are tracked.
 | Violation (must be reported) | fprintf to a binary read stream | pass |
 | Compliant (must stay silent) | a stream parameter of unknown mode | pass |
 | Violation (must be reported) | fputc to a read-only stream | pass |
+| Violation (must be reported) | putc to a read-only stream | pass |
+| Compliant (must stay silent) | writing to a stream opened for writing | pass |
+| Compliant (must stay silent) | writing to a stream opened for appending | pass |
 
 ## Case sources
 
@@ -98,6 +101,45 @@ void f(void)
 {
     FILE *a = fopen("x", "r");
     (void)fputc('a', a); /*@V*/
+}
+```
+
+### Violation (must be reported): putc to a read-only stream
+
+`main.c`
+
+```c
+#include <stdio.h>
+void f(void)
+{
+    FILE *a = fopen("x", "r");
+    (void)putc('a', a); /*@V*/
+}
+```
+
+### Compliant (must stay silent): writing to a stream opened for writing
+
+`main.c`
+
+```c
+#include <stdio.h>
+void f(void)
+{
+    FILE *a = fopen("x", "w");
+    (void)fputc('a', a);
+}
+```
+
+### Compliant (must stay silent): writing to a stream opened for appending
+
+`main.c`
+
+```c
+#include <stdio.h>
+void f(void)
+{
+    FILE *a = fopen("x", "a");
+    (void)fputc('a', a);
 }
 ```
 

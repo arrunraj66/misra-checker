@@ -12,9 +12,11 @@ Detection contract: Report a call to one of the listed functions: signal handlin
 
 Other functions of the signal header are not covered.
 
+- **False negative:** a signal constant used without calling a signal function (only the functions are followed) (documented limit)
+
 ## Tested cases
 
-5 of 5 pass.
+7 of 8 pass.
 
 | Kind | Case | Result |
 |---|---|---|
@@ -23,6 +25,9 @@ Other functions of the signal header are not covered.
 | Violation (must be reported) | raise | pass |
 | Compliant (must stay silent) | variable named signal in a local scope | pass |
 | Compliant (must stay silent) | the word raise inside a string | pass |
+| Known false negative (not detected yet) | a signal constant used without calling a signal function (only the functions are followed) | documented limit |
+| Compliant (must stay silent) | a struct member named raise | pass |
+| Compliant (must stay silent) | a macro named like a signal constant but unrelated | pass |
 
 ## Case sources
 
@@ -74,5 +79,35 @@ int f(int signal) { return signal; }
 
 ```c
 const char *s = "raise";
+```
+
+### Known false negative (not detected yet): a signal constant used without calling a signal function (only the functions are followed)
+
+`main.c`
+
+```c
+#include <signal.h>
+int f(void)
+{
+    return SIGINT; /*@V*/
+}
+```
+
+### Compliant (must stay silent): a struct member named raise
+
+`main.c`
+
+```c
+struct ops { int raise; };
+int f(struct ops *o) { return o->raise; }
+```
+
+### Compliant (must stay silent): a macro named like a signal constant but unrelated
+
+`main.c`
+
+```c
+#define SIGNAL_COUNT 3
+int n = SIGNAL_COUNT;
 ```
 
