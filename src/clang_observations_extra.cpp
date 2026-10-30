@@ -501,6 +501,11 @@ class ExtraVisitor final : public clang::RecursiveASTVisitor<ExtraVisitor> {
     const bool left_constant = op->getLHS()->isIntegerConstantExpr(ast_);
     const bool right_constant = op->getRHS()->isIntegerConstantExpr(ast_);
 
+    // Rule 10.1: operands of && and || shall be essentially Boolean (pointers and constants are left to 14.4).
+    if (((code == clang::BO_LAnd) || (code == clang::BO_LOr)) &&
+        ((not_boolean_operand(left, left_constant)) || (not_boolean_operand(right, right_constant)))) {
+      recorder_.add("inappropriate-operand-type", location);
+    }
     // Rule 10.1 (subset): operands of arithmetic, bitwise and shift operators.
     switch (code) {
       case clang::BO_Add: case clang::BO_Sub: case clang::BO_Mul:
@@ -533,6 +538,15 @@ class ExtraVisitor final : public clang::RecursiveASTVisitor<ExtraVisitor> {
       case clang::BO_GT: case clang::BO_LE: case clang::BO_GE:
       case clang::BO_EQ: case clang::BO_NE: case clang::BO_And:
       case clang::BO_Or: case clang::BO_Xor:
+        if ((left_constant != right_constant) &&
+            (left_constant ? (right.category == Category::Unsigned) : (left.category == Category::Unsigned))) {
+          clang::Expr::EvalResult constant_value;
+          const clang::Expr* constant_side = (left_constant ? op->getLHS() : op->getRHS())->IgnoreParenImpCasts();
+          if (constant_side->EvaluateAsInt(constant_value, ast_) && constant_value.Val.getInt().isNegative() &&
+              (essential(constant_side).category == Category::Signed)) {
+            recorder_.add("essential-type-mismatch", location);
+          }
+        }
         if (!left_constant && !right_constant &&
             (left.category != Category::Other) &&
             (right.category != Category::Other) &&
@@ -559,7 +573,8 @@ class ExtraVisitor final : public clang::RecursiveASTVisitor<ExtraVisitor> {
           const clang::Expr* other_side = left_composite ? op->getRHS() : op->getLHS();
           const Essential composite = composite_essential(composite_side);
           const Essential other = essential(other_side);
-          if (integer_category(composite) && integer_category(other) &&
+          if (((integer_category(composite) && integer_category(other)) ||
+               ((composite.category == Category::Floating) && (other.category == Category::Floating))) &&
               !other_side->isIntegerConstantExpr(ast_) && (other.width > composite.width)) {
             recorder_.add("composite-operand-narrower", location);
           }
@@ -615,6 +630,9 @@ class ExtraVisitor final : public clang::RecursiveASTVisitor<ExtraVisitor> {
           (op->getOpcode() == clang::UO_Minus)))) {
       recorder_.add("inappropriate-operand-type", op->getOperatorLoc());
     }
+    if ((op->getOpcode() == clang::UO_LNot) && not_boolean_operand(operand, constant)) {
+      recorder_.add("inappropriate-operand-type", op->getOperatorLoc());
+    }
     if ((op->getOpcode() == clang::UO_Not) && inappropriate_bitwise(operand, constant)) {
       recorder_.add("inappropriate-operand-type", op->getOperatorLoc());
     }
@@ -646,6 +664,11 @@ class ExtraVisitor final : public clang::RecursiveASTVisitor<ExtraVisitor> {
         !current_function_->getReturnType()->isVoidType()) {
       recorder_.add("missing-return-value", statement->getReturnLoc());
     }
+    if ((statement->getRetValue() != nullptr) && (current_function_ != nullptr) &&
+        !current_function_->getReturnType()->isVoidType() && !statement->getRetValue()->containsErrors() &&
+        !current_function_->isInvalidDecl()) {
+      check_assignment(current_function_->getReturnType(), statement->getRetValue(), statement->getReturnLoc());
+    }
     return true;
   }
 
@@ -654,6 +677,12 @@ class ExtraVisitor final : public clang::RecursiveASTVisitor<ExtraVisitor> {
     if ((callee != nullptr) && callee->isImplicit() && (callee->getBuiltinID() == 0U)) {
       recorder_.add("implicit-function-declaration", call->getBeginLoc(),
                     callee->getNameAsString());
+    }
+    if ((callee != nullptr) && !callee->isImplicit() && !call->containsErrors() && !callee->isInvalidDecl()) {
+      const unsigned int count = std::min(call->getNumArgs(), callee->getNumParams());
+      for (unsigned int i = 0U; i < count; ++i) {
+        check_assignment(callee->getParamDecl(i)->getType(), call->getArg(i), call->getArg(i)->getBeginLoc());
+      }
     }
     return true;
   }
@@ -942,6 +971,15 @@ class ExtraVisitor final : public clang::RecursiveASTVisitor<ExtraVisitor> {
         break;
       }
     }
+  }
+
+  [[nodiscard]] static bool not_boolean_operand(const Essential& type, const bool constant) {
+    if (constant) {
+      return false;
+    }
+    return (type.category == Category::Signed) || (type.category == Category::Unsigned) ||
+           (type.category == Category::Character) || (type.category == Category::Enumeration) ||
+           (type.category == Category::Floating);
   }
 
   [[nodiscard]] Essential essential_of_type(const clang::QualType type) const {

@@ -1,5 +1,7 @@
 #include "misra/clang_frontend.hpp"
 
+#include <algorithm>
+
 #include "misra/clang_observations.hpp"
 #include "misra/observation_internal.hpp"
 
@@ -267,6 +269,8 @@ FrontendResult ClangFrontend::analyze(
   std::vector<std::string> files = requested_files;
   if (files.empty()) {
     files = database->getAllFiles();
+    // The database hands files back in hash order; sort so results do not depend on the paths' hashes.
+    std::sort(files.begin(), files.end());
   }
   if (files.empty()) {
     return {false, {}, {}, "compilation database contains no source files"};
