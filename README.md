@@ -33,8 +33,9 @@ src/rule_registry.cpp                  constructs the complete rule pack
 tests/rule_registry_test.cpp           validates count, uniqueness and totals
 ```
 
-Rules 15.1 and 15.2 now have Clang-backed detectors. The remaining 141 classes
-are scaffolds returning `EvaluationStatus::NotImplemented`. Both implemented
+Rules 15.1, 15.2, 15.6, 15.7, 16.4, 21.3, 21.7, 21.8 and 21.9 now have
+Clang-backed detectors. The remaining 134 classes
+are scaffolds returning `EvaluationStatus::NotImplemented`. All implemented
 rules still require independent validation; the product must not yet be
 represented as qualified, certified, or compliance-ready. Each detector will
 advance independently through specification, implementation, positive/negative
@@ -48,7 +49,7 @@ List the registered structures with:
 
 ## Analyze a C project
 
-The prototype currently requires LLVM and Clang 14 development packages. It
+The prototype currently requires LLVM and Clang 14 or newer (tested with 18) development packages. It
 reads the exact compiler invocations from `compile_commands.json`, preserving
 the target flags, include paths, defines, language version, and other build
 context used to parse each translation unit.

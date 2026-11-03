@@ -61,12 +61,42 @@ struct GotoStatementFact final {
   bool target_originates_from_macro;
 };
 
+// A statement body owned by if/else/for/while/do/switch.
+struct StatementBodyFact final {
+  SourceLocation location;  // location of the body (or of the construct)
+  std::string_view construct;
+  bool is_compound;
+};
+
+// An if ... else if ... chain. Only chains containing an "else if" appear.
+struct IfElseChainFact final {
+  SourceLocation location;  // location of the last "if" in the chain
+  bool has_final_else;
+};
+
+struct SwitchStatementFact final {
+  SourceLocation location;
+  bool has_default;
+};
+
 struct ControlFlowFacts final {
   std::vector<GotoStatementFact> goto_statements;
+  std::vector<StatementBodyFact> statement_bodies;
+  std::vector<IfElseChainFact> if_else_chains;
+  std::vector<SwitchStatementFact> switch_statements;
+};
+
+// A call whose callee resolved to a named function declaration.
+struct CallFact final {
+  SourceLocation location;
+  std::string callee;
+  bool callee_in_system_header;
+  bool originates_from_macro;
 };
 
 struct AnalysisContext final {
   ControlFlowFacts control_flow;
+  std::vector<CallFact> calls;
 };
 
 enum class EvaluationStatus {

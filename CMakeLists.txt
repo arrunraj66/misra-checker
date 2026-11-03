@@ -11,7 +11,7 @@ set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 
-find_package(LLVM 14 CONFIG REQUIRED)
+find_package(LLVM CONFIG REQUIRED)
 find_package(Clang CONFIG REQUIRED HINTS "${LLVM_DIR}/../clang")
 find_program(CLANG_EXECUTABLE NAMES clang-14 clang REQUIRED)
 
@@ -149,5 +149,57 @@ if(BUILD_TESTING)
       "-DSOURCE=${MISRA_RULE_15_2_FIXTURE_DIR}/backward.c"
       "-DEXPECTED_DIAGNOSTIC=misra-c2012-15.2-backward-goto"
       -P "${CMAKE_CURRENT_SOURCE_DIR}/tests/expect_violation.cmake"
+  )
+
+  # Batch 2 rules: data-driven fixture tests (15.6, 15.7, 16.4, 21.3/7/8/9).
+  set(MISRA_BATCH2_DIR "${CMAKE_CURRENT_SOURCE_DIR}/tests/fixtures/rules_batch2")
+  set(
+    MISRA_BATCH2_CASES
+    "15.6|r15_6_compliant.c|0"
+    "15.6|r15_6_violating.c|5"
+    "15.7|r15_7_compliant.c|0"
+    "15.7|r15_7_violating.c|1"
+    "16.4|r16_4_compliant.c|0"
+    "16.4|r16_4_violating.c|1"
+    "21.3|r21_3_compliant.c|0"
+    "21.3|r21_3_violating.c|3"
+    "21.7|r21_7_compliant.c|0"
+    "21.7|r21_7_violating.c|2"
+    "21.8|r21_8_compliant.c|0"
+    "21.8|r21_8_violating.c|2"
+    "21.9|r21_9_compliant.c|0"
+    "21.9|r21_9_violating.c|1"
+  )
+  set(MISRA_BATCH2_JSON "[")
+  set(MISRA_BATCH2_ARGS "")
+  set(MISRA_BATCH2_SEP "")
+  foreach(case IN LISTS MISRA_BATCH2_CASES)
+    string(REPLACE "|" ";" case "${case}")
+    list(GET case 0 case_rule)
+    list(GET case 1 case_file)
+    list(GET case 2 case_count)
+    set(case_path "${MISRA_BATCH2_DIR}/${case_file}")
+    string(
+      APPEND MISRA_BATCH2_JSON
+      "${MISRA_BATCH2_SEP}{\"directory\":\"${MISRA_BATCH2_DIR}\","
+      "\"file\":\"${case_path}\","
+      "\"arguments\":[\"${CLANG_EXECUTABLE}\",\"-std=c99\",\"-c\",\"${case_path}\"]}"
+    )
+    set(MISRA_BATCH2_SEP ",")
+    list(APPEND MISRA_BATCH2_ARGS "${case_rule}" "${case_path}" "${case_count}")
+  endforeach()
+  string(APPEND MISRA_BATCH2_JSON "]")
+  file(WRITE "${CMAKE_CURRENT_BINARY_DIR}/tests/batch2_compile_commands.json"
+       "${MISRA_BATCH2_JSON}")
+
+  add_executable(rules-integration-test tests/rules_integration_test.cpp)
+  target_link_libraries(rules-integration-test PRIVATE misra-core misra-clang)
+  misra_enable_warnings(rules-integration-test)
+  add_test(
+    NAME rules_batch2_integration
+    COMMAND
+      rules-integration-test
+      "${CMAKE_CURRENT_BINARY_DIR}/tests/batch2_compile_commands.json"
+      ${MISRA_BATCH2_ARGS}
   )
 endif()

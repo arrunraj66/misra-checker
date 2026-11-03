@@ -2,7 +2,7 @@
 
 This catalog records the engineering structures present in the checker. It deliberately does not reproduce the copyrighted normative rule wording. The licensed MISRA specification is the controlled source for rule predicates, amplification, exceptions, and examples.
 
-Current milestone: 141 rule classes are **scaffolds**. Rules 15.1 and 15.2 have implemented Clang-backed syntactic detectors, but independent validation remains pending. A scaffold provides identity, metadata, an analysis plan, a factory, and a non-compliant-safe `NotImplemented` result. It is not a working compliance check.
+Current milestone: 134 rule classes are **scaffolds**. Rules 15.1, 15.2, 15.6, 15.7, 16.4, 21.3, 21.7, 21.8 and 21.9 have implemented Clang-backed syntactic detectors, but independent validation remains pending. A scaffold provides identity, metadata, an analysis plan, a factory, and a non-compliant-safe `NotImplemented` result. It is not a working compliance check.
 
 | Rule | Category | Decidability | Scope | C90 | C99 | Topic | Status |
 |---|---|---|---|---:|---:|---|---|
@@ -90,12 +90,12 @@ Current milestone: 141 rule classes are **scaffolds**. Rules 15.1 and 15.2 have 
 | 15.3 | Required | Decidable | Single Translation Unit | Yes | Yes | Control flow | Scaffold |
 | 15.4 | Advisory | Decidable | Single Translation Unit | Yes | Yes | Control flow | Scaffold |
 | 15.5 | Advisory | Decidable | Single Translation Unit | Yes | Yes | Control flow | Scaffold |
-| 15.6 | Required | Decidable | Single Translation Unit | Yes | Yes | Control flow | Scaffold |
-| 15.7 | Required | Decidable | Single Translation Unit | Yes | Yes | Control flow | Scaffold |
+| 15.6 | Required | Decidable | Single Translation Unit | Yes | Yes | Control flow | Implemented; independent validation pending |
+| 15.7 | Required | Decidable | Single Translation Unit | Yes | Yes | Control flow | Implemented; independent validation pending |
 | 16.1 | Required | Decidable | Single Translation Unit | Yes | Yes | Switch statements | Scaffold |
 | 16.2 | Required | Decidable | Single Translation Unit | Yes | Yes | Switch statements | Scaffold |
 | 16.3 | Required | Decidable | Single Translation Unit | Yes | Yes | Switch statements | Scaffold |
-| 16.4 | Required | Decidable | Single Translation Unit | Yes | Yes | Switch statements | Scaffold |
+| 16.4 | Required | Decidable | Single Translation Unit | Yes | Yes | Switch statements | Implemented; independent validation pending |
 | 16.5 | Required | Decidable | Single Translation Unit | Yes | Yes | Switch statements | Scaffold |
 | 16.6 | Required | Decidable | Single Translation Unit | Yes | Yes | Switch statements | Scaffold |
 | 16.7 | Required | Decidable | Single Translation Unit | Yes | Yes | Switch statements | Scaffold |
@@ -133,13 +133,13 @@ Current milestone: 141 rule classes are **scaffolds**. Rules 15.1 and 15.2 have 
 | 20.14 | Required | Decidable | Single Translation Unit | Yes | Yes | Preprocessing directives | Scaffold |
 | 21.1 | Required | Decidable | Single Translation Unit | Yes | Yes | Standard library usage | Scaffold |
 | 21.2 | Required | Decidable | Single Translation Unit | Yes | Yes | Standard library usage | Scaffold |
-| 21.3 | Required | Decidable | Single Translation Unit | Yes | Yes | Standard library usage | Scaffold |
+| 21.3 | Required | Decidable | Single Translation Unit | Yes | Yes | Standard library usage | Implemented; independent validation pending |
 | 21.4 | Required | Decidable | Single Translation Unit | Yes | Yes | Standard library usage | Scaffold |
 | 21.5 | Required | Decidable | Single Translation Unit | Yes | Yes | Standard library usage | Scaffold |
 | 21.6 | Required | Decidable | Single Translation Unit | Yes | Yes | Standard library usage | Scaffold |
-| 21.7 | Required | Decidable | Single Translation Unit | Yes | Yes | Standard library usage | Scaffold |
-| 21.8 | Required | Decidable | Single Translation Unit | Yes | Yes | Standard library usage | Scaffold |
-| 21.9 | Required | Decidable | Single Translation Unit | Yes | Yes | Standard library usage | Scaffold |
+| 21.7 | Required | Decidable | Single Translation Unit | Yes | Yes | Standard library usage | Implemented; independent validation pending |
+| 21.8 | Required | Decidable | Single Translation Unit | Yes | Yes | Standard library usage | Implemented; independent validation pending |
+| 21.9 | Required | Decidable | Single Translation Unit | Yes | Yes | Standard library usage | Implemented; independent validation pending |
 | 21.10 | Required | Decidable | Single Translation Unit | Yes | Yes | Standard library usage | Scaffold |
 | 21.11 | Required | Decidable | Single Translation Unit | No | Yes | Standard library usage | Scaffold |
 | 21.12 | Advisory | Decidable | Single Translation Unit | No | Yes | Standard library usage | Scaffold |

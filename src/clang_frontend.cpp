@@ -1,11 +1,16 @@
 #include "misra/clang_frontend.hpp"
 
 #include <memory>
+#include <optional>
 #include <string>
 #include <utility>
 #include <vector>
 
+#include <set>
+
 #include "clang/AST/ASTConsumer.h"
+#include "clang/AST/Decl.h"
+#include "clang/AST/Expr.h"
 #include "clang/AST/RecursiveASTVisitor.h"
 #include "clang/AST/Stmt.h"
 #include "clang/Basic/SourceLocation.h"
@@ -55,9 +60,105 @@ class FactVisitor final : public clang::RecursiveASTVisitor<FactVisitor> {
     return true;
   }
 
+ bool VisitIfStmt(clang::IfStmt* statement) {
+    record_body(statement->getThen(), "if", statement->getIfLoc());
+    const clang::Stmt* const else_branch = statement->getElse();
+    if (else_branch != nullptr && !llvm::isa<clang::IfStmt>(else_branch)) {
+      record_body(else_branch, "else", statement->getElseLoc());
+    }
+    if (else_branch != nullptr) {
+      else_if_members_.insert(else_branch);
+    }
+    // Chain head: an if that is not itself the else branch of another if.
+    if (else_if_members_.count(statement) == 0U &&
+        llvm::isa_and_nonnull<clang::IfStmt>(else_branch)) {
+      const clang::IfStmt* last = statement;
+      while (const auto* next =
+                 llvm::dyn_cast_or_null<clang::IfStmt>(last->getElse())) {
+        last = next;
+      }
+      if (const auto loc = locate(last->getIfLoc())) {
+        context_.control_flow.if_else_chains.push_back(
+            {*loc, last->getElse() != nullptr});
+      }
+    }
+    return true;
+  }
+
+  bool VisitForStmt(clang::ForStmt* statement) {
+    record_body(statement->getBody(), "for", statement->getForLoc());
+    return true;
+  }
+
+  bool VisitWhileStmt(clang::WhileStmt* statement) {
+    record_body(statement->getBody(), "while", statement->getWhileLoc());
+    return true;
+  }
+
+  bool VisitDoStmt(clang::DoStmt* statement) {
+    record_body(statement->getBody(), "do", statement->getDoLoc());
+    return true;
+  }
+
+  bool VisitSwitchStmt(clang::SwitchStmt* statement) {
+    record_body(statement->getBody(), "switch", statement->getSwitchLoc());
+    bool has_default = false;
+    for (const clang::SwitchCase* c = statement->getSwitchCaseList();
+         c != nullptr; c = c->getNextSwitchCase()) {
+      if (llvm::isa<clang::DefaultStmt>(c)) {
+        has_default = true;
+      }
+    }
+    if (const auto loc = locate(statement->getSwitchLoc())) {
+      context_.control_flow.switch_statements.push_back({*loc, has_default});
+    }
+    return true;
+  }
+
+  bool VisitCallExpr(clang::CallExpr* call) {
+    const clang::FunctionDecl* const callee = call->getDirectCallee();
+    if (callee == nullptr || !callee->getIdentifier()) {
+      return true;
+    }
+    const clang::SourceLocation spelling = call->getBeginLoc();
+    if (const auto loc = locate(spelling)) {
+      context_.calls.push_back(
+          {*loc, callee->getName().str(),
+           source_manager_.isInSystemHeader(callee->getLocation()),
+           spelling.isMacroID()});
+    }
+    return true;
+  }
+
  private:
+  [[nodiscard]] std::optional<SourceLocation> locate(
+      const clang::SourceLocation raw) const {
+    const clang::SourceLocation expansion = source_manager_.getExpansionLoc(raw);
+    if (expansion.isInvalid() || !source_manager_.isWrittenInMainFile(expansion)) {
+      return std::nullopt;
+    }
+    const clang::PresumedLoc presumed = source_manager_.getPresumedLoc(expansion);
+    if (presumed.isInvalid()) {
+      return std::nullopt;
+    }
+    return SourceLocation{presumed.getFilename(), presumed.getLine(),
+                          presumed.getColumn()};
+  }
+
+  void record_body(const clang::Stmt* body, const std::string_view construct,
+                   const clang::SourceLocation construct_loc) {
+    if (body == nullptr) {
+      return;
+    }
+    if (const auto loc = locate(construct_loc)) {
+      context_.control_flow.statement_bodies.push_back(
+          {*loc, construct, llvm::isa<clang::CompoundStmt>(body)});
+    }
+  }
+
   clang::SourceManager& source_manager_;
   AnalysisContext& context_;
+  std::set<const clang::Stmt*> else_if_members_;
 };
 
 class FactConsumer final : public clang::ASTConsumer {
