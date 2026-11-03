@@ -1,3 +1,7 @@
+static void sink(int v)
+{
+    (void)v;
+}
 static int f(int a, int b)
 {
     int c;
@@ -7,5 +11,7 @@ static int f(int a, int b)
     {
         a++;
     }
+    sink(a = 1);
+    a = (b > 0) ? (c = 1) : 0;
     return c;
 }

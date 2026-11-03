@@ -43,6 +43,22 @@ std::vector<const DeclarationFact*> unique_declarations(
   return result;
 }
 
+// Two declarations of one entity describe compatible types when the element
+// types agree and every array bound is equal or absent from at least one.
+bool types_compatible(const DeclarationFact& a, const DeclarationFact& b) {
+  if (a.type != b.type || a.array_dimensions.size() != b.array_dimensions.size()) {
+    return false;
+  }
+  for (std::size_t i = 0U; i < a.array_dimensions.size(); ++i) {
+    const long long x = a.array_dimensions[i];
+    const long long y = b.array_dimensions[i];
+    if (x >= 0 && y >= 0 && x != y) {
+      return false;
+    }
+  }
+  return true;
+}
+
 constexpr std::size_t kExternalSignificant = 31U;
 constexpr std::size_t kMacroSignificant = 63U;
 
@@ -317,14 +333,20 @@ RuleEvaluation inconsistent_declarations(const AnalysisContext& context) {
     by_name[d->name].push_back(d);
   }
   for (const auto& entry : by_name) {
-    const DeclarationFact& base = *entry.second.front();
     for (std::size_t i = 1U; i < entry.second.size(); ++i) {
       const DeclarationFact& other = *entry.second[i];
-      if (other.type != base.type) {
+      // Compatibility is not transitive (a[] ~ a[4], a[] ~ a[5], a[4] !~ a[5]),
+      // so compare against every earlier declaration.
+      bool mismatch = false;
+      for (std::size_t j = 0U; j < i && !mismatch; ++j) {
+        mismatch = !types_compatible(*entry.second[j], other);
+      }
+      if (mismatch) {
         e.findings.push_back({"misra-c2012-8.3-type-mismatch", other.location,
                               FindingCertainty::Definite});
         continue;
       }
+      const DeclarationFact& base = *entry.second.front();
       const std::size_t n =
           std::min(base.parameter_names.size(), other.parameter_names.size());
       for (std::size_t p = 0U; p < n; ++p) {

@@ -22,5 +22,17 @@ static int f(int x, bool flag)
     {
         break;
     }
+    if ((x > 0) ? flag : (x < -5))
+    {
+        r = 3;
+    }
+    if ((r++, x > 0))
+    {
+        r = 4;
+    }
+    if (flag ? true : false)
+    {
+        r = 5;
+    }
     return r;
 }

@@ -86,15 +86,33 @@ std::optional<SourceLocation> locate(const clang::SourceManager& sm,
                         raw.isMacroID()};
 }
 
+// Approximates the MISRA "essentially Boolean" category of an expression.
+// Handled: _Bool-typed values, relational/equality/logical operators, `!`,
+// <stdbool.h> true/false, and operators that forward the category of their
+// operands (comma: right operand; ?: when both result operands are Boolean).
+// The usual C integer promotions are deliberately looked through, because the
+// essential type is that of the operand before promotion.
 bool is_essentially_boolean(const clang::Expr* expression,
                             const clang::SourceManager& sm,
                             const clang::LangOptions& lang) {
   const clang::Expr* const stripped = expression->IgnoreParenImpCasts();
   if (const auto* binary = llvm::dyn_cast<clang::BinaryOperator>(stripped)) {
-    return binary->isComparisonOp() || binary->isLogicalOp();
+    if (binary->isComparisonOp() || binary->isLogicalOp()) {
+      return true;
+    }
+    if (binary->getOpcode() == clang::BO_Comma) {
+      return is_essentially_boolean(binary->getRHS(), sm, lang);
+    }
   }
   if (const auto* unary = llvm::dyn_cast<clang::UnaryOperator>(stripped)) {
-    return unary->getOpcode() == clang::UO_LNot;
+    if (unary->getOpcode() == clang::UO_LNot) {
+      return true;
+    }
+  }
+  if (const auto* conditional =
+          llvm::dyn_cast<clang::ConditionalOperator>(stripped)) {
+    return is_essentially_boolean(conditional->getTrueExpr(), sm, lang) &&
+           is_essentially_boolean(conditional->getFalseExpr(), sm, lang);
   }
   if (stripped->getType()->isBooleanType()) {
     return true;
@@ -588,15 +606,24 @@ class FactVisitor final : public clang::RecursiveASTVisitor<FactVisitor> {
       return;
     }
     std::string type;
+    std::vector<long long> dimensions;  // -1: no constant bound
     if (const auto* value = llvm::dyn_cast<clang::ValueDecl>(declaration)) {
-      type = value->getType().getCanonicalType().getAsString();
+      clang::QualType canonical = value->getType().getCanonicalType();
+      while (const clang::ArrayType* array = ast_.getAsArrayType(canonical)) {
+        const auto* constant = llvm::dyn_cast<clang::ConstantArrayType>(array);
+        dimensions.push_back(
+            constant != nullptr ? constant->getSize().getSExtValue() : -1);
+        canonical = array->getElementType().getCanonicalType();
+      }
+      type = canonical.getAsString();
     }
     const std::string name = declaration->getNameAsString();
     if (shared_.fresh("decl|" + std::to_string(shared_.translation_unit) + '|' +
                       declaration_key(*location, name))) {
       context_.program.declarations.push_back(
           {*location, name, kind, linkage, definition, std::move(type),
-           std::move(parameter_names), shared_.translation_unit});
+           std::move(parameter_names), std::move(dimensions),
+           shared_.translation_unit});
     }
   }
 
@@ -684,8 +711,29 @@ class FactVisitor final : public clang::RecursiveASTVisitor<FactVisitor> {
         continue;
       }
       if (const auto* binary = llvm::dyn_cast<clang::BinaryOperator>(parent)) {
-        return !(binary->getOpcode() == clang::BO_Comma &&
-                 binary->getLHS() == current);
+        if (binary->getOpcode() != clang::BO_Comma) {
+          return true;
+        }
+        if (binary->getLHS() == current) {
+          return false;  // the left operand's value is discarded
+        }
+        current = parent;  // the comma's value is its right operand's
+        continue;
+      }
+      if (const auto* conditional =
+              llvm::dyn_cast<clang::ConditionalOperator>(parent)) {
+        if (conditional->getCond() == current) {
+          return true;
+        }
+        current = parent;  // a result operand: used iff the ?: value is used
+        continue;
+      }
+      if (const auto* compound = llvm::dyn_cast<clang::CompoundStmt>(parent)) {
+        if (!compound->body_empty() && compound->body_back() == current) {
+          const auto outer = ast_.getParents(*compound);
+          return !outer.empty() && outer[0].get<clang::StmtExpr>() != nullptr;
+        }
+        return false;
       }
       if (const auto* cast = llvm::dyn_cast<clang::CastExpr>(parent)) {
         return !cast->getType()->isVoidType();

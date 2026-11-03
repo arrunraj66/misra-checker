@@ -9,5 +9,11 @@ static int f(int a, int b)
     {
         c++;
     }
+    for (i = 0, c = 0; i < 3; i++, c = c + 1)
+    {
+        a++;
+    }
+    a = 1, c = 2;
+    (b > 0) ? (a = 1) : (c = 2);
     return a + c;
 }

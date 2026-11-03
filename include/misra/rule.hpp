@@ -153,8 +153,11 @@ struct DeclarationFact final {
   DeclKind kind;
   LinkageKind linkage;
   bool is_definition;  // includes C tentative definitions
-  std::string type;    // canonical type spelling
+  std::string type;    // canonical spelling of the type without array bounds
   std::vector<std::string> parameter_names;
+  // Array bounds, outermost first; -1 where the bound is absent. Kept apart
+  // from `type` because `int a[]` and `int a[4]` are compatible.
+  std::vector<long long> array_dimensions;
   std::size_t translation_unit;
 };
 
