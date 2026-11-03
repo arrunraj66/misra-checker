@@ -2,7 +2,7 @@
 
 This catalog records the engineering structures present in the checker. It deliberately does not reproduce the copyrighted normative rule wording. The licensed MISRA specification is the controlled source for rule predicates, amplification, exceptions, and examples.
 
-Current milestone: 88 rule classes are **scaffolds**; 55 have implemented Clang-backed syntactic detectors, but independent validation remains pending. A scaffold provides identity, metadata, an analysis plan, a factory, and a non-compliant-safe `NotImplemented` result. It is not a working compliance check.
+Current milestone: 80 rule classes are **scaffolds**; 63 have implemented Clang-backed syntactic detectors, but independent validation remains pending. A scaffold provides identity, metadata, an analysis plan, a factory, and a non-compliant-safe `NotImplemented` result. It is not a working compliance check.
 
 | Rule | Category | Decidability | Scope | C90 | C99 | Topic | Status |
 |---|---|---|---|---:|---:|---|---|
@@ -62,15 +62,15 @@ Current milestone: 88 rule classes are **scaffolds**; 55 have implemented Clang-
 | 10.6 | Required | Decidable | Single Translation Unit | Yes | Yes | Essential type model | Implemented; independent validation pending |
 | 10.7 | Required | Decidable | Single Translation Unit | Yes | Yes | Essential type model | Implemented; independent validation pending |
 | 10.8 | Required | Decidable | Single Translation Unit | Yes | Yes | Essential type model | Implemented; independent validation pending |
-| 11.1 | Required | Decidable | Single Translation Unit | Yes | Yes | Pointer conversions | Scaffold |
-| 11.2 | Required | Decidable | Single Translation Unit | Yes | Yes | Pointer conversions | Scaffold |
-| 11.3 | Required | Decidable | Single Translation Unit | Yes | Yes | Pointer conversions | Scaffold |
-| 11.4 | Advisory | Decidable | Single Translation Unit | Yes | Yes | Pointer conversions | Scaffold |
-| 11.5 | Advisory | Decidable | Single Translation Unit | Yes | Yes | Pointer conversions | Scaffold |
-| 11.6 | Required | Decidable | Single Translation Unit | Yes | Yes | Pointer conversions | Scaffold |
+| 11.1 | Required | Decidable | Single Translation Unit | Yes | Yes | Pointer conversions | Implemented; independent validation pending |
+| 11.2 | Required | Decidable | Single Translation Unit | Yes | Yes | Pointer conversions | Implemented; independent validation pending |
+| 11.3 | Required | Decidable | Single Translation Unit | Yes | Yes | Pointer conversions | Implemented; independent validation pending |
+| 11.4 | Advisory | Decidable | Single Translation Unit | Yes | Yes | Pointer conversions | Implemented; independent validation pending |
+| 11.5 | Advisory | Decidable | Single Translation Unit | Yes | Yes | Pointer conversions | Implemented; independent validation pending |
+| 11.6 | Required | Decidable | Single Translation Unit | Yes | Yes | Pointer conversions | Implemented; independent validation pending |
 | 11.7 | Required | Decidable | Single Translation Unit | Yes | Yes | Pointer conversions | Scaffold |
-| 11.8 | Required | Decidable | Single Translation Unit | Yes | Yes | Pointer conversions | Scaffold |
-| 11.9 | Required | Decidable | Single Translation Unit | Yes | Yes | Pointer conversions | Scaffold |
+| 11.8 | Required | Decidable | Single Translation Unit | Yes | Yes | Pointer conversions | Implemented; independent validation pending |
+| 11.9 | Required | Decidable | Single Translation Unit | Yes | Yes | Pointer conversions | Implemented; independent validation pending |
 | 12.1 | Advisory | Decidable | Single Translation Unit | Yes | Yes | Expressions | Scaffold |
 | 12.2 | Required | Undecidable | System | Yes | Yes | Expressions | Scaffold |
 | 12.3 | Advisory | Decidable | Single Translation Unit | Yes | Yes | Expressions | Implemented; independent validation pending |

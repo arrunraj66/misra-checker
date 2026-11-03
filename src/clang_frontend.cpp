@@ -90,47 +90,6 @@ std::optional<SourceLocation> locate(const clang::SourceManager& sm,
                         raw.isMacroID()};
 }
 
-// Approximates the MISRA "essentially Boolean" category of an expression.
-// Handled: _Bool-typed values, relational/equality/logical operators, `!`,
-// <stdbool.h> true/false, and operators that forward the category of their
-// operands (comma: right operand; ?: when both result operands are Boolean).
-// The usual C integer promotions are deliberately looked through, because the
-// essential type is that of the operand before promotion.
-bool is_essentially_boolean(const clang::Expr* expression,
-                            const clang::SourceManager& sm,
-                            const clang::LangOptions& lang) {
-  const clang::Expr* const stripped = expression->IgnoreParenImpCasts();
-  if (const auto* binary = llvm::dyn_cast<clang::BinaryOperator>(stripped)) {
-    if (binary->isComparisonOp() || binary->isLogicalOp()) {
-      return true;
-    }
-    if (binary->getOpcode() == clang::BO_Comma) {
-      return is_essentially_boolean(binary->getRHS(), sm, lang);
-    }
-  }
-  if (const auto* unary = llvm::dyn_cast<clang::UnaryOperator>(stripped)) {
-    if (unary->getOpcode() == clang::UO_LNot) {
-      return true;
-    }
-  }
-  if (const auto* conditional =
-          llvm::dyn_cast<clang::ConditionalOperator>(stripped)) {
-    return is_essentially_boolean(conditional->getTrueExpr(), sm, lang) &&
-           is_essentially_boolean(conditional->getFalseExpr(), sm, lang);
-  }
-  if (stripped->getType()->isBooleanType()) {
-    return true;
-  }
-  // <stdbool.h> true/false expand to the integer constants 1 and 0.
-  if (stripped->getBeginLoc().isMacroID() &&
-      llvm::isa<clang::IntegerLiteral>(stripped)) {
-    const llvm::StringRef name = clang::Lexer::getImmediateMacroName(
-        stripped->getBeginLoc(), sm, lang);
-    return name == "true" || name == "false";
-  }
-  return false;
-}
-
 bool has_variable_length_array(clang::QualType type) {
   for (;;) {
     if (type.isNull()) {
@@ -419,6 +378,12 @@ class FactVisitor final : public clang::RecursiveASTVisitor<FactVisitor> {
       syntax(expression->getQuestionLoc(),
              "misra-c2012-10.4-operand-category-mismatch");
     }
+    return true;
+  }
+
+  // ---------------------------------------- Section 11 (pointer conversions)
+  bool VisitCastExpr(clang::CastExpr* cast) {
+    check_pointer_conversion(cast);
     return true;
   }
 
@@ -741,6 +706,113 @@ class FactVisitor final : public clang::RecursiveASTVisitor<FactVisitor> {
     }
   }
 
+  void check_pointer_conversion(const clang::CastExpr* cast) {
+    switch (cast->getCastKind()) {
+      case clang::CK_BitCast:
+      case clang::CK_NoOp:
+      case clang::CK_PointerToIntegral:
+      case clang::CK_IntegralToPointer:
+      case clang::CK_NullToPointer:
+        break;
+      default:
+        return;
+    }
+    const bool explicit_cast = llvm::isa<clang::ExplicitCastExpr>(cast);
+    const clang::Expr* const operand = cast->getSubExpr();
+    const clang::QualType to = cast->getType().getCanonicalType();
+    const clang::QualType from = operand->getType().getCanonicalType();
+    const clang::SourceLocation loc = cast->getBeginLoc();
+    const bool null_operand =
+        operand->isNullPointerConstant(
+            ast_, clang::Expr::NPC_ValueDependentIsNull) !=
+        clang::Expr::NPCK_NotNull;
+
+    const auto pointee = [](const clang::QualType t) {
+      return t->isPointerType() ? t->getPointeeType().getCanonicalType()
+                                : clang::QualType();
+    };
+    const auto object_pointer = [&](const clang::QualType t) {
+      const clang::QualType p = pointee(t);
+      return !p.isNull() && !p->isVoidType() && !p->isFunctionType();
+    };
+    const auto void_pointer = [&](const clang::QualType t) {
+      const clang::QualType p = pointee(t);
+      return !p.isNull() && p->isVoidType();
+    };
+    const auto incomplete_pointer = [&](const clang::QualType t) {
+      return object_pointer(t) && pointee(t)->isIncompleteType();
+    };
+    const auto non_boolean_arithmetic = [](const clang::QualType t) {
+      return t->isArithmeticType() && !t->isBooleanType();
+    };
+
+    if (cast->getCastKind() == clang::CK_NullToPointer) {
+      // 11.9: NULL is the only permitted null pointer constant.
+      const clang::Expr* const written = operand->IgnoreParenImpCasts();
+      const bool is_null_macro =
+          written->getBeginLoc().isMacroID() &&
+          clang::Lexer::getImmediateMacroName(written->getBeginLoc(), sm_,
+                                              ast_.getLangOpts()) == "NULL";
+      if (!is_null_macro) {
+        syntax(loc, "misra-c2012-11.9-null-pointer-constant");
+      }
+      return;
+    }
+
+    // 11.8: a conversion between pointers must not drop const or volatile
+    // from the pointed-to type (explicit or implicit).
+    if (to->isPointerType() && from->isPointerType()) {
+      const clang::QualType to_pointee = to->getPointeeType();
+      const clang::QualType from_pointee = from->getPointeeType();
+      if ((from_pointee.isConstQualified() && !to_pointee.isConstQualified()) ||
+          (from_pointee.isVolatileQualified() &&
+           !to_pointee.isVolatileQualified())) {
+        syntax(loc, "misra-c2012-11.8-qualifier-removed");
+      }
+    }
+
+    if (null_operand) {
+      return;  // converting a null pointer constant is not reported below
+    }
+
+    // 11.5: void pointer to object pointer, explicit or implicit.
+    if (void_pointer(from) && object_pointer(to) &&
+        cast->getCastKind() == clang::CK_BitCast) {
+      syntax(loc, "misra-c2012-11.5-void-pointer-to-object");
+    }
+
+    if (!explicit_cast) {
+      return;
+    }
+    // 11.1: function pointers convert only to function pointers.
+    if (to->isFunctionPointerType() != from->isFunctionPointerType()) {
+      syntax(loc, "misra-c2012-11.1-function-pointer-conversion");
+    }
+    // 11.2: pointer to incomplete type (conversions to void* are tolerated).
+    if ((incomplete_pointer(to) || incomplete_pointer(from)) &&
+        !void_pointer(to) && !void_pointer(from) &&
+        to.getUnqualifiedType() != from.getUnqualifiedType()) {
+      syntax(loc, "misra-c2012-11.2-incomplete-pointer-conversion");
+    }
+    // 11.3: pointer to one object type to pointer to a different object type.
+    if (object_pointer(to) && object_pointer(from) &&
+        !incomplete_pointer(to) && !incomplete_pointer(from) &&
+        pointee(to).getUnqualifiedType() != pointee(from).getUnqualifiedType()) {
+      syntax(loc, "misra-c2012-11.3-object-pointer-type-change");
+    }
+    // 11.4: object pointer to or from an integer type.
+    if ((object_pointer(to) && from->isIntegerType() &&
+         !from->isBooleanType()) ||
+        (object_pointer(from) && to->isIntegerType() && !to->isBooleanType())) {
+      syntax(loc, "misra-c2012-11.4-pointer-integer-conversion");
+    }
+    // 11.6: void pointer to or from an arithmetic type.
+    if ((void_pointer(to) && non_boolean_arithmetic(from)) ||
+        (void_pointer(from) && non_boolean_arithmetic(to))) {
+      syntax(loc, "misra-c2012-11.6-void-pointer-arithmetic-conversion");
+    }
+  }
+
   void check_binary_types(const clang::BinaryOperator* expression) {
     using essential::Operand;
     const clang::BinaryOperatorKind op = expression->getOpcode();
@@ -970,7 +1042,8 @@ class FactVisitor final : public clang::RecursiveASTVisitor<FactVisitor> {
       add(context_.controlling_expressions, "cond",
           ControllingExpressionFact{
               *loc, construct,
-              is_essentially_boolean(condition, sm_, ast_.getLangOpts())});
+              essential::of_expression(condition, ast_).category ==
+                  essential::Category::Boolean});
     }
   }
 

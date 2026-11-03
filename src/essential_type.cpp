@@ -45,6 +45,11 @@ Type enumeration_type(const clang::EnumDecl* declaration,
 // Result of combining two operands of an arithmetic or bitwise operator.
 Type combine(const Type& left, const Type& right, const clang::Expr* whole,
              clang::ASTContext& context) {
+  if (left.category == Category::Boolean && right.category == Category::Boolean) {
+    Type result = left;  // for example flag ? true : false
+    result.constant.reset();
+    return result;
+  }
   if (left.is_constant() && right.is_constant()) {
     return of_type(whole->getType(), context);
   }

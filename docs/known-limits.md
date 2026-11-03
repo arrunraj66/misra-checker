@@ -4,13 +4,11 @@ Original engineering notes. Each limit is covered by a fixture so a change in
 behaviour is visible.
 
 ## Rule 14.4 (controlling expression)
-Implemented: `_Bool` values; relational, equality and logical operators; `!`;
-`<stdbool.h>` `true`/`false`; comma (category of the right operand); `?:` when
-both result operands are Boolean. Integer promotions are looked through.
-Not implemented: the full essential-type model (character, enum, signed,
-unsigned, floating) that rules 10.x need. An enum constant or a `_Bool`
-bit-field read through a macro the checker cannot see into is judged by its
-C type only.
+Uses the shared essential-type model (see the Section 10 notes below): a
+condition is acceptable when its essential category is Boolean (`_Bool` values;
+relational, equality and logical operators; `!`; `<stdbool.h>` `true`/`false`;
+comma by its right operand; `?:` when both result operands are Boolean).
+Integer promotions are looked through.
 
 ## Rule 13.4 (assignment result)
 The result counts as used when its enclosing context consumes it: operands,
@@ -79,3 +77,25 @@ statements, prototype scope, and one scope per struct/union for members.
   existing entity and are not treated as hiding it.
 * Parameters named inside a function *type* (function-pointer typedefs and
   declarators) are in their own prototype scope and are not recorded.
+
+## Section 11 rules (pointer conversions) — 11.1-11.6, 11.8, 11.9
+Implemented from the rule intent on Clang cast nodes; validate against the
+licensed text before relying on a result.
+* **11.7 is not implemented.** A cast between an object pointer and a floating
+  type is a constraint violation that Clang rejects before analysis, so a
+  detector could never fire. Such a file is reported as an analysis failure
+  (exit code 2), not as a rule finding.
+* 11.1-11.4 and 11.6 look at *explicit* casts only. 11.5, 11.8 and 11.9 also
+  look at implicit conversions, so `int *p = malloc(n);` (void pointer to object
+  pointer) is reported by 11.5 even though no cast is written.
+* A null pointer constant (`0`, `(void*)0`, `NULL`) is exempt from 11.1-11.6
+  and is judged by 11.9 instead. 11.9 accepts a null pointer conversion only
+  when its source is spelled by the `NULL` macro; `p = 0`, `p == 0` and
+  `(int*)0` are reported.
+* 11.2 tolerates conversions between a pointer to an incomplete type and a
+  `void` pointer (an interpretation; revisit against the licensed text).
+* 11.3 treats every pair of differently typed complete object pointers alike,
+  including casts to `char *`; qualifiers are ignored for the comparison.
+* 11.4 and 11.6 do not report conversions to or from `_Bool`.
+* 11.8 compares only the first pointer level; `char **` to `const char *const *`
+  is not examined.
