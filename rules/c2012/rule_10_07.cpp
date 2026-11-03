@@ -1,15 +1,18 @@
 /*
- * MISRA C:2012 Rule 10.7 - engineering scaffold
+ * MISRA C:2012 Rule 10.7 - Clang-backed detector
  *
  * Topic: Essential type model
  * Engineering intent: Independent checker contract for Rule 10.7 in the Essential type model family. The exact normative predicate remains linked to the controlled licensed rule specification.
  * Analysis expansion: Propagate essential types through expressions and verify ranks, conversions, operands, and composite-expression results.
  * Normative notice: Wording, amplification, exceptions, and examples remain in
  * the licensed MISRA specification and require independent approval.
- * Implementation status: Scaffold only; no compliance decision is made.
+ * Detection contract: A composite expression combined with a wider non-constant operand of the same category is reported.
+ * Uses the essential type model in src/essential_type.hpp; see docs/known-limits.md.
+ * Implementation status: Implemented; independent validation is pending.
  */
 
 #include "misra/c2012/rule_factories.hpp"
+#include "misra/c2012/rule_support.hpp"
 
 #include <memory>
 
@@ -28,15 +31,14 @@ class Rule_10_07 final : public Rule {
         "Essential type model",
         "Independent checker contract for Rule 10.7 in the Essential type model family. The exact normative predicate remains linked to the controlled licensed rule specification.",
         "Propagate essential types through expressions and verify ranks, conversions, operands, and composite-expression results.",
-        ImplementationStatus::Scaffold,
+        ImplementationStatus::Implemented,
     };
     return descriptor;
   }
 
   [[nodiscard]] RuleEvaluation evaluate(
       const AnalysisContext& context) const override {
-    (void)context;
-    return {EvaluationStatus::NotImplemented};
+    return support::syntax_findings(context, "misra-c2012-10.7-composite-operand-width");
   }
 };
 

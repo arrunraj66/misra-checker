@@ -1,6 +1,7 @@
 #pragma once
 
 #include <cstddef>
+#include <map>
 #include <memory>
 #include <set>
 #include <string>
@@ -185,6 +186,22 @@ struct ProgramFacts final {
   std::set<std::string> referenced_declarations;
 };
 
+enum class IdentifierSpace {
+  Ordinary,  // objects, functions, typedefs, enumeration constants
+  Tag,       // struct, union and enum tags
+  Member,    // members of one struct or union (scope = that aggregate)
+};
+
+// An identifier declaration with the scope that contains it. Scope ids are
+// unique within an analysis run; id 0 means "no enclosing scope".
+struct IdentifierFact final {
+  SourceLocation location;
+  std::string name;
+  std::size_t scope;
+  IdentifierSpace space;
+  std::size_t translation_unit;
+};
+
 [[nodiscard]] inline std::string declaration_key(const SourceLocation& location,
                                                  const std::string& name) {
   return location.file + ':' + std::to_string(location.line) + ':' +
@@ -200,6 +217,8 @@ struct AnalysisContext final {
   std::vector<FunctionExitFact> function_exits;
   std::vector<IncludeFact> includes;
   ProgramFacts program;
+  std::vector<IdentifierFact> identifiers;
+  std::map<std::size_t, std::size_t> scope_parents;  // scope -> enclosing scope
   std::size_t translation_units = 0U;
 };
 

@@ -1,5 +1,8 @@
 #include "misra/clang_frontend.hpp"
 
+#include "essential_type.hpp"
+
+#include <algorithm>
 #include <map>
 #include <memory>
 #include <optional>
@@ -44,6 +47,7 @@ struct Shared final {
   // unit; every fact is de-duplicated by (kind, expansion location).
   std::set<std::string> seen;
   std::size_t translation_unit = 0U;
+  std::size_t next_scope = 1U;
 
   [[nodiscard]] bool fresh(std::string key) {
     return seen.insert(std::move(key)).second;
@@ -195,16 +199,47 @@ class FactVisitor final : public clang::RecursiveASTVisitor<FactVisitor> {
       : ast_(ast),
         sm_(ast.getSourceManager()),
         shared_(shared),
-        context_(shared.context) {}
+        context_(shared.context) {
+    push_scope(ast.getTranslationUnitDecl());  // file scope
+  }
 
   // ---------------------------------------------------------------- traversal
+  // Scopes (needed by Rules 5.2 and 5.3): the function name belongs to the
+  // enclosing scope; parameters and the outermost block share one scope for a
+  // definition, and a declaration has its own prototype scope.
   bool TraverseFunctionDecl(clang::FunctionDecl* declaration) {
     const clang::FunctionDecl* const saved = current_function_;
-    if (declaration->doesThisDeclarationHaveABody()) {
+    const bool definition = declaration->doesThisDeclarationHaveABody();
+    if (definition) {
       current_function_ = declaration;
     }
+    if (!declaration->getDeclContext()->isFunctionOrMethod()) {
+      record_identifier(declaration, IdentifierSpace::Ordinary);
+    }
+    push_scope(definition ? static_cast<const void*>(declaration->getBody())
+                          : static_cast<const void*>(declaration));
     const bool result = Base::TraverseFunctionDecl(declaration);
+    pop_scope();
     current_function_ = saved;
+    return result;
+  }
+
+  bool TraverseCompoundStmt(clang::CompoundStmt* statement) {
+    const bool own_scope = scopes_.back().key != statement;
+    if (own_scope) {
+      push_scope(statement);
+    }
+    const bool result = Base::TraverseCompoundStmt(statement);
+    if (own_scope) {
+      pop_scope();
+    }
+    return result;
+  }
+
+  bool TraverseForStmt(clang::ForStmt* statement) {
+    push_scope(statement);
+    const bool result = Base::TraverseForStmt(statement);
+    pop_scope();
     return result;
   }
 
@@ -307,6 +342,13 @@ class FactVisitor final : public clang::RecursiveASTVisitor<FactVisitor> {
     if (callee == nullptr || !callee->getIdentifier()) {
       return true;
     }
+    if (callee->hasPrototype()) {
+      const unsigned count = std::min(call->getNumArgs(), callee->getNumParams());
+      for (unsigned index = 0U; index < count; ++index) {
+        check_assignment(callee->getParamDecl(index)->getType(),
+                         call->getArg(index), call->getArg(index)->getExprLoc());
+      }
+    }
     const clang::SourceLocation spelling = call->getBeginLoc();
     // Calls are keyed on the call site: a user macro wrapping a banned
     // library function is reported, library-internal macros are not.
@@ -326,6 +368,78 @@ class FactVisitor final : public clang::RecursiveASTVisitor<FactVisitor> {
     if (expression->isAssignmentOp() && value_is_used(expression)) {
       syntax(expression->getOperatorLoc(),
              "misra-c2012-13.4-assignment-value-used");
+    }
+    check_binary_types(expression);
+    return true;
+  }
+
+  // ------------------------------------------------- Section 10 (type rules)
+  bool VisitUnaryOperator(clang::UnaryOperator* expression) {
+    using essential::Operand;
+    std::optional<Operand> position;
+    switch (expression->getOpcode()) {
+      case clang::UO_Plus: position = Operand::UnaryPlus; break;
+      case clang::UO_Minus: position = Operand::UnaryMinus; break;
+      case clang::UO_Not: position = Operand::LeftShift; break;
+      case clang::UO_LNot: position = Operand::Logical; break;
+      case clang::UO_PreInc:
+      case clang::UO_PostInc:
+      case clang::UO_PreDec:
+      case clang::UO_PostDec: position = Operand::AddSub; break;
+      default: break;
+    }
+    if (position &&
+        !essential::appropriate(
+            *position, essential::of_expression(expression->getSubExpr(), ast_))) {
+      syntax(expression->getOperatorLoc(),
+             "misra-c2012-10.1-inappropriate-operand");
+    }
+    return true;
+  }
+
+  bool VisitArraySubscriptExpr(clang::ArraySubscriptExpr* expression) {
+    if (!essential::appropriate(
+            essential::Operand::Subscript,
+            essential::of_expression(expression->getIdx(), ast_))) {
+      syntax(expression->getExprLoc(), "misra-c2012-10.1-inappropriate-operand");
+    }
+    return true;
+  }
+
+  bool VisitConditionalOperator(clang::ConditionalOperator* expression) {
+    if (!essential::appropriate(
+            essential::Operand::Logical,
+            essential::of_expression(expression->getCond(), ast_))) {
+      syntax(expression->getQuestionLoc(),
+             "misra-c2012-10.1-inappropriate-operand");
+    }
+    if (essential::categories_differ(
+            essential::of_expression(expression->getTrueExpr(), ast_),
+            essential::of_expression(expression->getFalseExpr(), ast_))) {
+      syntax(expression->getQuestionLoc(),
+             "misra-c2012-10.4-operand-category-mismatch");
+    }
+    return true;
+  }
+
+  bool VisitCStyleCastExpr(clang::CStyleCastExpr* cast) {
+    const clang::Expr* const operand = cast->getSubExpr();
+    if (essential::is_composite(operand, ast_)) {
+      const essential::Type from = essential::of_expression(operand, ast_);
+      const essential::Type to = essential::of_type(cast->getType(), ast_);
+      if (from.category != essential::Category::Other &&
+          to.category != essential::Category::Other &&
+          (from.category != to.category || to.width > from.width)) {
+        syntax(cast->getLParenLoc(), "misra-c2012-10.8-composite-cast");
+      }
+    }
+    return true;
+  }
+
+  bool VisitReturnStmt(clang::ReturnStmt* statement) {
+    if (statement->getRetValue() != nullptr && current_function_ != nullptr) {
+      check_assignment(current_function_->getReturnType(),
+                       statement->getRetValue(), statement->getReturnLoc());
     }
     return true;
   }
@@ -452,6 +566,9 @@ class FactVisitor final : public clang::RecursiveASTVisitor<FactVisitor> {
     if (variable->isImplicit()) {
       return true;
     }
+    if (variable->isFileVarDecl() || !variable->hasExternalStorage()) {
+      record_identifier(variable, IdentifierSpace::Ordinary);
+    }
     const clang::QualType declared =
         llvm::isa<clang::ParmVarDecl>(variable)
             ? llvm::cast<clang::ParmVarDecl>(variable)->getOriginalType()
@@ -461,6 +578,11 @@ class FactVisitor final : public clang::RecursiveASTVisitor<FactVisitor> {
     }
     if (variable->getType().isRestrictQualified()) {
       syntax(variable->getLocation(), "misra-c2012-8.14-restrict");
+    }
+    if (const clang::Expr* const init = variable->getInit();
+        init != nullptr && !llvm::isa<clang::InitListExpr>(init) &&
+        !llvm::isa<clang::ParmVarDecl>(variable)) {
+      check_assignment(variable->getType(), init, variable->getLocation());
     }
     if (!variable->isFileVarDecl()) {
       return true;
@@ -492,7 +614,13 @@ class FactVisitor final : public clang::RecursiveASTVisitor<FactVisitor> {
     return true;
   }
 
+  bool VisitEnumConstantDecl(clang::EnumConstantDecl* enumerator) {
+    record_identifier(enumerator, IdentifierSpace::Ordinary);
+    return true;
+  }
+
   bool VisitFieldDecl(clang::FieldDecl* field) {
+    record_identifier(field, IdentifierSpace::Member);
     if (has_variable_length_array(field->getType())) {
       syntax(field->getLocation(), "misra-c2012-18.8-variable-length-array");
     }
@@ -523,10 +651,14 @@ class FactVisitor final : public clang::RecursiveASTVisitor<FactVisitor> {
       }
     }
     declare(declaration, DeclKind::Typedef, LinkageKind::None, true, {});
+    record_identifier(declaration, IdentifierSpace::Ordinary);
     return true;
   }
 
   bool VisitTagDecl(clang::TagDecl* tag) {
+    if (!tag->isImplicit()) {
+      record_identifier(tag, IdentifierSpace::Tag);
+    }
     if (tag->isImplicit() || !tag->isCompleteDefinition() ||
         tag->getIdentifier() == nullptr) {
       return true;
@@ -588,6 +720,176 @@ class FactVisitor final : public clang::RecursiveASTVisitor<FactVisitor> {
   void add(Vector& vector, const std::string& tag, Fact fact) {
     if (shared_.fresh(tag + '|' + location_text(fact.location))) {
       vector.push_back(std::move(fact));
+    }
+  }
+
+  static bool uses_usual_arithmetic_conversions(
+      const clang::BinaryOperatorKind op) {
+    switch (op) {
+      case clang::BO_Mul: case clang::BO_Div: case clang::BO_Rem:
+      case clang::BO_Add: case clang::BO_Sub:
+      case clang::BO_LT: case clang::BO_GT: case clang::BO_LE: case clang::BO_GE:
+      case clang::BO_EQ: case clang::BO_NE:
+      case clang::BO_And: case clang::BO_Xor: case clang::BO_Or:
+      case clang::BO_MulAssign: case clang::BO_DivAssign:
+      case clang::BO_RemAssign: case clang::BO_AddAssign:
+      case clang::BO_SubAssign: case clang::BO_AndAssign:
+      case clang::BO_XorAssign: case clang::BO_OrAssign:
+        return true;
+      default:
+        return false;
+    }
+  }
+
+  void check_binary_types(const clang::BinaryOperator* expression) {
+    using essential::Operand;
+    const clang::BinaryOperatorKind op = expression->getOpcode();
+    const clang::SourceLocation loc = expression->getOperatorLoc();
+    if (op == clang::BO_Assign) {
+      check_assignment(essential::of_expression(expression->getLHS(), ast_),
+                       expression->getRHS(), loc);
+      return;
+    }
+    if (op == clang::BO_Comma) {
+      return;
+    }
+    const essential::Type left = essential::of_expression(expression->getLHS(), ast_);
+    const essential::Type right = essential::of_expression(expression->getRHS(), ast_);
+
+    Operand left_position = Operand::Equality;
+    Operand right_position = Operand::Equality;
+    bool additive = false;
+    bool subtractive = false;
+    switch (op) {
+      case clang::BO_Mul: case clang::BO_Div:
+      case clang::BO_MulAssign: case clang::BO_DivAssign:
+        left_position = right_position = Operand::MulDiv; break;
+      case clang::BO_Rem: case clang::BO_RemAssign:
+        left_position = right_position = Operand::Modulo; break;
+      case clang::BO_Add: case clang::BO_AddAssign:
+        left_position = right_position = Operand::AddSub; additive = true; break;
+      case clang::BO_Sub: case clang::BO_SubAssign:
+        left_position = right_position = Operand::AddSub; subtractive = true; break;
+      case clang::BO_Shl: case clang::BO_Shr:
+      case clang::BO_ShlAssign: case clang::BO_ShrAssign:
+        left_position = Operand::LeftShift;
+        right_position = Operand::RightShift; break;
+      case clang::BO_LT: case clang::BO_GT: case clang::BO_LE: case clang::BO_GE:
+        left_position = right_position = Operand::Relational; break;
+      case clang::BO_EQ: case clang::BO_NE:
+        left_position = right_position = Operand::Equality; break;
+      case clang::BO_And: case clang::BO_Xor: case clang::BO_Or:
+      case clang::BO_AndAssign: case clang::BO_XorAssign: case clang::BO_OrAssign:
+        left_position = right_position = Operand::LeftShift; break;
+      case clang::BO_LAnd: case clang::BO_LOr:
+        left_position = right_position = Operand::Logical; break;
+      default:
+        return;
+    }
+    if (!essential::appropriate(left_position, left) ||
+        !essential::appropriate(right_position, right)) {
+      syntax(loc, "misra-c2012-10.1-inappropriate-operand");
+    }
+    if ((additive || subtractive) &&
+        essential::character_arithmetic_misused(subtractive, left, right)) {
+      syntax(loc, "misra-c2012-10.2-character-arithmetic");
+    }
+    if (uses_usual_arithmetic_conversions(op)) {
+      if (essential::categories_differ(left, right)) {
+        syntax(loc, "misra-c2012-10.4-operand-category-mismatch");
+      }
+      const auto wider_than_composite = [&](const clang::Expr* composite,
+                                            const essential::Type& composite_type,
+                                            const essential::Type& other) {
+        return essential::is_composite(composite, ast_) &&
+               !other.is_constant() && composite_type.is_arithmetic() &&
+               composite_type.category == other.category &&
+               other.width > composite_type.width;
+      };
+      if (wider_than_composite(expression->getLHS(), left, right) ||
+          wider_than_composite(expression->getRHS(), right, left)) {
+        syntax(loc, "misra-c2012-10.7-composite-operand-width");
+      }
+    }
+  }
+
+  // Assignment, initialization, argument passing and return are all treated
+  // as assignments (Rules 10.3 and 10.6).
+  void check_assignment(const clang::QualType destination_type,
+                        const clang::Expr* source_expression,
+                        const clang::SourceLocation loc) {
+    check_assignment(essential::of_type(destination_type, ast_),
+                     source_expression, loc);
+  }
+
+  void check_assignment(const essential::Type& destination,
+                        const clang::Expr* source_expression,
+                        const clang::SourceLocation loc) {
+    const essential::Type source = essential::of_expression(source_expression, ast_);
+    if (destination.category == essential::Category::Other ||
+        source.category == essential::Category::Other) {
+      return;
+    }
+    if (essential::assignment_violates_category_or_width(destination, source)) {
+      syntax(loc, "misra-c2012-10.3-assignment-category-or-width");
+    } else if (essential::is_composite(source_expression, ast_) &&
+               source.is_arithmetic() && source.category == destination.category &&
+               destination.width > source.width) {
+      syntax(loc, "misra-c2012-10.6-composite-assigned-wider");
+    }
+  }
+
+  void push_scope(const void* key) {
+    const std::size_t id = shared_.next_scope++;
+    const std::size_t parent = scopes_.empty() ? 0U : scopes_.back().id;
+    context_.scope_parents[id] = parent;
+    scopes_.push_back({key, id});
+  }
+
+  void pop_scope() { scopes_.pop_back(); }
+
+  std::size_t member_scope(const clang::RecordDecl* record) {
+    const void* const key = record->getCanonicalDecl();
+    const auto found = member_scopes_.find(key);
+    if (found != member_scopes_.end()) {
+      return found->second;
+    }
+    const std::size_t id = shared_.next_scope++;
+    context_.scope_parents[id] = 0U;
+    member_scopes_[key] = id;
+    return id;
+  }
+
+  void record_identifier(const clang::NamedDecl* declaration,
+                         const IdentifierSpace space) {
+    if (declaration->getName().empty() || declaration->isImplicit()) {
+      return;
+    }
+    // Parameters of a function *type* (a pointer-to-function declarator or
+    // typedef) live in their own prototype scope, not in the enclosing one.
+    if (llvm::isa<clang::ParmVarDecl>(declaration) &&
+        !llvm::isa<clang::FunctionDecl>(declaration->getDeclContext())) {
+      return;
+    }
+    const auto location = locate(sm_, declaration->getLocation(), false);
+    if (!location) {
+      return;
+    }
+    std::size_t scope = scopes_.back().id;
+    if (space == IdentifierSpace::Member) {
+      const auto* record = llvm::dyn_cast<clang::RecordDecl>(
+          declaration->getDeclContext());
+      if (record == nullptr) {
+        return;
+      }
+      scope = member_scope(record);
+    }
+    const std::string name = declaration->getNameAsString();
+    if (shared_.fresh("ident|" + std::to_string(shared_.translation_unit) + '|' +
+                      std::to_string(scope) + '|' +
+                      declaration_key(*location, name))) {
+      context_.identifiers.push_back(
+          {*location, name, scope, space, shared_.translation_unit});
     }
   }
 
@@ -765,6 +1067,12 @@ class FactVisitor final : public clang::RecursiveASTVisitor<FactVisitor> {
   Shared& shared_;
   AnalysisContext& context_;
 
+  struct Scope final {
+    const void* key;
+    std::size_t id;
+  };
+  std::vector<Scope> scopes_;
+  std::map<const void*, std::size_t> member_scopes_;
   const clang::FunctionDecl* current_function_ = nullptr;
   std::set<const clang::Stmt*> else_if_members_;
   std::set<const clang::Decl*> referenced_;

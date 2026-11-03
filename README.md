@@ -33,8 +33,8 @@ src/rule_registry.cpp                  constructs the complete rule pack
 tests/rule_registry_test.cpp           validates count, uniqueness and totals
 ```
 
-46 of the 143 rules now have Clang-backed detectors (see
-[docs/rule-implementation-status.md](docs/rule-implementation-status.md)). The remaining 97 classes
+55 of the 143 rules now have Clang-backed detectors (see
+[docs/rule-implementation-status.md](docs/rule-implementation-status.md)). The remaining 88 classes
 are scaffolds returning `EvaluationStatus::NotImplemented`. All implemented
 rules still require independent validation; the product must not yet be
 represented as qualified, certified, or compliance-ready. Each detector will
@@ -80,6 +80,14 @@ Exit code `0` means no findings from implemented rules, `1` means findings were
 reported, `2` means the frontend could not complete analysis, and `64` means
 the command line was invalid. A zero exit code covers only implemented rules;
 it is not a project-level MISRA compliance result.
+
+## Type and scope rules
+
+Rules 10.1-10.4 and 10.6-10.8 use an independent essential-type model
+(`src/essential_type.hpp`); 5.2 and 5.3 use block-scope tracking. Rule 10.5 is
+intentionally not implemented. Interpretations and leniencies are listed in
+[docs/known-limits.md](docs/known-limits.md) and must be reviewed against the
+licensed MISRA text.
 
 ## Whole-program rules and macros
 

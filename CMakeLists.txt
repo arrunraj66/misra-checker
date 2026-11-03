@@ -36,7 +36,7 @@ target_include_directories(misra-core PUBLIC include)
 target_link_libraries(misra-core PUBLIC misra-c2012-rules)
 misra_enable_warnings(misra-core)
 
-add_library(misra-clang STATIC src/clang_frontend.cpp)
+add_library(misra-clang STATIC src/clang_frontend.cpp src/essential_type.cpp)
 target_include_directories(misra-clang PUBLIC include)
 target_include_directories(
   misra-clang

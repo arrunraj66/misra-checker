@@ -26,6 +26,10 @@ RuleEvaluation multiple_loop_exit_findings(const AnalysisContext& context,
 RuleEvaluation function_exit_findings(const AnalysisContext& context,
                                       std::string_view key);
 
+// --- scopes ----------------------------------------------------------------
+RuleEvaluation identifiers_not_distinct_in_scope(const AnalysisContext& context);  // 5.2
+RuleEvaluation identifier_hides_outer(const AnalysisContext& context);             // 5.3
+
 // --- whole program (valid only for a complete compilation database) ------
 RuleEvaluation external_identifier_clash(const AnalysisContext& context);   // 5.1
 RuleEvaluation macro_identifier_clash(const AnalysisContext& context);      // 5.4

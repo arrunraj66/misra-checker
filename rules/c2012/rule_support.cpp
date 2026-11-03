@@ -4,6 +4,7 @@
 #include <map>
 #include <set>
 #include <string>
+#include <tuple>
 #include <vector>
 
 namespace misra::c2012::support {
@@ -135,6 +136,80 @@ RuleEvaluation function_exit_findings(const AnalysisContext& context,
   for (const FunctionExitFact& f : context.function_exits) {
     if (f.return_count > 1U || (f.return_count == 1U && !f.ends_with_return)) {
       e.findings.push_back({key, f.location, FindingCertainty::Definite});
+    }
+  }
+  return e;
+}
+
+// ------------------------------------------------------------------- scopes
+
+RuleEvaluation identifiers_not_distinct_in_scope(const AnalysisContext& context) {
+  RuleEvaluation e = complete();
+  using Key = std::tuple<std::size_t, std::size_t, int, std::string>;
+  std::map<Key, std::map<std::string, std::vector<const IdentifierFact*>>> groups;
+  for (const IdentifierFact& f : context.identifiers) {
+    groups[{f.translation_unit, f.scope, static_cast<int>(f.space),
+            f.name.substr(0U, kExternalSignificant)}][f.name]
+        .push_back(&f);
+  }
+  std::set<std::string> reported;
+  for (const auto& group : groups) {
+    bool first = true;
+    for (const auto& names : group.second) {
+      if (!first) {
+        for (const IdentifierFact* f : names.second) {
+          if (reported.insert(declaration_key(f->location, f->name)).second) {
+            e.findings.push_back({"misra-c2012-5.2-identifiers-not-distinct",
+                                  f->location, FindingCertainty::Definite});
+          }
+        }
+      }
+      first = false;
+    }
+  }
+  return e;
+}
+
+RuleEvaluation identifier_hides_outer(const AnalysisContext& context) {
+  RuleEvaluation e = complete();
+  using Key = std::tuple<std::size_t, int, std::string>;  // scope, space, name
+  std::map<Key, std::vector<const IdentifierFact*>> index;
+  for (const IdentifierFact& f : context.identifiers) {
+    if (f.space != IdentifierSpace::Member) {
+      index[{f.scope, static_cast<int>(f.space),
+             f.name.substr(0U, kExternalSignificant)}]
+          .push_back(&f);
+    }
+  }
+  std::set<std::string> reported;
+  for (const IdentifierFact& inner : context.identifiers) {
+    if (inner.space == IdentifierSpace::Member) continue;
+    const auto parent_of = context.scope_parents.find(inner.scope);
+    std::size_t outer = parent_of == context.scope_parents.end() ? 0U : parent_of->second;
+    bool hides = false;
+    while (outer != 0U && !hides) {
+      const auto found = index.find({outer, static_cast<int>(inner.space),
+                                     inner.name.substr(0U, kExternalSignificant)});
+      if (found != index.end()) {
+        for (const IdentifierFact* candidate : found->second) {
+          // The outer declaration must precede the inner one. Locations in
+          // different files cannot be ordered here; a header is assumed to
+          // come first.
+          if (candidate->translation_unit == inner.translation_unit &&
+              (candidate->location.file != inner.location.file ||
+               before(candidate->location, inner.location))) {
+            hides = true;
+            break;
+          }
+        }
+      }
+      const auto next = context.scope_parents.find(outer);
+      outer = next == context.scope_parents.end() ? 0U : next->second;
+    }
+    if (hides &&
+        reported.insert(declaration_key(inner.location, inner.name)).second) {
+      e.findings.push_back({"misra-c2012-5.3-identifier-hides-outer",
+                            inner.location, FindingCertainty::Definite});
     }
   }
   return e;

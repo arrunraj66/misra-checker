@@ -2,7 +2,7 @@
 
 This catalog records the engineering structures present in the checker. It deliberately does not reproduce the copyrighted normative rule wording. The licensed MISRA specification is the controlled source for rule predicates, amplification, exceptions, and examples.
 
-Current milestone: 97 rule classes are **scaffolds**; 46 have implemented Clang-backed syntactic detectors, but independent validation remains pending. A scaffold provides identity, metadata, an analysis plan, a factory, and a non-compliant-safe `NotImplemented` result. It is not a working compliance check.
+Current milestone: 88 rule classes are **scaffolds**; 55 have implemented Clang-backed syntactic detectors, but independent validation remains pending. A scaffold provides identity, metadata, an analysis plan, a factory, and a non-compliant-safe `NotImplemented` result. It is not a working compliance check.
 
 | Rule | Category | Decidability | Scope | C90 | C99 | Topic | Status |
 |---|---|---|---|---:|---:|---|---|
@@ -21,8 +21,8 @@ Current milestone: 97 rule classes are **scaffolds**; 46 have implemented Clang-
 | 4.1 | Required | Decidable | Single Translation Unit | Yes | Yes | Character sets and lexical elements | Scaffold |
 | 4.2 | Advisory | Decidable | Single Translation Unit | Yes | Yes | Character sets and lexical elements | Scaffold |
 | 5.1 | Required | Decidable | System | Yes | Yes | Identifiers | Implemented; independent validation pending |
-| 5.2 | Required | Decidable | Single Translation Unit | Yes | Yes | Identifiers | Scaffold |
-| 5.3 | Required | Decidable | Single Translation Unit | Yes | Yes | Identifiers | Scaffold |
+| 5.2 | Required | Decidable | Single Translation Unit | Yes | Yes | Identifiers | Implemented; independent validation pending |
+| 5.3 | Required | Decidable | Single Translation Unit | Yes | Yes | Identifiers | Implemented; independent validation pending |
 | 5.4 | Required | Decidable | Single Translation Unit | Yes | Yes | Identifiers | Implemented; independent validation pending |
 | 5.5 | Required | Decidable | Single Translation Unit | Yes | Yes | Identifiers | Implemented; independent validation pending |
 | 5.6 | Required | Decidable | System | Yes | Yes | Identifiers | Implemented; independent validation pending |
@@ -54,14 +54,14 @@ Current milestone: 97 rule classes are **scaffolds**; 46 have implemented Clang-
 | 9.3 | Required | Decidable | Single Translation Unit | Yes | Yes | Initialization | Scaffold |
 | 9.4 | Required | Decidable | Single Translation Unit | No | Yes | Initialization | Scaffold |
 | 9.5 | Required | Decidable | Single Translation Unit | No | Yes | Initialization | Scaffold |
-| 10.1 | Required | Decidable | Single Translation Unit | Yes | Yes | Essential type model | Scaffold |
-| 10.2 | Required | Decidable | Single Translation Unit | Yes | Yes | Essential type model | Scaffold |
-| 10.3 | Required | Decidable | Single Translation Unit | Yes | Yes | Essential type model | Scaffold |
-| 10.4 | Required | Decidable | Single Translation Unit | Yes | Yes | Essential type model | Scaffold |
+| 10.1 | Required | Decidable | Single Translation Unit | Yes | Yes | Essential type model | Implemented; independent validation pending |
+| 10.2 | Required | Decidable | Single Translation Unit | Yes | Yes | Essential type model | Implemented; independent validation pending |
+| 10.3 | Required | Decidable | Single Translation Unit | Yes | Yes | Essential type model | Implemented; independent validation pending |
+| 10.4 | Required | Decidable | Single Translation Unit | Yes | Yes | Essential type model | Implemented; independent validation pending |
 | 10.5 | Advisory | Decidable | Single Translation Unit | Yes | Yes | Essential type model | Scaffold |
-| 10.6 | Required | Decidable | Single Translation Unit | Yes | Yes | Essential type model | Scaffold |
-| 10.7 | Required | Decidable | Single Translation Unit | Yes | Yes | Essential type model | Scaffold |
-| 10.8 | Required | Decidable | Single Translation Unit | Yes | Yes | Essential type model | Scaffold |
+| 10.6 | Required | Decidable | Single Translation Unit | Yes | Yes | Essential type model | Implemented; independent validation pending |
+| 10.7 | Required | Decidable | Single Translation Unit | Yes | Yes | Essential type model | Implemented; independent validation pending |
+| 10.8 | Required | Decidable | Single Translation Unit | Yes | Yes | Essential type model | Implemented; independent validation pending |
 | 11.1 | Required | Decidable | Single Translation Unit | Yes | Yes | Pointer conversions | Scaffold |
 | 11.2 | Required | Decidable | Single Translation Unit | Yes | Yes | Pointer conversions | Scaffold |
 | 11.3 | Required | Decidable | Single Translation Unit | Yes | Yes | Pointer conversions | Scaffold |
