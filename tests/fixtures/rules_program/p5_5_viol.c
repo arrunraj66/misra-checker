@@ -1,0 +1,2 @@
+#define abcdefghijklmnopqrstuvwxyz01234A 1
+static int abcdefghijklmnopqrstuvwxyz01234B = abcdefghijklmnopqrstuvwxyz01234A;

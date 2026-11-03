@@ -33,8 +33,8 @@ src/rule_registry.cpp                  constructs the complete rule pack
 tests/rule_registry_test.cpp           validates count, uniqueness and totals
 ```
 
-Rules 15.1, 15.2, 15.6, 15.7, 16.4, 21.3, 21.7, 21.8 and 21.9 now have
-Clang-backed detectors. The remaining 134 classes
+46 of the 143 rules now have Clang-backed detectors (see
+[docs/rule-implementation-status.md](docs/rule-implementation-status.md)). The remaining 97 classes
 are scaffolds returning `EvaluationStatus::NotImplemented`. All implemented
 rules still require independent validation; the product must not yet be
 represented as qualified, certified, or compliance-ready. Each detector will
@@ -49,7 +49,7 @@ List the registered structures with:
 
 ## Analyze a C project
 
-The prototype currently requires LLVM and Clang 14 or newer (tested with 18) development packages. It
+The prototype currently requires LLVM and Clang 17 or newer (tested with 18) development packages. It
 reads the exact compiler invocations from `compile_commands.json`, preserving
 the target flags, include paths, defines, language version, and other build
 context used to parse each translation unit.
@@ -80,6 +80,20 @@ Exit code `0` means no findings from implemented rules, `1` means findings were
 reported, `2` means the frontend could not complete analysis, and `64` means
 the command line was invalid. A zero exit code covers only implemented rules;
 it is not a project-level MISRA compliance result.
+
+## Whole-program rules and macros
+
+Rules with `System` scope (for example 2.3-2.5, 5.1, 5.6-5.9, 8.3, 8.5-8.7)
+compare facts across translation units. Their result is only meaningful when
+the compilation database covers the complete program; with a partial database
+they can both miss violations and, for "unused" or "could be static" style
+rules, report things used elsewhere. Findings that depend on code outside the
+analysed set are marked `[possible]`.
+
+Findings produced by macro expansion are reported at the expansion site and
+tagged `[macro]`; library-header code is ignored. See
+[docs/macro-policy.md](docs/macro-policy.md). `--suppress-macro-findings`
+hides tagged findings for triage only.
 
 ## Verified build commits
 

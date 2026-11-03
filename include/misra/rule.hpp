@@ -1,6 +1,8 @@
 #pragma once
 
+#include <cstddef>
 #include <memory>
+#include <set>
 #include <string>
 #include <string_view>
 #include <utility>
@@ -47,10 +49,14 @@ struct RuleDescriptor final {
   ImplementationStatus status;
 };
 
+// Findings are reported at the *expansion* location (where the programmer
+// wrote the code). from_macro is true when the construct was produced by a
+// macro expansion; see docs/macro-policy.md.
 struct SourceLocation final {
   std::string file;
   unsigned int line;
   unsigned int column;
+  bool from_macro = false;
 };
 
 struct GotoStatementFact final {
@@ -94,9 +100,104 @@ struct CallFact final {
   bool originates_from_macro;
 };
 
+// Generic single-translation-unit syntax fact. `kind` is the diagnostic key of
+// the rule that consumes it and always points at a string literal.
+struct SyntaxFact final {
+  SourceLocation location;
+  std::string_view kind;
+};
+
+// Controlling expression of an if/while/do/for statement (Rule 14.4).
+struct ControllingExpressionFact final {
+  SourceLocation location;
+  std::string_view construct;
+  bool essentially_boolean;
+};
+
+// Jumps that terminate an iteration statement (Rule 15.4).
+struct LoopExitFact final {
+  SourceLocation location;
+  std::size_t terminating_jumps;
+};
+
+// Return statements of a function definition (Rule 15.5).
+struct FunctionExitFact final {
+  SourceLocation location;
+  std::size_t return_count;
+  bool ends_with_return;
+};
+
+// A #include directive written in a non-system file.
+struct IncludeFact final {
+  SourceLocation location;
+  std::string header;
+  bool angled;
+};
+
+enum class DeclKind {
+  Function,
+  Object,
+  Typedef,
+  Tag,
+};
+
+enum class LinkageKind {
+  External,
+  Internal,
+  None,
+};
+
+struct DeclarationFact final {
+  SourceLocation location;
+  std::string name;
+  DeclKind kind;
+  LinkageKind linkage;
+  bool is_definition;  // includes C tentative definitions
+  std::string type;    // canonical type spelling
+  std::vector<std::string> parameter_names;
+  std::size_t translation_unit;
+};
+
+// A reference to an externally visible function or object.
+struct ReferenceFact final {
+  std::string name;
+  std::size_t translation_unit;
+};
+
+struct MacroFact final {
+  SourceLocation location;
+  std::string name;
+  bool function_like;
+  std::size_t translation_unit;
+};
+
+// Cross-translation-unit facts. Only meaningful when the compilation database
+// covers the whole program.
+struct ProgramFacts final {
+  std::vector<DeclarationFact> declarations;
+  std::vector<ReferenceFact> references;
+  std::vector<MacroFact> macros;
+  std::set<std::string> used_macros;
+  // Keys produced by declaration_key() of typedefs/tags that are referenced.
+  std::set<std::string> referenced_declarations;
+};
+
+[[nodiscard]] inline std::string declaration_key(const SourceLocation& location,
+                                                 const std::string& name) {
+  return location.file + ':' + std::to_string(location.line) + ':' +
+         std::to_string(location.column) + ':' + name;
+}
+
 struct AnalysisContext final {
   ControlFlowFacts control_flow;
   std::vector<CallFact> calls;
+  std::vector<SyntaxFact> syntax;
+  std::vector<ControllingExpressionFact> controlling_expressions;
+  std::vector<LoopExitFact> loop_exits;
+  std::vector<FunctionExitFact> function_exits;
+  std::vector<IncludeFact> includes;
+  ProgramFacts program;
+  std::size_t translation_units = 0U;
 };
 
 enum class EvaluationStatus {

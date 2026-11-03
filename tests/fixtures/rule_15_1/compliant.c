@@ -1,8 +1,9 @@
-int select_value(int condition)
+static int select_value(int condition)
 {
+    int result = 0;
     if (condition != 0)
     {
-        return 1;
+        result = 1;
     }
-    return 0;
+    return result;
 }

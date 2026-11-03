@@ -1,0 +1,4 @@
+static inline int f(void)
+{
+    return 1;
+}

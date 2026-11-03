@@ -1,4 +1,5 @@
 set(MISRA_C2012_RULE_SOURCES
+  rule_support.cpp
   rule_01_01.cpp
   rule_01_02.cpp
   rule_01_03.cpp

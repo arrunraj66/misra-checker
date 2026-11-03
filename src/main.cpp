@@ -9,7 +9,7 @@
 
 namespace {
 
-constexpr std::string_view kVersion = "0.3.0";
+constexpr std::string_view kVersion = "0.4.0";
 
 constexpr std::string_view category_name(const misra::RuleCategory category) {
   switch (category) {
@@ -29,7 +29,7 @@ void print_usage() {
       << "  misra-checker --version\n"
       << "  misra-checker --list-rules\n"
       << "  misra-checker analyze --compile-commands <file-or-directory> "
-         "[--file <source>]...\n";
+         "[--file <source>]... [--suppress-macro-findings]\n";
 }
 
 }  // namespace
@@ -51,6 +51,7 @@ int main(int argc, char* argv[]) {
   if ((argc >= 2) && (std::string_view{argv[1]} == "analyze")) {
     std::filesystem::path compilation_database;
     std::vector<std::string> requested_files;
+    bool suppress_macro_findings = false;
 
     for (int index = 2; index < argc; ++index) {
       const std::string_view argument{argv[index]};
@@ -58,6 +59,8 @@ int main(int argc, char* argv[]) {
         compilation_database = argv[++index];
       } else if ((argument == "--file") && ((index + 1) < argc)) {
         requested_files.emplace_back(argv[++index]);
+      } else if (argument == "--suppress-macro-findings") {
+        suppress_macro_findings = true;
       } else {
         print_usage();
         return 64;
@@ -83,6 +86,8 @@ int main(int argc, char* argv[]) {
     const misra::RuleRegistry registry;
     std::size_t completed_rules = 0U;
     std::size_t finding_count = 0U;
+    std::size_t macro_finding_count = 0U;
+    std::size_t suppressed_count = 0U;
     for (const auto& rule : registry.rules()) {
       const misra::RuleEvaluation evaluation =
           rule->evaluate(frontend_result.context);
@@ -92,19 +97,39 @@ int main(int argc, char* argv[]) {
 
       ++completed_rules;
       for (const misra::Finding& finding : evaluation.findings) {
+        if (suppress_macro_findings && finding.location.from_macro) {
+          ++suppressed_count;
+          continue;
+        }
         ++finding_count;
+        if (finding.location.from_macro) {
+          ++macro_finding_count;
+        }
         std::cout << finding.location.file << ':' << finding.location.line << ':'
                   << finding.location.column << ": "
                   << category_name(rule->descriptor().category)
                   << ": MISRA C:2012 Rule "
                   << rule->descriptor().id << " [" << finding.message_key
-                  << "]\n";
+                  << "]"
+                  << (finding.certainty == misra::FindingCertainty::Possible
+                          ? " [possible]"
+                          : "")
+                  << (finding.location.from_macro ? " [macro]" : "") << '\n';
       }
     }
 
     std::cout << "Analyzed " << frontend_result.analyzed_files.size()
               << " translation unit(s); " << completed_rules
               << " implemented rule(s); " << finding_count << " finding(s).\n";
+    if (macro_finding_count != 0U) {
+      std::cout << macro_finding_count
+                << " finding(s) originate from macro expansions [macro].\n";
+    }
+    if (suppressed_count != 0U) {
+      std::cout << "WARNING: " << suppressed_count
+                << " macro-origin finding(s) suppressed; the result is for "
+                   "triage only and is not compliance evidence.\n";
+    }
     return finding_count == 0U ? 0 : 1;
   }
 

@@ -1,0 +1,1 @@
+#define UNUSED_MACRO 1

@@ -1,15 +1,19 @@
 /*
- * MISRA C:2012 Rule 8.6 - engineering scaffold
+ * MISRA C:2012 Rule 8.6 - Clang-backed detector
  *
  * Topic: Declarations and definitions
  * Engineering intent: Independent checker contract for Rule 8.6 in the Declarations and definitions family. The exact normative predicate remains linked to the controlled licensed rule specification.
  * Analysis expansion: Reconcile declarations, definitions, linkage, prototypes, qualifiers, and cross-translation-unit symbol records.
  * Normative notice: Wording, amplification, exceptions, and examples remain in
  * the licensed MISRA specification and require independent approval.
- * Implementation status: Scaffold only; no compliance decision is made.
+ * Detection contract: External entities with more than one definition across translation units are reported; referenced-but-undefined entities are reported as Possible. Whole-program rule: results are valid only when the compilation
+ * database covers the complete program.
+ * Findings produced by macro expansion are tagged; see docs/macro-policy.md.
+ * Implementation status: Implemented; independent validation is pending.
  */
 
 #include "misra/c2012/rule_factories.hpp"
+#include "misra/c2012/rule_support.hpp"
 
 #include <memory>
 
@@ -28,15 +32,14 @@ class Rule_08_06 final : public Rule {
         "Declarations and definitions",
         "Independent checker contract for Rule 8.6 in the Declarations and definitions family. The exact normative predicate remains linked to the controlled licensed rule specification.",
         "Reconcile declarations, definitions, linkage, prototypes, qualifiers, and cross-translation-unit symbol records.",
-        ImplementationStatus::Scaffold,
+        ImplementationStatus::Implemented,
     };
     return descriptor;
   }
 
   [[nodiscard]] RuleEvaluation evaluate(
       const AnalysisContext& context) const override {
-    (void)context;
-    return {EvaluationStatus::NotImplemented};
+    return support::definition_count(context);
   }
 };
 

@@ -1,15 +1,18 @@
 /*
- * MISRA C:2012 Rule 15.4 - engineering scaffold
+ * MISRA C:2012 Rule 15.4 - Clang-backed detector
  *
  * Topic: Control flow
  * Engineering intent: Independent checker contract for Rule 15.4 in the Control flow family. The exact normative predicate remains linked to the controlled licensed rule specification.
  * Analysis expansion: Build the control-flow graph and inspect jumps, loop exits, compound statements, and function exit structure.
  * Normative notice: Wording, amplification, exceptions, and examples remain in
  * the licensed MISRA specification and require independent approval.
- * Implementation status: Scaffold only; no compliance decision is made.
+ * Detection contract: No more than one break or goto may terminate an iteration statement (breaks bound to the loop plus gotos leaving it).
+ * Findings produced by macro expansion are tagged; see docs/macro-policy.md.
+ * Implementation status: Implemented; independent validation is pending.
  */
 
 #include "misra/c2012/rule_factories.hpp"
+#include "misra/c2012/rule_support.hpp"
 
 #include <memory>
 
@@ -28,15 +31,14 @@ class Rule_15_04 final : public Rule {
         "Control flow",
         "Independent checker contract for Rule 15.4 in the Control flow family. The exact normative predicate remains linked to the controlled licensed rule specification.",
         "Build the control-flow graph and inspect jumps, loop exits, compound statements, and function exit structure.",
-        ImplementationStatus::Scaffold,
+        ImplementationStatus::Implemented,
     };
     return descriptor;
   }
 
   [[nodiscard]] RuleEvaluation evaluate(
       const AnalysisContext& context) const override {
-    (void)context;
-    return {EvaluationStatus::NotImplemented};
+    return support::multiple_loop_exit_findings(context, "misra-c2012-15.4-multiple-loop-exits");
   }
 };
 
