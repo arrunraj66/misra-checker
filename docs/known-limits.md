@@ -202,3 +202,26 @@ licensed text before relying on a result.
   designator that overrides a positional initializer are not detected.
 * **9.5** reports a variable declared as an array without a size whose
   initializer uses array designators.
+
+## Rules 8.1 and 8.13
+* This catalogue has no Rules 8.15-8.17 (alignment specifiers come from a later
+  MISRA amendment), so they are not registered.
+* **8.1** (implicit `int`) is read from the compiler's own "type specifier
+  missing" and "parameter was not declared" diagnostics, because the AST no
+  longer records that the type was omitted. It therefore depends on the
+  compiler reporting them: the frontend re-enables `-Wimplicit-int` after the
+  project's flags, but `-w` (suppress all warnings) still hides them. The
+  compiler's diagnostics are printed as before.
+* **8.13** looks at pointer *parameters* only (not locals or members). A
+  parameter is reported when every use in the function body only reads the
+  pointee: dereference, subscript and member reads, comparisons, pointer
+  arithmetic, and passing to a parameter that is pointer-to-const. Any use it
+  does not recognise (passing to a non-const parameter, storing in a non-const
+  pointer, taking the address, a cast) counts as a possible change and
+  suppresses the finding, so the rule errs towards silence. Pointers to
+  pointers, `void *`, function pointers and incomplete types are skipped, as are
+  parameters that are never used. A function whose address is taken in the same
+  translation unit is skipped (a callback type may fix its signature). A
+  function with internal linkage is reported as definite; an externally
+  visible one is **possible** because another file may bind it to a function
+  pointer type. The catalogue lists the rule as undecidable.

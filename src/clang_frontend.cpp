@@ -22,10 +22,13 @@
 #include "clang/AST/RecursiveASTVisitor.h"
 #include "clang/AST/Stmt.h"
 #include "clang/AST/TypeLoc.h"
+#include "clang/Basic/Diagnostic.h"
+#include "clang/Basic/DiagnosticSema.h"
 #include "clang/Basic/SourceLocation.h"
 #include "clang/Basic/SourceManager.h"
 #include "clang/Frontend/CompilerInstance.h"
 #include "clang/Frontend/FrontendAction.h"
+#include "clang/Frontend/TextDiagnosticPrinter.h"
 #include "clang/Lex/Lexer.h"
 #include "clang/Lex/MacroInfo.h"
 #include "clang/Lex/PPCallbacks.h"
@@ -597,6 +600,10 @@ class FactVisitor final : public clang::RecursiveASTVisitor<FactVisitor> {
 
   bool VisitDeclRefExpr(clang::DeclRefExpr* reference) {
     note_automatic_use(reference);
+    if (const auto* parameter = llvm::dyn_cast<clang::ParmVarDecl>(reference->getDecl());
+        parameter != nullptr && parameter->getType()->isPointerType()) {
+      parameter_references_[parameter].push_back(reference);
+    }
     const clang::ValueDecl* const declaration = reference->getDecl();
     referenced_.insert(declaration);
     if (const auto* variable = llvm::dyn_cast<clang::VarDecl>(declaration)) {
@@ -608,6 +615,7 @@ class FactVisitor final : public clang::RecursiveASTVisitor<FactVisitor> {
       note_external_reference(function);
       if (!is_direct_callee(reference)) {
         note_address_taken(function, reference->getBeginLoc());
+        address_taken_in_unit_.insert(function->getCanonicalDecl());
       }
     } else if (const auto* variable =
                    llvm::dyn_cast<clang::VarDecl>(declaration)) {
@@ -842,6 +850,7 @@ class FactVisitor final : public clang::RecursiveASTVisitor<FactVisitor> {
   // Called once the whole translation unit has been traversed.
   void finish() {
     report_uninitialized_reads();
+    report_pointers_that_could_be_const();
     for (const clang::FunctionDecl* function : defined_functions_) {
       for (const clang::ParmVarDecl* parameter : function->parameters()) {
         if (!parameter->getName().empty() && referenced_.count(parameter) == 0U) {
@@ -1267,6 +1276,214 @@ class FactVisitor final : public clang::RecursiveASTVisitor<FactVisitor> {
     if (const auto array_loc = type_loc.getAs<clang::ArrayTypeLoc>();
         array_loc && array_loc.getSizeExpr() == nullptr) {
       syntax(variable->getLocation(), "misra-c2012-9.5-designated-array-size");
+    }
+  }
+
+  // ------------------------------------------------------------------ 8.13
+  [[nodiscard]] const clang::Stmt* parent_statement(const clang::Stmt* node) {
+    const auto parents = ast_.getParents(*node);
+    return parents.empty() ? nullptr : parents[0].get<clang::Stmt>();
+  }
+
+  static bool points_to_const(const clang::QualType type) {
+    return type->isPointerType() && type->getPointeeType().isConstQualified();
+  }
+
+  // An lvalue that designates (part of) the pointee: true when every use only
+  // reads it.
+  [[nodiscard]] bool lvalue_is_only_read(const clang::Stmt* node) {
+    for (;;) {
+      const auto parents = ast_.getParents(*node);
+      const clang::Stmt* const parent =
+          parents.empty() ? nullptr : parents[0].get<clang::Stmt>();
+      if (parent == nullptr) {
+        return false;
+      }
+      if (llvm::isa<clang::ParenExpr>(parent)) {
+        node = parent;
+        continue;
+      }
+      if (const auto* cast = llvm::dyn_cast<clang::ImplicitCastExpr>(parent)) {
+        if (cast->getCastKind() == clang::CK_LValueToRValue) {
+          return true;
+        }
+        if (cast->getCastKind() == clang::CK_ArrayToPointerDecay) {
+          const clang::Stmt* const above = parent_statement(parent);
+          if (const auto* subscript =
+                  llvm::dyn_cast_or_null<clang::ArraySubscriptExpr>(above);
+              subscript != nullptr && subscript->getBase() == parent) {
+            node = subscript;  // p->array[i] is again an lvalue into the pointee
+            continue;
+          }
+        }
+        return false;
+      }
+      if (const auto* member = llvm::dyn_cast<clang::MemberExpr>(parent);
+          member != nullptr && !member->isArrow()) {
+        node = parent;  // (*p).field
+        continue;
+      }
+      return llvm::isa<clang::UnaryExprOrTypeTraitExpr>(parent);
+    }
+  }
+
+  // The value of a pointer expression: true when every use leaves the pointee
+  // unmodified and never hands the pointer to something that is not
+  // pointer-to-const. Anything not recognised counts as a possible change.
+  [[nodiscard]] bool pointer_value_is_only_read(const clang::Stmt* node,
+                                                const clang::FunctionDecl* function) {
+    for (;;) {
+      const auto parents = ast_.getParents(*node);
+      if (parents.empty()) {
+        return false;
+      }
+      if (const auto* variable = parents[0].get<clang::VarDecl>()) {
+        return points_to_const(variable->getType());
+      }
+      const clang::Stmt* const parent = parents[0].get<clang::Stmt>();
+      if (parent == nullptr) {
+        return false;
+      }
+      if (llvm::isa<clang::ParenExpr>(parent)) {
+        node = parent;
+        continue;
+      }
+      if (const auto* cast = llvm::dyn_cast<clang::CastExpr>(parent)) {
+        if (cast->getCastKind() == clang::CK_LValueToRValue) {
+          node = parent;
+          continue;
+        }
+        if (cast->getCastKind() == clang::CK_PointerToBoolean) {
+          return true;
+        }
+        return points_to_const(cast->getType());
+      }
+      if (const auto* unary = llvm::dyn_cast<clang::UnaryOperator>(parent)) {
+        switch (unary->getOpcode()) {
+          case clang::UO_Deref:
+            return lvalue_is_only_read(parent);
+          case clang::UO_PreInc: case clang::UO_PostInc:
+          case clang::UO_PreDec: case clang::UO_PostDec:
+            node = parent;  // changes the pointer, not the pointee
+            continue;
+          case clang::UO_LNot:
+            return true;
+          default:
+            return false;
+        }
+      }
+      if (const auto* binary = llvm::dyn_cast<clang::BinaryOperator>(parent)) {
+        if (binary->isComparisonOp() || binary->isLogicalOp()) {
+          return true;
+        }
+        if (binary->getOpcode() == clang::BO_Comma) {
+          if (binary->getLHS() == node) {
+            return true;
+          }
+          node = parent;
+          continue;
+        }
+        if (binary->isAssignmentOp()) {
+          if (binary->getLHS() == node) {
+            if (binary->getOpcode() == clang::BO_Assign) {
+              return true;  // the pointer variable itself is overwritten
+            }
+            node = parent;  // p += n: the value is the new pointer
+            continue;
+          }
+          return points_to_const(binary->getLHS()->getType());
+        }
+        if (binary->getOpcode() == clang::BO_Add ||
+            binary->getOpcode() == clang::BO_Sub) {
+          if (!binary->getType()->isPointerType()) {
+            return true;  // p - q is an integer
+          }
+          node = parent;
+          continue;
+        }
+        return false;
+      }
+      if (const auto* conditional = llvm::dyn_cast<clang::ConditionalOperator>(parent)) {
+        if (conditional->getCond() == node) {
+          return true;
+        }
+        node = parent;
+        continue;
+      }
+      if (const auto* subscript = llvm::dyn_cast<clang::ArraySubscriptExpr>(parent)) {
+        return subscript->getBase() == node && lvalue_is_only_read(parent);
+      }
+      if (const auto* member = llvm::dyn_cast<clang::MemberExpr>(parent)) {
+        return member->isArrow() && member->getBase() == node &&
+               lvalue_is_only_read(parent);
+      }
+      if (const auto* call = llvm::dyn_cast<clang::CallExpr>(parent)) {
+        const clang::FunctionDecl* const callee = call->getDirectCallee();
+        if (callee == nullptr || !callee->hasPrototype()) {
+          return false;
+        }
+        for (unsigned index = 0U; index < call->getNumArgs() && index < callee->getNumParams();
+             ++index) {
+          if (call->getArg(index) == node) {
+            return points_to_const(callee->getParamDecl(index)->getType());
+          }
+        }
+        return false;
+      }
+      if (llvm::isa<clang::ReturnStmt>(parent)) {
+        return function != nullptr && points_to_const(function->getReturnType());
+      }
+      if (const auto* s = llvm::dyn_cast<clang::IfStmt>(parent)) {
+        return s->getCond() == node;
+      }
+      if (const auto* s = llvm::dyn_cast<clang::WhileStmt>(parent)) {
+        return s->getCond() == node;
+      }
+      if (const auto* s = llvm::dyn_cast<clang::ForStmt>(parent)) {
+        return s->getCond() == node;
+      }
+      return false;
+    }
+  }
+
+  // A pointer parameter whose every use only reads the pointee could point to
+  // const. A function whose address is taken keeps its signature (a callback
+  // type may dictate it) and is skipped; an externally visible function may be
+  // bound to a function-pointer type elsewhere, so it is only "possible".
+  void report_pointers_that_could_be_const() {
+    for (const clang::FunctionDecl* function : defined_functions_) {
+      if (address_taken_in_unit_.count(function->getCanonicalDecl()) != 0U) {
+        continue;
+      }
+      for (const clang::ParmVarDecl* parameter : function->parameters()) {
+        const clang::QualType type = parameter->getType();
+        if (!type->isPointerType()) {
+          continue;
+        }
+        const clang::QualType pointee = type->getPointeeType();
+        if (pointee.isConstQualified() || pointee->isVoidType() ||
+            pointee->isFunctionType() || pointee->isPointerType() ||
+            pointee->isIncompleteType()) {
+          continue;
+        }
+        const auto found = parameter_references_.find(parameter);
+        if (found == parameter_references_.end() || found->second.empty()) {
+          continue;
+        }
+        bool read_only = true;
+        for (const clang::DeclRefExpr* use : found->second) {
+          if (!pointer_value_is_only_read(use, function)) {
+            read_only = false;
+            break;
+          }
+        }
+        if (read_only) {
+          syntax(parameter->getLocation(), "misra-c2012-8.13-pointer-could-be-const",
+                 true,
+                 function->isExternallyVisible() ? FindingCertainty::Possible
+                                                 : FindingCertainty::Definite);
+        }
+      }
     }
   }
 
@@ -1744,6 +1961,9 @@ class FactVisitor final : public clang::RecursiveASTVisitor<FactVisitor> {
     std::vector<clang::SourceLocation> reads;
     std::vector<clang::SourceLocation> writes;  // end of the writing expression
   };
+  std::map<const clang::ParmVarDecl*, std::vector<const clang::DeclRefExpr*>>
+      parameter_references_;
+  std::set<const clang::FunctionDecl*> address_taken_in_unit_;
   std::map<const clang::VarDecl*, UseEvents> automatic_usage_;
   std::vector<const clang::VarDecl*> usage_order_;
   struct Scope final {
@@ -1842,6 +2062,50 @@ class PreprocessorRecorder final : public clang::PPCallbacks {
   Shared& shared_;
 };
 
+// Records the compiler's own "type specifier missing" diagnostics (Rule 8.1)
+// while still printing every diagnostic as usual.
+class DiagnosticRecorder final : public clang::DiagnosticConsumer {
+ public:
+  explicit DiagnosticRecorder(Shared& shared)
+      : shared_(shared),
+        options_(new clang::DiagnosticOptions()),
+        printer_(llvm::errs(), options_.get()) {}
+
+  void BeginSourceFile(const clang::LangOptions& lang,
+                       const clang::Preprocessor* preprocessor) override {
+    printer_.BeginSourceFile(lang, preprocessor);
+  }
+  void EndSourceFile() override { printer_.EndSourceFile(); }
+  void finish() override { printer_.finish(); }
+  void clear() override {
+    clang::DiagnosticConsumer::clear();
+    printer_.clear();
+  }
+
+  void HandleDiagnostic(clang::DiagnosticsEngine::Level level,
+                        const clang::Diagnostic& info) override {
+    clang::DiagnosticConsumer::HandleDiagnostic(level, info);
+    printer_.HandleDiagnostic(level, info);
+    const unsigned id = info.getID();
+    if ((id == clang::diag::ext_missing_type_specifier ||
+         id == clang::diag::ext_param_not_declared) &&
+        info.hasSourceManager()) {
+      if (const auto location =
+              locate(info.getSourceManager(), info.getLocation(), false)) {
+        if (shared_.fresh("implicit-int|" + location_text(*location))) {
+          shared_.context.syntax.push_back(
+              {*location, "misra-c2012-8.1-implicit-int"});
+        }
+      }
+    }
+  }
+
+ private:
+  Shared& shared_;
+  llvm::IntrusiveRefCntPtr<clang::DiagnosticOptions> options_;
+  clang::TextDiagnosticPrinter printer_;
+};
+
 class FactConsumer final : public clang::ASTConsumer {
  public:
   explicit FactConsumer(Shared& shared) : shared_(shared) {}
@@ -1918,12 +2182,15 @@ FrontendResult ClangFrontend::analyze(
   // is still analysed and the corresponding rule can report it, instead of
   // the whole translation unit failing. Unrelated errors still fail.
   tool.appendArgumentsAdjuster(clang::tooling::getInsertArgumentAdjuster(
-      {"-Wno-error=implicit-function-declaration", "-Wno-error=implicit-int",
+      {"-Wimplicit-int", "-Wno-error=implicit-function-declaration",
+       "-Wno-error=implicit-int",
        "-Wno-error=return-type", "-Wno-error=int-conversion",
        "-Wno-error=incompatible-pointer-types",
        "-Wno-error=incompatible-function-pointer-types"},
       clang::tooling::ArgumentInsertPosition::END));
   FactActionFactory factory(shared);
+  DiagnosticRecorder diagnostics(shared);
+  tool.setDiagnosticConsumer(&diagnostics);
   if (tool.run(&factory) != 0) {
     result.success = false;
     result.error_message = "Clang could not analyze one or more translation units";

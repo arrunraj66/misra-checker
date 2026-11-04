@@ -2,7 +2,7 @@
 
 This catalog records the engineering structures present in the checker. It deliberately does not reproduce the copyrighted normative rule wording. The licensed MISRA specification is the controlled source for rule predicates, amplification, exceptions, and examples.
 
-Current milestone: 60 rule classes are **scaffolds**; 83 have implemented Clang-backed syntactic detectors, but independent validation remains pending. A scaffold provides identity, metadata, an analysis plan, a factory, and a non-compliant-safe `NotImplemented` result. It is not a working compliance check.
+Current milestone: 58 rule classes are **scaffolds**; 85 have implemented Clang-backed syntactic detectors, but independent validation remains pending. A scaffold provides identity, metadata, an analysis plan, a factory, and a non-compliant-safe `NotImplemented` result. It is not a working compliance check.
 
 | Rule | Category | Decidability | Scope | C90 | C99 | Topic | Status |
 |---|---|---|---|---:|---:|---|---|
@@ -35,7 +35,7 @@ Current milestone: 60 rule classes are **scaffolds**; 83 have implemented Clang-
 | 7.2 | Required | Decidable | Single Translation Unit | Yes | Yes | Literals and constants | Scaffold |
 | 7.3 | Required | Decidable | Single Translation Unit | Yes | Yes | Literals and constants | Implemented; independent validation pending |
 | 7.4 | Required | Decidable | Single Translation Unit | Yes | Yes | Literals and constants | Scaffold |
-| 8.1 | Required | Decidable | Single Translation Unit | Yes | No | Declarations and definitions | Scaffold |
+| 8.1 | Required | Decidable | Single Translation Unit | Yes | No | Declarations and definitions | Implemented; independent validation pending |
 | 8.2 | Required | Decidable | Single Translation Unit | Yes | Yes | Declarations and definitions | Implemented; independent validation pending |
 | 8.3 | Required | Decidable | System | Yes | Yes | Declarations and definitions | Implemented; independent validation pending |
 | 8.4 | Required | Decidable | Single Translation Unit | Yes | Yes | Declarations and definitions | Implemented; independent validation pending |
@@ -47,7 +47,7 @@ Current milestone: 60 rule classes are **scaffolds**; 83 have implemented Clang-
 | 8.10 | Required | Decidable | Single Translation Unit | No | Yes | Declarations and definitions | Implemented; independent validation pending |
 | 8.11 | Advisory | Decidable | Single Translation Unit | Yes | Yes | Declarations and definitions | Implemented; independent validation pending |
 | 8.12 | Required | Decidable | Single Translation Unit | Yes | Yes | Declarations and definitions | Implemented; independent validation pending |
-| 8.13 | Advisory | Undecidable | System | Yes | Yes | Declarations and definitions | Scaffold |
+| 8.13 | Advisory | Undecidable | System | Yes | Yes | Declarations and definitions | Implemented; independent validation pending |
 | 8.14 | Required | Decidable | Single Translation Unit | No | Yes | Declarations and definitions | Implemented; independent validation pending |
 | 9.1 | Mandatory | Undecidable | System | Yes | Yes | Initialization | Implemented; independent validation pending |
 | 9.2 | Required | Decidable | Single Translation Unit | Yes | Yes | Initialization | Implemented; independent validation pending |
