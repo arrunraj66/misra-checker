@@ -177,3 +177,28 @@ licensed text before relying on a result.
   that discard bits and conversions such as `(unsigned)-1` are not reported.
   Only expressions whose operands are integer constant expressions are judged,
   so a wrap that depends on a `const` variable is not seen.
+
+## Section 9 rules (initialization) — 9.1-9.5
+* **9.1** is undecidable; this is a source-order approximation and every
+  finding is **possible**. An automatic scalar with no initializer is reported
+  at its first read when no assignment, compound assignment, increment or
+  address-of (`&x`, which is assumed to initialize it) occurs earlier in source
+  order. A write counts from the *end* of its expression, so `x = x + 1` is a
+  read before a write. Not modelled: branches and loops, so `if (c) x = 1;
+  use(x);` is accepted (a miss) and a read that precedes the assignment only in
+  source order inside a loop is reported (a false positive). Arrays, structures
+  and `volatile` objects are not tracked, and `sizeof x` is not a read.
+* **9.2** reports a nested aggregate initializer that has no braces of its own
+  (brace elision), detected from the source character at the start of the nested
+  list. The initializer `{0}` (possibly nested) is exempt for the whole object.
+  Macro-expanded initializers are judged by the character at their spelling.
+* **9.3** reports a constant-size array with fewer initializers than elements.
+  Exempt: `{0}`, a list that uses designators, a string literal, and an array
+  whose size comes from its initializer. A nested array is exempt only when its
+  own list is `{0}`; whether a nested explicit list was written with designators
+  is known only when Clang kept its original form.
+* **9.4** reports the same designator path used twice in one list (`[0]` twice,
+  `.x` twice). Overlapping but different paths (`.a = {...}, .a.b = 1`) and a
+  designator that overrides a positional initializer are not detected.
+* **9.5** reports a variable declared as an array without a size whose
+  initializer uses array designators.

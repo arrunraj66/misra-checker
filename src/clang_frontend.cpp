@@ -156,6 +156,21 @@ std::size_t count_returns(const clang::Stmt* statement) {
   return count;
 }
 
+// The one initializer form every aggregate may use: {0}, possibly nested.
+bool is_zero_brace(const clang::InitListExpr* syntactic) {
+  if (syntactic == nullptr || syntactic->getNumInits() != 1U) {
+    return false;
+  }
+  const clang::Expr* const only = syntactic->getInit(0)->IgnoreParenImpCasts();
+  if (const auto* literal = llvm::dyn_cast<clang::IntegerLiteral>(only)) {
+    return literal->getValue() == 0U;
+  }
+  if (const auto* nested = llvm::dyn_cast<clang::InitListExpr>(only)) {
+    return is_zero_brace(nested);
+  }
+  return false;
+}
+
 class FactVisitor final : public clang::RecursiveASTVisitor<FactVisitor> {
  public:
   FactVisitor(clang::ASTContext& ast, Shared& shared)
@@ -504,6 +519,51 @@ class FactVisitor final : public clang::RecursiveASTVisitor<FactVisitor> {
     return true;
   }
 
+  // ----------------------------------------------- Section 9 (initialization)
+  bool VisitInitListExpr(clang::InitListExpr* list) {
+    if (list->isSemanticForm()) {
+      return true;  // the syntactic form carries the designators
+    }
+    // 9.4: an element must not be initialized twice by designators.
+    std::set<std::string> seen;
+    for (const clang::Expr* init : list->inits()) {
+      const auto* designated = llvm::dyn_cast_or_null<clang::DesignatedInitExpr>(init);
+      if (designated == nullptr) {
+        continue;
+      }
+      std::string key;
+      for (const auto& designator : designated->designators()) {
+        if (designator.isFieldDesignator()) {
+          key += "." + designator.getFieldName()->getName().str();
+        } else if (designator.isArrayDesignator()) {
+          const auto index =
+              designated->getArrayIndex(designator)->getIntegerConstantExpr(ast_);
+          if (!index) {
+            key.clear();
+            break;
+          }
+          key += "[" + std::to_string(index->getSExtValue()) + "]";
+        } else {
+          key.clear();
+          break;
+        }
+      }
+      if (!key.empty() && !seen.insert(key).second) {
+        syntax(designated->getBeginLoc(),
+               "misra-c2012-9.4-duplicate-initialization");
+      }
+    }
+    return true;
+  }
+
+  bool VisitCompoundLiteralExpr(clang::CompoundLiteralExpr* literal) {
+    if (const auto* list =
+            llvm::dyn_cast_or_null<clang::InitListExpr>(literal->getInitializer())) {
+      check_initializer_tree(list);
+    }
+    return true;
+  }
+
   bool VisitReturnStmt(clang::ReturnStmt* statement) {
     if (statement->getRetValue() == nullptr && current_function_ != nullptr &&
         !current_function_->getReturnType()->isVoidType()) {
@@ -536,6 +596,7 @@ class FactVisitor final : public clang::RecursiveASTVisitor<FactVisitor> {
   }
 
   bool VisitDeclRefExpr(clang::DeclRefExpr* reference) {
+    note_automatic_use(reference);
     const clang::ValueDecl* const declaration = reference->getDecl();
     referenced_.insert(declaration);
     if (const auto* variable = llvm::dyn_cast<clang::VarDecl>(declaration)) {
@@ -669,6 +730,11 @@ class FactVisitor final : public clang::RecursiveASTVisitor<FactVisitor> {
         !llvm::isa<clang::ParmVarDecl>(variable)) {
       check_assignment(variable->getType(), init, variable->getLocation());
     }
+    if (const auto* list =
+            llvm::dyn_cast_or_null<clang::InitListExpr>(variable->getInit())) {
+      check_initializer_tree(list);
+      check_designated_array_size(variable, list);
+    }
     if (!variable->isFileVarDecl()) {
       return true;
     }
@@ -775,6 +841,7 @@ class FactVisitor final : public clang::RecursiveASTVisitor<FactVisitor> {
 
   // Called once the whole translation unit has been traversed.
   void finish() {
+    report_uninitialized_reads();
     for (const clang::FunctionDecl* function : defined_functions_) {
       for (const clang::ParmVarDecl* parameter : function->parameters()) {
         if (!parameter->getName().empty() && referenced_.count(parameter) == 0U) {
@@ -1116,6 +1183,179 @@ class FactVisitor final : public clang::RecursiveASTVisitor<FactVisitor> {
     if ((void_pointer(to) && non_boolean_arithmetic(from)) ||
         (void_pointer(from) && non_boolean_arithmetic(to))) {
       syntax(loc, "misra-c2012-11.6-void-pointer-arithmetic-conversion");
+    }
+  }
+
+  // 9.2 and 9.3 on a whole initializer: braces for every nested aggregate and
+  // no partially initialized array. {0} is exempt, as are designated lists.
+  void check_initializer_tree(const clang::InitListExpr* given) {
+    const clang::InitListExpr* semantic =
+        given->isSemanticForm() ? given : given->getSemanticForm();
+    const clang::InitListExpr* syntactic =
+        given->isSemanticForm() ? given->getSyntacticForm() : given;
+    if (semantic == nullptr) {
+      semantic = given;
+    }
+    if (is_zero_brace(syntactic)) {
+      return;
+    }
+    walk_initializer(semantic, syntactic);
+  }
+
+  void walk_initializer(const clang::InitListExpr* list,
+                        const clang::InitListExpr* syntactic) {
+    if (const auto* array = llvm::dyn_cast_or_null<clang::ConstantArrayType>(
+            list->getType()->getAsArrayTypeUnsafe());
+        array != nullptr && !is_zero_brace(syntactic)) {
+      bool designated = false;
+      if (syntactic != nullptr) {
+        for (const clang::Expr* init : syntactic->inits()) {
+          designated = designated || llvm::isa_and_nonnull<clang::DesignatedInitExpr>(init);
+        }
+      }
+      const bool string_init =
+          list->getNumInits() == 1U &&
+          llvm::isa_and_nonnull<clang::StringLiteral>(
+              list->getInit(0)->IgnoreParenImpCasts());
+      if (!designated && !string_init &&
+          list->getNumInits() < array->getSize().getZExtValue()) {
+        syntax(list->getBeginLoc(), "misra-c2012-9.3-partial-array-init");
+      }
+    }
+    for (const clang::Expr* child : list->inits()) {
+      const auto* nested = llvm::dyn_cast_or_null<clang::InitListExpr>(child);
+      if (nested == nullptr) {
+        continue;
+      }
+      if (nested->getType()->isAggregateType() && !starts_with_brace(nested)) {
+        syntax(nested->getBeginLoc(), "misra-c2012-9.2-initializer-braces");
+      }
+      walk_initializer(nested, nested->getSyntacticForm());
+    }
+  }
+
+  [[nodiscard]] bool starts_with_brace(const clang::InitListExpr* list) const {
+    bool invalid = false;
+    const char* const text = sm_.getCharacterData(
+        sm_.getSpellingLoc(list->getBeginLoc()), &invalid);
+    return !invalid && text != nullptr && *text == '{';
+  }
+
+  // 9.5: designators that select array elements need an explicit array size.
+  void check_designated_array_size(const clang::VarDecl* variable,
+                                   const clang::InitListExpr* list) {
+    const clang::InitListExpr* const syntactic =
+        list->isSemanticForm() ? list->getSyntacticForm() : list;
+    if (syntactic == nullptr || variable->getTypeSourceInfo() == nullptr) {
+      return;
+    }
+    bool array_designator = false;
+    for (const clang::Expr* init : syntactic->inits()) {
+      if (const auto* designated =
+              llvm::dyn_cast_or_null<clang::DesignatedInitExpr>(init)) {
+        for (const auto& designator : designated->designators()) {
+          array_designator = array_designator || designator.isArrayDesignator() ||
+                             designator.isArrayRangeDesignator();
+        }
+      }
+    }
+    if (!array_designator) {
+      return;
+    }
+    const clang::TypeLoc type_loc =
+        variable->getTypeSourceInfo()->getTypeLoc().getUnqualifiedLoc();
+    if (const auto array_loc = type_loc.getAs<clang::ArrayTypeLoc>();
+        array_loc && array_loc.getSizeExpr() == nullptr) {
+      syntax(variable->getLocation(), "misra-c2012-9.5-designated-array-size");
+    }
+  }
+
+  // 9.1 (approximation): an automatic scalar without an initializer that is
+  // read before any assignment or address-of appears in source order. Branches
+  // and loops are not modelled, so every finding is only "possible".
+  void note_automatic_use(const clang::DeclRefExpr* reference) {
+    const auto* variable = llvm::dyn_cast<clang::VarDecl>(reference->getDecl());
+    if (variable == nullptr || !variable->hasLocalStorage() ||
+        llvm::isa<clang::ParmVarDecl>(variable) || variable->getInit() != nullptr ||
+        variable->getType().isVolatileQualified() ||
+        !variable->getType()->isScalarType()) {
+      return;
+    }
+    const clang::Stmt* current = reference;
+    bool unevaluated = false;
+    for (;;) {  // sizeof (x) does not read x
+      const auto parents = ast_.getParents(*current);
+      if (parents.empty() || parents[0].get<clang::Stmt>() == nullptr) {
+        break;
+      }
+      current = parents[0].get<clang::Stmt>();
+      if (llvm::isa<clang::UnaryExprOrTypeTraitExpr>(current)) {
+        unevaluated = true;
+        break;
+      }
+    }
+    if (unevaluated) {
+      return;
+    }
+    const clang::VarDecl* const key = variable->getCanonicalDecl();
+    if (automatic_usage_.count(key) == 0U) {
+      usage_order_.push_back(key);
+    }
+    UseEvents& events = automatic_usage_[key];
+    current = reference;
+    for (;;) {
+      const auto parents = ast_.getParents(*current);
+      const clang::Stmt* const parent =
+          parents.empty() ? nullptr : parents[0].get<clang::Stmt>();
+      if (parent != nullptr && llvm::isa<clang::ParenExpr>(parent)) {
+        current = parent;
+        continue;
+      }
+      if (const auto* binary = llvm::dyn_cast_or_null<clang::BinaryOperator>(parent);
+          binary != nullptr && binary->isAssignmentOp() && binary->getLHS() == current) {
+        if (binary->getOpcode() != clang::BO_Assign) {
+          events.reads.push_back(reference->getBeginLoc());
+        }
+        events.writes.push_back(binary->getEndLoc());  // after the right side
+        return;
+      }
+      if (const auto* unary = llvm::dyn_cast_or_null<clang::UnaryOperator>(parent)) {
+        if (unary->getOpcode() == clang::UO_AddrOf) {
+          events.writes.push_back(unary->getEndLoc());
+          return;
+        }
+        if (unary->isIncrementDecrementOp()) {
+          events.reads.push_back(reference->getBeginLoc());
+          events.writes.push_back(unary->getEndLoc());
+          return;
+        }
+      }
+      events.reads.push_back(reference->getBeginLoc());
+      return;
+    }
+  }
+
+  void report_uninitialized_reads() {
+    const auto earliest = [this](const std::vector<clang::SourceLocation>& locations) {
+      clang::SourceLocation best = locations.front();
+      for (const clang::SourceLocation candidate : locations) {
+        if (sm_.isBeforeInTranslationUnit(candidate, best)) {
+          best = candidate;
+        }
+      }
+      return best;
+    };
+    for (const clang::VarDecl* variable : usage_order_) {
+      const UseEvents& events = automatic_usage_[variable];
+      if (events.reads.empty()) {
+        continue;
+      }
+      const clang::SourceLocation first_read = earliest(events.reads);
+      if (events.writes.empty() ||
+          sm_.isBeforeInTranslationUnit(first_read, earliest(events.writes))) {
+        syntax(first_read, "misra-c2012-9.1-uninitialized-read", true,
+               FindingCertainty::Possible);
+      }
     }
   }
 
@@ -1500,6 +1740,12 @@ class FactVisitor final : public clang::RecursiveASTVisitor<FactVisitor> {
   Shared& shared_;
   AnalysisContext& context_;
 
+  struct UseEvents final {
+    std::vector<clang::SourceLocation> reads;
+    std::vector<clang::SourceLocation> writes;  // end of the writing expression
+  };
+  std::map<const clang::VarDecl*, UseEvents> automatic_usage_;
+  std::vector<const clang::VarDecl*> usage_order_;
   struct Scope final {
     const void* key;
     std::size_t id;

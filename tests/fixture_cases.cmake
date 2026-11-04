@@ -75,6 +75,11 @@ misra_fixture_suite(
   "16.7|r16_7_compliant.c|0" "16.7|r16_7_violating.c|2"
   "12.2|r12_2_compliant.c|0" "12.2|r12_2_violating.c|5"
   "12.4|r12_4_compliant.c|0" "12.4|r12_4_violating.c|4"
+  "9.1|r09_1_compliant.c|0" "9.1|r09_1_violating.c|2"
+  "9.2|r09_2_compliant.c|0" "9.2|r09_2_violating.c|3"
+  "9.3|r09_3_compliant.c|0" "9.3|r09_3_violating.c|3"
+  "9.4|r09_4_compliant.c|0" "9.4|r09_4_violating.c|2"
+  "9.5|r09_5_compliant.c|0" "9.5|r09_5_violating.c|1"
   # Macro policy: the comma produced by PAIR() is found; the octal literal
   # inside a system-header macro (S_IRUSR) is not.
   "12.3|macro_origin.c|1" "7.1|macro_origin.c|0"

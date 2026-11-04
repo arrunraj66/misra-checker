@@ -2,7 +2,7 @@
 
 This catalog records the engineering structures present in the checker. It deliberately does not reproduce the copyrighted normative rule wording. The licensed MISRA specification is the controlled source for rule predicates, amplification, exceptions, and examples.
 
-Current milestone: 65 rule classes are **scaffolds**; 78 have implemented Clang-backed syntactic detectors, but independent validation remains pending. A scaffold provides identity, metadata, an analysis plan, a factory, and a non-compliant-safe `NotImplemented` result. It is not a working compliance check.
+Current milestone: 60 rule classes are **scaffolds**; 83 have implemented Clang-backed syntactic detectors, but independent validation remains pending. A scaffold provides identity, metadata, an analysis plan, a factory, and a non-compliant-safe `NotImplemented` result. It is not a working compliance check.
 
 | Rule | Category | Decidability | Scope | C90 | C99 | Topic | Status |
 |---|---|---|---|---:|---:|---|---|
@@ -49,11 +49,11 @@ Current milestone: 65 rule classes are **scaffolds**; 78 have implemented Clang-
 | 8.12 | Required | Decidable | Single Translation Unit | Yes | Yes | Declarations and definitions | Implemented; independent validation pending |
 | 8.13 | Advisory | Undecidable | System | Yes | Yes | Declarations and definitions | Scaffold |
 | 8.14 | Required | Decidable | Single Translation Unit | No | Yes | Declarations and definitions | Implemented; independent validation pending |
-| 9.1 | Mandatory | Undecidable | System | Yes | Yes | Initialization | Scaffold |
-| 9.2 | Required | Decidable | Single Translation Unit | Yes | Yes | Initialization | Scaffold |
-| 9.3 | Required | Decidable | Single Translation Unit | Yes | Yes | Initialization | Scaffold |
-| 9.4 | Required | Decidable | Single Translation Unit | No | Yes | Initialization | Scaffold |
-| 9.5 | Required | Decidable | Single Translation Unit | No | Yes | Initialization | Scaffold |
+| 9.1 | Mandatory | Undecidable | System | Yes | Yes | Initialization | Implemented; independent validation pending |
+| 9.2 | Required | Decidable | Single Translation Unit | Yes | Yes | Initialization | Implemented; independent validation pending |
+| 9.3 | Required | Decidable | Single Translation Unit | Yes | Yes | Initialization | Implemented; independent validation pending |
+| 9.4 | Required | Decidable | Single Translation Unit | No | Yes | Initialization | Implemented; independent validation pending |
+| 9.5 | Required | Decidable | Single Translation Unit | No | Yes | Initialization | Implemented; independent validation pending |
 | 10.1 | Required | Decidable | Single Translation Unit | Yes | Yes | Essential type model | Implemented; independent validation pending |
 | 10.2 | Required | Decidable | Single Translation Unit | Yes | Yes | Essential type model | Implemented; independent validation pending |
 | 10.3 | Required | Decidable | Single Translation Unit | Yes | Yes | Essential type model | Implemented; independent validation pending |
