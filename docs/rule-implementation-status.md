@@ -2,7 +2,7 @@
 
 This catalog records the engineering structures present in the checker. It deliberately does not reproduce the copyrighted normative rule wording. The licensed MISRA specification is the controlled source for rule predicates, amplification, exceptions, and examples.
 
-Current milestone: 80 rule classes are **scaffolds**; 63 have implemented Clang-backed syntactic detectors, but independent validation remains pending. A scaffold provides identity, metadata, an analysis plan, a factory, and a non-compliant-safe `NotImplemented` result. It is not a working compliance check.
+Current milestone: 72 rule classes are **scaffolds**; 71 have implemented Clang-backed syntactic detectors, but independent validation remains pending. A scaffold provides identity, metadata, an analysis plan, a factory, and a non-compliant-safe `NotImplemented` result. It is not a working compliance check.
 
 | Rule | Category | Decidability | Scope | C90 | C99 | Topic | Status |
 |---|---|---|---|---:|---:|---|---|
@@ -99,14 +99,14 @@ Current milestone: 80 rule classes are **scaffolds**; 63 have implemented Clang-
 | 16.5 | Required | Decidable | Single Translation Unit | Yes | Yes | Switch statements | Scaffold |
 | 16.6 | Required | Decidable | Single Translation Unit | Yes | Yes | Switch statements | Scaffold |
 | 16.7 | Required | Decidable | Single Translation Unit | Yes | Yes | Switch statements | Scaffold |
-| 17.1 | Required | Decidable | Single Translation Unit | Yes | Yes | Functions | Scaffold |
-| 17.2 | Required | Undecidable | System | Yes | Yes | Functions | Scaffold |
-| 17.3 | Mandatory | Decidable | Single Translation Unit | Yes | No | Functions | Scaffold |
-| 17.4 | Mandatory | Decidable | Single Translation Unit | Yes | Yes | Functions | Scaffold |
-| 17.5 | Advisory | Undecidable | System | Yes | Yes | Functions | Scaffold |
-| 17.6 | Mandatory | Decidable | Single Translation Unit | No | Yes | Functions | Scaffold |
-| 17.7 | Required | Decidable | Single Translation Unit | Yes | Yes | Functions | Scaffold |
-| 17.8 | Advisory | Undecidable | System | Yes | Yes | Functions | Scaffold |
+| 17.1 | Required | Decidable | Single Translation Unit | Yes | Yes | Functions | Implemented; independent validation pending |
+| 17.2 | Required | Undecidable | System | Yes | Yes | Functions | Implemented; independent validation pending |
+| 17.3 | Mandatory | Decidable | Single Translation Unit | Yes | No | Functions | Implemented; independent validation pending |
+| 17.4 | Mandatory | Decidable | Single Translation Unit | Yes | Yes | Functions | Implemented; independent validation pending |
+| 17.5 | Advisory | Undecidable | System | Yes | Yes | Functions | Implemented; independent validation pending |
+| 17.6 | Mandatory | Decidable | Single Translation Unit | No | Yes | Functions | Implemented; independent validation pending |
+| 17.7 | Required | Decidable | Single Translation Unit | Yes | Yes | Functions | Implemented; independent validation pending |
+| 17.8 | Advisory | Undecidable | System | Yes | Yes | Functions | Implemented; independent validation pending |
 | 18.1 | Required | Undecidable | System | Yes | Yes | Pointers and arrays | Scaffold |
 | 18.2 | Required | Undecidable | System | Yes | Yes | Pointers and arrays | Scaffold |
 | 18.3 | Required | Undecidable | System | Yes | Yes | Pointers and arrays | Scaffold |

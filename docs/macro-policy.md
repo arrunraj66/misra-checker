@@ -26,8 +26,8 @@ produces different findings depending on how it is wrapped in macros.
    literals, declarations) a construct whose *spelling* is inside a system
    header is ignored even when it is invoked from project code. Examples:
    an octal constant inside `S_IRUSR`, a comma inside a library macro.
-4. **Calls are the exception to rule 3.** A call fact is keyed on the call
-   site, so a project macro such as `#define RELEASE(p) free(p)` is reported
+4. **Uses of a banned facility are the exception to rule 3.** A call fact, and
+   a `va_arg` expression (Rule 17.1), are keyed on the call site, so a project macro such as `#define RELEASE(p) free(p)` is reported
    (tagged `[macro]`), while a library-internal macro that happens to call a
    banned function is not.
 5. **One finding per rule, kind and expansion site.** Several offending

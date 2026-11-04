@@ -21,6 +21,7 @@ RuleEvaluation include_findings(const AnalysisContext& context,
                                 std::string_view key);
 RuleEvaluation non_boolean_condition_findings(const AnalysisContext& context,
                                               std::string_view key);
+RuleEvaluation merged(RuleEvaluation first, RuleEvaluation second);
 RuleEvaluation multiple_loop_exit_findings(const AnalysisContext& context,
                                            std::string_view key);
 RuleEvaluation function_exit_findings(const AnalysisContext& context,
@@ -38,6 +39,7 @@ RuleEvaluation duplicate_typedef_names(const AnalysisContext& context);     // 5
 RuleEvaluation duplicate_tag_names(const AnalysisContext& context);         // 5.7
 RuleEvaluation external_internal_name_clash(const AnalysisContext& context);// 5.8
 RuleEvaluation internal_name_not_unique(const AnalysisContext& context);    // 5.9
+RuleEvaluation recursive_calls(const AnalysisContext& context);             // 17.2
 RuleEvaluation unused_typedefs(const AnalysisContext& context);             // 2.3
 RuleEvaluation unused_tags(const AnalysisContext& context);                 // 2.4
 RuleEvaluation unused_macros(const AnalysisContext& context);               // 2.5

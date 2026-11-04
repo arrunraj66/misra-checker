@@ -5,6 +5,18 @@
 # the named files (relative to <fixture-dir>) are analysed together as one
 # program and the rule must report exactly <findings> findings.
 function(misra_fixture_suite name dir)
+  # MISRA_FIXTURE_STD selects the language mode (default C99); some rules can
+  # only be exercised in C90, where the compiler still accepts the construct.
+  if(DEFINED MISRA_FIXTURE_STD)
+    set(std "${MISRA_FIXTURE_STD}")
+  else()
+    set(std "c99")
+  endif()
+  # MISRA_FIXTURE_FLAGS: extra compiler arguments, as a quoted JSON fragment
+  # such as ",\"-Wno-error=return-type\"".
+  if(NOT DEFINED MISRA_FIXTURE_FLAGS)
+    set(MISRA_FIXTURE_FLAGS "")
+  endif()
   file(GLOB_RECURSE sources CONFIGURE_DEPENDS "${dir}/*.c")
   set(json "[")
   set(sep "")
@@ -14,8 +26,8 @@ function(misra_fixture_suite name dir)
       APPEND json
       "${sep}{\"directory\":\"${source_dir}\","
       "\"file\":\"${source}\","
-      "\"arguments\":[\"${CLANG_EXECUTABLE}\",\"-std=c99\","
-      "\"-I\",\"${source_dir}\",\"-c\",\"${source}\"]}"
+      "\"arguments\":[\"${CLANG_EXECUTABLE}\",\"-std=${std}\","
+      "\"-I\",\"${source_dir}\"${MISRA_FIXTURE_FLAGS},\"-c\",\"${source}\"]}"
     )
     set(sep ",")
   endforeach()

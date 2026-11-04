@@ -12,6 +12,8 @@
 #include <utility>
 #include <vector>
 
+#include "clang/Analysis/Analyses/ReachableCode.h"
+#include "clang/Analysis/CFG.h"
 #include "clang/AST/ASTConsumer.h"
 #include "clang/AST/ASTContext.h"
 #include "clang/AST/Decl.h"
@@ -31,6 +33,7 @@
 #include "clang/Tooling/CompilationDatabase.h"
 #include "clang/Tooling/JSONCompilationDatabase.h"
 #include "clang/Tooling/Tooling.h"
+#include "llvm/ADT/BitVector.h"
 #include "llvm/ADT/SmallString.h"
 #include "llvm/Config/llvm-config.h"
 
@@ -297,15 +300,39 @@ class FactVisitor final : public clang::RecursiveASTVisitor<FactVisitor> {
 
   // -------------------------------------------------------------- expressions
   bool VisitCallExpr(clang::CallExpr* call) {
+    // 17.7: the value returned by a non-void function must be used. This
+    // covers calls through function pointers; an explicit cast to void is a
+    // deliberate discard and is accepted.
+    if (!call->getType()->isVoidType() && !value_is_used(call, true)) {
+      syntax(call->getBeginLoc(), "misra-c2012-17.7-return-value-ignored");
+    }
     const clang::FunctionDecl* const callee = call->getDirectCallee();
     if (callee == nullptr || !callee->getIdentifier()) {
       return true;
     }
+    // 17.3: a function used without a visible declaration. Compiler builtins
+    // (including those behind <stdarg.h>) are declared implicitly by design.
+    if (callee->isImplicit() && !callee->getName().starts_with("__builtin_")) {
+      syntax(call->getBeginLoc(), "misra-c2012-17.3-implicit-declaration");
+    }
+    note_call_edge(call, callee);
     if (callee->hasPrototype()) {
       const unsigned count = std::min(call->getNumArgs(), callee->getNumParams());
       for (unsigned index = 0U; index < count; ++index) {
         check_assignment(callee->getParamDecl(index)->getType(),
                          call->getArg(index), call->getArg(index)->getExprLoc());
+        // 17.5: an array argument must be at least as large as the declared
+        // bound of the array parameter. Only arguments that are themselves
+        // arrays of known size can be judged.
+        const auto* declared = llvm::dyn_cast_or_null<clang::ConstantArrayType>(
+            callee->getParamDecl(index)->getOriginalType()->getAsArrayTypeUnsafe());
+        const auto* supplied = llvm::dyn_cast_or_null<clang::ConstantArrayType>(
+            call->getArg(index)->IgnoreParenImpCasts()->getType()->getAsArrayTypeUnsafe());
+        if (declared != nullptr && supplied != nullptr &&
+            supplied->getSize().ult(declared->getSize())) {
+          syntax(call->getArg(index)->getExprLoc(),
+                 "misra-c2012-17.5-array-argument-too-small");
+        }
       }
     }
     const clang::SourceLocation spelling = call->getBeginLoc();
@@ -320,7 +347,18 @@ class FactVisitor final : public clang::RecursiveASTVisitor<FactVisitor> {
     return true;
   }
 
+  bool VisitVAArgExpr(clang::VAArgExpr* expression) {
+    // A use of a banned library facility: keyed on the invocation even though
+    // the va_arg macro itself is spelled in a system header.
+    syntax(expression->getBuiltinLoc(), "misra-c2012-17.1-stdarg", false);
+    return true;
+  }
+
   bool VisitBinaryOperator(clang::BinaryOperator* expression) {
+    if (expression->isAssignmentOp()) {
+      note_parameter_modification(expression->getLHS(),
+                                  expression->getOperatorLoc());
+    }
     if (expression->getOpcode() == clang::BO_Comma) {
       syntax(expression->getOperatorLoc(), "misra-c2012-12.3-comma");
     }
@@ -335,6 +373,10 @@ class FactVisitor final : public clang::RecursiveASTVisitor<FactVisitor> {
   // ------------------------------------------------- Section 10 (type rules)
   bool VisitUnaryOperator(clang::UnaryOperator* expression) {
     using essential::Operand;
+    if (expression->isIncrementDecrementOp()) {
+      note_parameter_modification(expression->getSubExpr(),
+                                  expression->getOperatorLoc());
+    }
     std::optional<Operand> position;
     switch (expression->getOpcode()) {
       case clang::UO_Plus: position = Operand::UnaryPlus; break;
@@ -402,6 +444,10 @@ class FactVisitor final : public clang::RecursiveASTVisitor<FactVisitor> {
   }
 
   bool VisitReturnStmt(clang::ReturnStmt* statement) {
+    if (statement->getRetValue() == nullptr && current_function_ != nullptr &&
+        !current_function_->getReturnType()->isVoidType()) {
+      syntax(statement->getReturnLoc(), "misra-c2012-17.4-missing-return");
+    }
     if (statement->getRetValue() != nullptr && current_function_ != nullptr) {
       check_assignment(current_function_->getReturnType(),
                        statement->getRetValue(), statement->getReturnLoc());
@@ -515,6 +561,9 @@ class FactVisitor final : public clang::RecursiveASTVisitor<FactVisitor> {
     }
     if (definition) {
       defined_functions_.push_back(function);
+      if (!function->getReturnType()->isVoidType() && falls_off_end(function)) {
+        syntax(function->getLocation(), "misra-c2012-17.4-missing-return");
+      }
       const auto* body = llvm::dyn_cast_or_null<clang::CompoundStmt>(function->getBody());
       if (body != nullptr) {
         const std::size_t returns = count_returns(body);
@@ -540,6 +589,13 @@ class FactVisitor final : public clang::RecursiveASTVisitor<FactVisitor> {
             : variable->getType();
     if (has_variable_length_array(declared)) {
       syntax(variable->getLocation(), "misra-c2012-18.8-variable-length-array");
+    }
+    if (llvm::isa<clang::ParmVarDecl>(variable)) {
+      if (const clang::ArrayType* array = declared->getAsArrayTypeUnsafe();
+          array != nullptr &&
+          array->getSizeModifier() == clang::ArraySizeModifier::Static) {
+        syntax(variable->getLocation(), "misra-c2012-17.6-static-array-parameter");
+      }
     }
     if (variable->getType().isRestrictQualified()) {
       syntax(variable->getLocation(), "misra-c2012-8.14-restrict");
@@ -703,6 +759,73 @@ class FactVisitor final : public clang::RecursiveASTVisitor<FactVisitor> {
         return true;
       default:
         return false;
+    }
+  }
+
+  // True when control can reach the closing brace of a non-void function. The
+  // test mirrors the compiler's own missing-return analysis: some reachable
+  // predecessor of the exit block must end in something other than a return
+  // or a call that does not return.
+  [[nodiscard]] bool falls_off_end(const clang::FunctionDecl* function) {
+    if (function->getBody() == nullptr) {
+      return false;
+    }
+    std::unique_ptr<clang::CFG> cfg = clang::CFG::buildCFG(
+        function, function->getBody(), &ast_, clang::CFG::BuildOptions());
+    if (!cfg) {
+      return false;
+    }
+    llvm::BitVector reachable(cfg->getNumBlockIDs(), false);
+    clang::reachable_code::ScanReachableFromBlock(&cfg->getEntry(), reachable);
+    for (const clang::CFGBlock* block : cfg->getExit().preds()) {
+      if (block == nullptr || !reachable[block->getBlockID()] ||
+          block->hasNoReturnElement()) {
+        continue;
+      }
+      if (!block->empty()) {
+        if (const auto last = block->back().getAs<clang::CFGStmt>();
+            last && llvm::isa<clang::ReturnStmt>(last->getStmt())) {
+          continue;
+        }
+      }
+      return true;
+    }
+    return false;
+  }
+
+  // 17.8: assignment, increment or decrement of a parameter itself (not of
+  // the object it points to).
+  void note_parameter_modification(const clang::Expr* target,
+                                   const clang::SourceLocation loc) {
+    if (const auto* reference =
+            llvm::dyn_cast<clang::DeclRefExpr>(target->IgnoreParenImpCasts())) {
+      if (llvm::isa<clang::ParmVarDecl>(reference->getDecl())) {
+        syntax(loc, "misra-c2012-17.8-parameter-modified");
+      }
+    }
+  }
+
+  [[nodiscard]] std::string function_key(const clang::FunctionDecl* function) {
+    const std::string name = function->getNameAsString();
+    if (function->isExternallyVisible()) {
+      return name;
+    }
+    const auto location = locate(sm_, function->getFirstDecl()->getLocation(), false);
+    return location ? location->file + "::" + name : name;
+  }
+
+  void note_call_edge(const clang::CallExpr* call, const clang::FunctionDecl* callee) {
+    if (current_function_ == nullptr ||
+        sm_.isInSystemHeader(callee->getLocation())) {
+      return;
+    }
+    if (const auto location = locate(sm_, call->getBeginLoc(), false)) {
+      const std::string caller = function_key(current_function_);
+      const std::string target = function_key(callee);
+      if (shared_.fresh("edge|" + caller + "|" + target + "|" +
+                        location_text(*location))) {
+        context_.program.call_edges.push_back({*location, caller, target});
+      }
     }
   }
 
@@ -965,8 +1088,9 @@ class FactVisitor final : public clang::RecursiveASTVisitor<FactVisitor> {
     }
   }
 
-  void syntax(const clang::SourceLocation raw, const std::string_view kind) {
-    if (const auto location = locate(sm_, raw)) {
+  void syntax(const clang::SourceLocation raw, const std::string_view kind,
+              const bool structural = true) {
+    if (const auto location = locate(sm_, raw, structural)) {
       add(context_.syntax, std::string(kind),
           SyntaxFact{*location, kind});
     }
@@ -1070,7 +1194,8 @@ class FactVisitor final : public clang::RecursiveASTVisitor<FactVisitor> {
   }
 
   // True when the value produced by an assignment is consumed by its context.
-  [[nodiscard]] bool value_is_used(const clang::Stmt* node) {
+  [[nodiscard]] bool value_is_used(const clang::Stmt* node,
+                                   const bool void_cast_is_use = false) {
     const clang::Stmt* current = node;
     for (;;) {
       const auto parents = ast_.getParents(*current);
@@ -1111,7 +1236,7 @@ class FactVisitor final : public clang::RecursiveASTVisitor<FactVisitor> {
         return false;
       }
       if (const auto* cast = llvm::dyn_cast<clang::CastExpr>(parent)) {
-        return !cast->getType()->isVoidType();
+        return void_cast_is_use || !cast->getType()->isVoidType();
       }
       if (llvm::isa<clang::Expr>(parent)) {
         return true;

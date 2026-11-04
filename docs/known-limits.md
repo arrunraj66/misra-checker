@@ -99,3 +99,35 @@ licensed text before relying on a result.
 * 11.4 and 11.6 do not report conversions to or from `_Bool`.
 * 11.8 compares only the first pointer level; `char **` to `const char *const *`
   is not examined.
+
+## Section 17 rules (functions) — 17.1-17.8
+* **17.1** reports the `#include <stdarg.h>` directive and each `va_arg`
+  expression (keyed on the invocation, see the macro policy).
+* **17.2** builds a call graph from *direct* calls between project functions
+  and reports each call that lies on a cycle (a function calling itself, or
+  mutual recursion through any number of functions). Static functions of the
+  same name in different files are kept distinct. Calls through function
+  pointers, and calls into system headers, are not followed, so recursion
+  through a callback is missed. The catalogue lists this rule as undecidable;
+  this is the syntactic subset.
+* **17.3** needs a compiler mode that accepts implicit declarations. In C99 and
+  later Clang rejects them as errors, which the checker reports as an analysis
+  failure (exit code 2) rather than a finding, so run C90 code in C90 mode.
+  Compiler builtins (`__builtin_*`) are declared implicitly by design and are
+  not reported.
+* **17.4** reports a `return;` in a non-void function, and a non-void function
+  whose closing brace is reachable. Reachability uses Clang's control-flow
+  graph (constant loop conditions and non-returning calls are understood), the
+  same analysis behind the compiler's missing-return warning. `main` is
+  included: the C99 implicit `return 0` does not exempt it. A bare `return;`
+  is a hard error in recent Clang; build C90 code with
+  `-Wno-error=return-type` to see it as a finding.
+* **17.5** compares the declared bound of an array parameter with an argument
+  that is itself an array of known size. A pointer argument cannot be judged
+  and is never reported. The catalogue lists this rule as undecidable.
+* **17.6** reports `static` inside an array parameter declarator.
+* **17.7** covers every call, including calls through function pointers.
+  `(void)f();` is a deliberate discard and is accepted.
+* **17.8** reports assignment, increment and decrement of the parameter itself.
+  Modification through a pointer, or by taking the parameter's address, is not
+  followed (the catalogue lists this rule as undecidable).

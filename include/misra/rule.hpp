@@ -175,12 +175,22 @@ struct MacroFact final {
   std::size_t translation_unit;
 };
 
+// A direct call between two project functions, for the call-graph rules.
+// Names are qualified for internal-linkage functions so equal static names in
+// different files stay distinct.
+struct CallEdgeFact final {
+  SourceLocation location;
+  std::string caller;
+  std::string callee;
+};
+
 // Cross-translation-unit facts. Only meaningful when the compilation database
 // covers the whole program.
 struct ProgramFacts final {
   std::vector<DeclarationFact> declarations;
   std::vector<ReferenceFact> references;
   std::vector<MacroFact> macros;
+  std::vector<CallEdgeFact> call_edges;
   std::set<std::string> used_macros;
   // Keys produced by declaration_key() of typedefs/tags that are referenced.
   std::set<std::string> referenced_declarations;

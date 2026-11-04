@@ -33,8 +33,8 @@ src/rule_registry.cpp                  constructs the complete rule pack
 tests/rule_registry_test.cpp           validates count, uniqueness and totals
 ```
 
-63 of the 143 rules now have Clang-backed detectors (see
-[docs/rule-implementation-status.md](docs/rule-implementation-status.md)). The remaining 80 classes
+71 of the 143 rules now have Clang-backed detectors (see
+[docs/rule-implementation-status.md](docs/rule-implementation-status.md)). The remaining 72 classes
 are scaffolds returning `EvaluationStatus::NotImplemented`. All implemented
 rules still require independent validation; the product must not yet be
 represented as qualified, certified, or compliance-ready. Each detector will
@@ -91,6 +91,10 @@ licensed MISRA text.
 
 Pointer-conversion rules 11.1-11.6, 11.8 and 11.9 work on Clang cast nodes; 11.7
 cannot be observed because the compiler rejects the cast it describes.
+
+Function rules 17.1-17.8 include a call graph (17.2) and a control-flow-graph
+missing-return check (17.4). Rules that the compiler rejects in C99 mode (17.3)
+are tested in a separate C90 suite.
 
 ## Whole-program rules and macros
 

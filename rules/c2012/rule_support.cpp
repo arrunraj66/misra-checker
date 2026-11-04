@@ -375,6 +375,83 @@ RuleEvaluation unused_declarations(const AnalysisContext& context,
 
 }  // namespace
 
+RuleEvaluation merged(RuleEvaluation first, RuleEvaluation second) {
+  first.findings.insert(first.findings.end(), second.findings.begin(),
+                        second.findings.end());
+  return first;
+}
+
+namespace {
+
+// Strongly connected components of the call graph (Tarjan). A call is
+// recursive when caller and callee lie in the same component, which includes
+// a function calling itself.
+class CallGraph final {
+ public:
+  explicit CallGraph(const std::vector<CallEdgeFact>& edges) {
+    for (const CallEdgeFact& e : edges) {
+      successors_[e.caller].push_back(e.callee);
+      successors_[e.callee];  // make sure every node exists
+    }
+    for (const auto& node : successors_) {
+      if (index_.count(node.first) == 0U) visit(node.first);
+    }
+  }
+
+  [[nodiscard]] bool same_component(const std::string& a,
+                                    const std::string& b) const {
+    return component_.at(a) == component_.at(b);
+  }
+
+ private:
+  void visit(const std::string& node) {
+    index_[node] = low_[node] = next_++;
+    stack_.push_back(node);
+    on_stack_.insert(node);
+    for (const std::string& next : successors_[node]) {
+      if (index_.count(next) == 0U) {
+        visit(next);
+        low_[node] = std::min(low_[node], low_[next]);
+      } else if (on_stack_.count(next) != 0U) {
+        low_[node] = std::min(low_[node], index_[next]);
+      }
+    }
+    if (low_[node] == index_[node]) {
+      for (;;) {
+        const std::string top = stack_.back();
+        stack_.pop_back();
+        on_stack_.erase(top);
+        component_[top] = node;
+        if (top == node) break;
+      }
+    }
+  }
+
+  std::map<std::string, std::vector<std::string>> successors_;
+  std::map<std::string, std::size_t> index_;
+  std::map<std::string, std::size_t> low_;
+  std::map<std::string, std::string> component_;
+  std::vector<std::string> stack_;
+  std::set<std::string> on_stack_;
+  std::size_t next_ = 0U;
+};
+
+}  // namespace
+
+RuleEvaluation recursive_calls(const AnalysisContext& context) {
+  RuleEvaluation e = complete();
+  const CallGraph graph(context.program.call_edges);
+  std::set<std::string> reported;
+  for (const CallEdgeFact& edge : context.program.call_edges) {
+    if (graph.same_component(edge.caller, edge.callee) &&
+        reported.insert(where(edge.location)).second) {
+      e.findings.push_back({"misra-c2012-17.2-recursion", edge.location,
+                            FindingCertainty::Definite});
+    }
+  }
+  return e;
+}
+
 RuleEvaluation unused_typedefs(const AnalysisContext& context) {
   return unused_declarations(context, DeclKind::Typedef,
                              "misra-c2012-2.3-unused-typedef");
