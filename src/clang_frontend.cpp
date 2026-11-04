@@ -430,6 +430,14 @@ class FactVisitor final : public clang::RecursiveASTVisitor<FactVisitor> {
       note_parameter_modification(expression->getSubExpr(),
                                   expression->getOperatorLoc());
     }
+    if (expression->getOpcode() == clang::UO_Minus &&
+        expression->getType()->isUnsignedIntegerType()) {
+      if (const auto value = expression->getSubExpr()->getIntegerConstantExpr(ast_);
+          value && !value->isZero()) {
+        syntax(expression->getOperatorLoc(),
+               "misra-c2012-12.4-constant-unsigned-wrap");
+      }
+    }
     std::optional<Operand> position;
     switch (expression->getOpcode()) {
       case clang::UO_Plus: position = Operand::UnaryPlus; break;
@@ -1111,6 +1119,55 @@ class FactVisitor final : public clang::RecursiveASTVisitor<FactVisitor> {
     }
   }
 
+  // 12.2: a constant shift count must lie in [0, width of the left operand).
+  // Counts that are not constants cannot be judged here.
+  void check_shift_count(const clang::BinaryOperator* expression,
+                         const essential::Type& left,
+                         const essential::Type& right) {
+    const clang::BinaryOperatorKind op = expression->getOpcode();
+    if (op != clang::BO_Shl && op != clang::BO_Shr && op != clang::BO_ShlAssign &&
+        op != clang::BO_ShrAssign) {
+      return;
+    }
+    if (!right.is_constant() || left.width == 0U ||
+        left.category == essential::Category::Other ||
+        left.category == essential::Category::Boolean ||
+        left.category == essential::Category::Floating) {
+      return;
+    }
+    const bool negative = right.constant->isSigned() && right.constant->isNegative();
+    if (negative || right.constant->getActiveBits() > 32U ||
+        right.constant->getZExtValue() >= left.width) {
+      syntax(expression->getOperatorLoc(), "misra-c2012-12.2-shift-count-range");
+    }
+  }
+
+  // 12.4: evaluating a constant unsigned expression must not wrap around.
+  void check_constant_unsigned_wrap(const clang::BinaryOperator* expression) {
+    const clang::BinaryOperatorKind op = expression->getOpcode();
+    if ((op != clang::BO_Add && op != clang::BO_Sub && op != clang::BO_Mul) ||
+        !expression->getType()->isUnsignedIntegerType()) {
+      return;
+    }
+    const auto left = expression->getLHS()->getIntegerConstantExpr(ast_);
+    const auto right = expression->getRHS()->getIntegerConstantExpr(ast_);
+    if (!left || !right) {
+      return;
+    }
+    const unsigned width = static_cast<unsigned>(ast_.getTypeSize(expression->getType()));
+    const llvm::APInt a = left->extOrTrunc(width);
+    const llvm::APInt b = right->extOrTrunc(width);
+    bool overflow = false;
+    switch (op) {
+      case clang::BO_Add: (void)a.uadd_ov(b, overflow); break;
+      case clang::BO_Sub: (void)a.usub_ov(b, overflow); break;
+      default: (void)a.umul_ov(b, overflow); break;
+    }
+    if (overflow) {
+      syntax(expression->getOperatorLoc(), "misra-c2012-12.4-constant-unsigned-wrap");
+    }
+  }
+
   void check_binary_types(const clang::BinaryOperator* expression) {
     using essential::Operand;
     const clang::BinaryOperatorKind op = expression->getOpcode();
@@ -1125,6 +1182,8 @@ class FactVisitor final : public clang::RecursiveASTVisitor<FactVisitor> {
     }
     const essential::Type left = essential::of_expression(expression->getLHS(), ast_);
     const essential::Type right = essential::of_expression(expression->getRHS(), ast_);
+    check_shift_count(expression, left, right);
+    check_constant_unsigned_wrap(expression);
 
     Operand left_position = Operand::Equality;
     Operand right_position = Operand::Equality;

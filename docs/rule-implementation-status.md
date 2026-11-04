@@ -2,7 +2,7 @@
 
 This catalog records the engineering structures present in the checker. It deliberately does not reproduce the copyrighted normative rule wording. The licensed MISRA specification is the controlled source for rule predicates, amplification, exceptions, and examples.
 
-Current milestone: 67 rule classes are **scaffolds**; 76 have implemented Clang-backed syntactic detectors, but independent validation remains pending. A scaffold provides identity, metadata, an analysis plan, a factory, and a non-compliant-safe `NotImplemented` result. It is not a working compliance check.
+Current milestone: 65 rule classes are **scaffolds**; 78 have implemented Clang-backed syntactic detectors, but independent validation remains pending. A scaffold provides identity, metadata, an analysis plan, a factory, and a non-compliant-safe `NotImplemented` result. It is not a working compliance check.
 
 | Rule | Category | Decidability | Scope | C90 | C99 | Topic | Status |
 |---|---|---|---|---:|---:|---|---|
@@ -72,9 +72,9 @@ Current milestone: 67 rule classes are **scaffolds**; 76 have implemented Clang-
 | 11.8 | Required | Decidable | Single Translation Unit | Yes | Yes | Pointer conversions | Implemented; independent validation pending |
 | 11.9 | Required | Decidable | Single Translation Unit | Yes | Yes | Pointer conversions | Implemented; independent validation pending |
 | 12.1 | Advisory | Decidable | Single Translation Unit | Yes | Yes | Expressions | Scaffold |
-| 12.2 | Required | Undecidable | System | Yes | Yes | Expressions | Scaffold |
+| 12.2 | Required | Undecidable | System | Yes | Yes | Expressions | Implemented; independent validation pending |
 | 12.3 | Advisory | Decidable | Single Translation Unit | Yes | Yes | Expressions | Implemented; independent validation pending |
-| 12.4 | Advisory | Decidable | Single Translation Unit | Yes | Yes | Expressions | Scaffold |
+| 12.4 | Advisory | Decidable | Single Translation Unit | Yes | Yes | Expressions | Implemented; independent validation pending |
 | 13.1 | Required | Undecidable | System | No | Yes | Side effects and evaluation order | Scaffold |
 | 13.2 | Required | Undecidable | System | Yes | Yes | Side effects and evaluation order | Scaffold |
 | 13.3 | Advisory | Decidable | Single Translation Unit | Yes | Yes | Side effects and evaluation order | Scaffold |

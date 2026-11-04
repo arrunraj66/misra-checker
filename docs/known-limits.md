@@ -161,3 +161,19 @@ licensed text before relying on a result.
 * **16.6** counts clauses, so `case 1: case 2: ...; break;` is one clause.
 * **16.7** uses the essential-type model, so a comparison, a `_Bool` and
   `<stdbool.h>` constants are Boolean.
+
+## Section 12 rules (expressions) — 12.2, 12.3, 12.4
+* **12.1 is not implemented.** Its list of operator pairs that need no
+  parentheses could not be reconstructed with confidence; a wrong exemption list
+  would either miss violations or flood results.
+* This catalogue has no Rule 12.5 (it comes from a later MISRA amendment).
+* **12.2** judges only *constant* shift counts: a count that is negative or not
+  smaller than the width of the left operand's essential type is reported
+  (`uint8_t << 8` counts as out of range even though promotion makes it legal C).
+  A count held in a variable is not judged; the catalogue lists the rule as
+  undecidable.
+* **12.4** reports constant `+`, `-` and `*` of unsigned type whose result
+  wraps, and unary minus of a non-zero unsigned constant (`-1u`). Left shifts
+  that discard bits and conversions such as `(unsigned)-1` are not reported.
+  Only expressions whose operands are integer constant expressions are judged,
+  so a wrap that depends on a `const` variable is not seen.
