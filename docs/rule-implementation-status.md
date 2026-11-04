@@ -2,15 +2,15 @@
 
 This catalog records the engineering structures present in the checker. It deliberately does not reproduce the copyrighted normative rule wording. The licensed MISRA specification is the controlled source for rule predicates, amplification, exceptions, and examples.
 
-Current milestone: 13 rule classes are **scaffolds**; 130 have implemented Clang-backed syntactic detectors, but independent validation remains pending. A scaffold provides identity, metadata, an analysis plan, a factory, and a non-compliant-safe `NotImplemented` result. It is not a working compliance check.
+Current milestone: 7 rule classes are **scaffolds** (each deliberately left out, see docs/known-limits.md); 136 have implemented Clang-backed syntactic detectors, but independent validation remains pending. A scaffold provides identity, metadata, an analysis plan, a factory, and a non-compliant-safe `NotImplemented` result. It is not a working compliance check.
 
 | Rule | Category | Decidability | Scope | C90 | C99 | Topic | Status |
 |---|---|---|---|---:|---:|---|---|
-| 1.1 | Required | Decidable | Single Translation Unit | Yes | Yes | Standard C conformance | Scaffold |
-| 1.2 | Advisory | Undecidable | Single Translation Unit | Yes | Yes | Standard C conformance | Scaffold |
-| 1.3 | Required | Undecidable | System | Yes | Yes | Standard C conformance | Scaffold |
-| 2.1 | Required | Undecidable | System | Yes | Yes | Unused and unreachable code | Scaffold |
-| 2.2 | Required | Undecidable | System | Yes | Yes | Unused and unreachable code | Scaffold |
+| 1.1 | Required | Decidable | Single Translation Unit | Yes | Yes | Standard C conformance | Implemented; independent validation pending |
+| 1.2 | Advisory | Undecidable | Single Translation Unit | Yes | Yes | Standard C conformance | Implemented; independent validation pending |
+| 1.3 | Required | Undecidable | System | Yes | Yes | Standard C conformance | Implemented; independent validation pending |
+| 2.1 | Required | Undecidable | System | Yes | Yes | Unused and unreachable code | Implemented; independent validation pending |
+| 2.2 | Required | Undecidable | System | Yes | Yes | Unused and unreachable code | Implemented; independent validation pending |
 | 2.3 | Advisory | Decidable | System | Yes | Yes | Unused and unreachable code | Implemented; independent validation pending |
 | 2.4 | Advisory | Decidable | System | Yes | Yes | Unused and unreachable code | Implemented; independent validation pending |
 | 2.5 | Advisory | Decidable | System | Yes | Yes | Unused and unreachable code | Implemented; independent validation pending |
@@ -115,7 +115,7 @@ Current milestone: 13 rule classes are **scaffolds**; 130 have implemented Clang
 | 18.6 | Required | Undecidable | System | Yes | Yes | Pointers and arrays | Implemented; independent validation pending |
 | 18.7 | Required | Decidable | Single Translation Unit | No | Yes | Pointers and arrays | Implemented; independent validation pending |
 | 18.8 | Required | Decidable | Single Translation Unit | No | Yes | Pointers and arrays | Implemented; independent validation pending |
-| 19.1 | Mandatory | Undecidable | System | Yes | Yes | Overlapping storage | Scaffold |
+| 19.1 | Mandatory | Undecidable | System | Yes | Yes | Overlapping storage | Implemented; independent validation pending |
 | 19.2 | Advisory | Decidable | Single Translation Unit | Yes | Yes | Overlapping storage | Implemented; independent validation pending |
 | 20.1 | Advisory | Decidable | Single Translation Unit | Yes | Yes | Preprocessing directives | Implemented; independent validation pending |
 | 20.2 | Required | Decidable | Single Translation Unit | Yes | Yes | Preprocessing directives | Implemented; independent validation pending |

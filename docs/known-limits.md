@@ -357,3 +357,56 @@ reported is definite.
     declaring an object of type `FILE`.
   * **22.6** reports a stream variable used after `fclose` in source order,
     before any reassignment. Branches and loops are not modelled.
+
+## Stage F rules — 1.1, 1.2, 1.3, 2.1, 2.2, 19.1
+* **1.1** reports every compile *error* in a project file and the constraint
+  violations the frontend deliberately downgrades (implicit function
+  declaration, implicit int, a `return` without a value in a non-void function,
+  a value returned from a void function). When a translation unit does not
+  compile, its Rule 1.1 findings are still printed before the analysis stops
+  with exit code 2; no other rule is evaluated for it. It does not claim to
+  detect every syntax or constraint violation, only those the compiler reports.
+* **1.2** reports every language extension the compiler diagnoses with
+  `-pedantic` in a project file (statement expressions, binary literals, empty
+  initializers and so on). Extensions the compiler accepts silently, such as
+  `__attribute__` or `__typeof__`, are not reported. The frontend adds
+  `-pedantic` itself, so an unrelated diagnostic may also appear on stderr.
+* **1.3** is undecidable; the provable subset is integer division or remainder
+  by a constant zero and signed integer overflow of a constant expression. Other
+  undefined behaviour is reported by the rule that owns it (12.2 shifts, 13.2
+  unsequenced access, 18.1 bounds, 17.4 missing return).
+* **2.1** reports one finding per block that Clang's control-flow graph cannot
+  reach: code after `return`, a branch of a condition that is a compile-time
+  constant, and a lone `break` after `return`. Reachability is structural, so
+  `if (DEBUG) { ... }` with a constant `DEBUG` is reported.
+* **2.2** reports an expression statement whose value is computed and unused,
+  using the compiler's own unused-result analysis; a call, an assignment, an
+  increment and a cast to `void` are not reported. Stores that are never read
+  (dead stores) are not detected.
+* **19.1** reports struct self-assignment, assignment between members of one
+  union object, and `memcpy`, `strcpy`, `strncpy`, `strcat` or `strncat` whose
+  destination and source are the same array or the same pointer variable.
+  `memmove` is allowed to overlap and is not reported. Overlap between two
+  pointers that merely alias is not detected.
+
+## Rules deliberately not implemented
+Seven rules remain scaffolds that return `NotImplemented`. Each is left out for
+a stated reason rather than approximated badly:
+* **10.5** — the table of inappropriate casts between essential type
+  categories could not be reconstructed with confidence.
+* **11.7** — a cast between a pointer and a floating type is a constraint
+  violation Clang rejects before analysis, so a detector could never fire.
+* **12.1** — the list of operator pairs that need no parentheses could not be
+  reconstructed with confidence.
+* **16.1** — the well-formedness conditions of a switch statement overlap
+  16.2-16.6 and could not be reconstructed with confidence.
+* **20.6** — needs to know which macro arguments span lines and where a `#`
+  begins a line inside them.
+* **20.8** — needs the *value* of each `#if` expression, which the
+  preprocessor callbacks do not expose.
+* **20.14** — a conditional directive that closes in another file is a hard
+  compile error in Clang, so a detector could never fire.
+
+Every implemented rule still reads "independent validation pending" and every
+interpretation above must be confirmed against the licensed MISRA text before
+any compliance claim is made.

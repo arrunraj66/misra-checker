@@ -127,6 +127,12 @@ misra_fixture_suite(
   "22.4|r22_4_compliant.c|0" "22.4|r22_4_violating.c|2"
   "22.5|r22_5_compliant.c|0" "22.5|r22_5_violating.c|3"
   "22.6|r22_6_compliant.c|0" "22.6|r22_6_violating.c|1"
+  "1.1|r01_1_compliant.c|0" "1.1|r01_1_violating.c|3"
+  "1.2|r01_2_compliant.c|0" "1.2|r01_2_violating.c|3"
+  "1.3|r01_3_compliant.c|0" "1.3|r01_3_violating.c|4"
+  "2.1|r02_1_compliant.c|0" "2.1|r02_1_violating.c|4"
+  "2.2|r02_2_compliant.c|0" "2.2|r02_2_violating.c|4"
+  "19.1|r19_1_compliant.c|0" "19.1|r19_1_violating.c|4"
   # Macro policy: the comma produced by PAIR() is found; the octal literal
   # inside a system-header macro (S_IRUSR) is not.
   "12.3|macro_origin.c|1" "7.1|macro_origin.c|0"
@@ -190,4 +196,18 @@ set_tests_properties(
   cli_macro_suppress PROPERTIES
   PASS_REGULAR_EXPRESSION "suppressed; the result is for triage only"
   FAIL_REGULAR_EXPRESSION "12\\.3-comma"
+)
+
+# A translation unit that does not compile still yields its Rule 1.1 findings.
+add_test(
+  NAME cli_compile_error_is_rule_1_1
+  COMMAND
+    misra-checker analyze
+    --compile-commands
+    "${CMAKE_CURRENT_BINARY_DIR}/tests/rules_syntax_compile_commands.json"
+    --file "${CMAKE_CURRENT_SOURCE_DIR}/tests/fixtures/rules_syntax/r01_1_syntax_error.c"
+)
+set_tests_properties(
+  cli_compile_error_is_rule_1_1 PROPERTIES
+  PASS_REGULAR_EXPRESSION "Rule 1.1 \\[misra-c2012-1.1-constraint-violation\\]"
 )

@@ -523,6 +523,7 @@ class FactVisitor final : public clang::RecursiveASTVisitor<FactVisitor> {
     }
     if (sm_.isInSystemHeader(callee->getLocation())) {
       note_library_call(call, callee);
+      check_overlapping_copy(call, callee);
       // A library function that receives a function address may call it back.
       for (const clang::Expr* argument : call->arguments()) {
         if (const auto* reference = llvm::dyn_cast<clang::DeclRefExpr>(
@@ -602,6 +603,8 @@ class FactVisitor final : public clang::RecursiveASTVisitor<FactVisitor> {
     }
     check_binary_types(expression);
     check_pointer_arithmetic(expression);
+    check_constant_undefined_behaviour(expression);
+    check_overlapping_assignment(expression);
     return true;
   }
 
@@ -914,6 +917,7 @@ class FactVisitor final : public clang::RecursiveASTVisitor<FactVisitor> {
     }
     if (definition) {
       defined_functions_.push_back(function);
+      report_unreachable_code(function);
       if (!function->getReturnType()->isVoidType() && falls_off_end(function)) {
         syntax(function->getLocation(), "misra-c2012-17.4-missing-return");
       }
@@ -1004,6 +1008,31 @@ class FactVisitor final : public clang::RecursiveASTVisitor<FactVisitor> {
 
   bool VisitEnumConstantDecl(clang::EnumConstantDecl* enumerator) {
     record_identifier(enumerator, IdentifierSpace::Ordinary);
+    return true;
+  }
+
+  // 2.2 (subset): a statement that computes a value nothing uses, as judged by
+  // the compiler's own unused-result analysis.
+  bool VisitCompoundStmt(clang::CompoundStmt* block) {
+    bool is_statement_expression = false;
+    {
+      const auto parents = ast_.getParents(*block);
+      is_statement_expression = !parents.empty() && parents[0].get<clang::StmtExpr>() != nullptr;
+    }
+    for (const clang::Stmt* child : block->body()) {
+      const auto* expression = llvm::dyn_cast<clang::Expr>(child);
+      if (expression == nullptr ||
+          (is_statement_expression && child == block->body_back())) {
+        continue;
+      }
+      const clang::Expr* warn = nullptr;
+      clang::SourceLocation where;
+      clang::SourceRange first;
+      clang::SourceRange second;
+      if (expression->isUnusedResultAWarning(warn, where, first, second, ast_)) {
+        syntax(where, "misra-c2012-2.2-dead-code");
+      }
+    }
     return true;
   }
 
@@ -1240,6 +1269,130 @@ class FactVisitor final : public clang::RecursiveASTVisitor<FactVisitor> {
       return true;
     }
     return false;
+  }
+
+  // 2.1: statements in blocks the control-flow graph cannot reach.
+  void report_unreachable_code(const clang::FunctionDecl* function) {
+    std::unique_ptr<clang::CFG> cfg = clang::CFG::buildCFG(
+        function, function->getBody(), &ast_, clang::CFG::BuildOptions());
+    if (!cfg) {
+      return;
+    }
+    llvm::BitVector reachable(cfg->getNumBlockIDs(), false);
+    clang::reachable_code::ScanReachableFromBlock(&cfg->getEntry(), reachable);
+    for (const clang::CFGBlock* block : *cfg) {
+      if (block == nullptr || reachable[block->getBlockID()] || block == &cfg->getExit() ||
+          block == &cfg->getEntry()) {
+        continue;
+      }
+      const clang::Stmt* first = nullptr;
+      for (const clang::CFGElement& element : *block) {
+        const auto statement = element.getAs<clang::CFGStmt>();
+        if (statement && statement->getStmt() != nullptr &&
+            !llvm::isa<clang::NullStmt>(statement->getStmt())) {
+          first = statement->getStmt();
+          break;
+        }
+      }
+      // A lone break/continue/goto is a block terminator, not an element.
+      if (first == nullptr) {
+        const clang::Stmt* const terminator = block->getTerminatorStmt();
+        if (terminator != nullptr &&
+            (llvm::isa<clang::BreakStmt>(terminator) || llvm::isa<clang::ContinueStmt>(terminator) ||
+             llvm::isa<clang::GotoStmt>(terminator) || llvm::isa<clang::ReturnStmt>(terminator))) {
+          first = terminator;
+        }
+      }
+      if (first != nullptr) {
+        syntax(first->getBeginLoc(), "misra-c2012-2.1-unreachable-code");  // one per block
+      }
+    }
+  }
+
+  // 1.3 (provable subset): behaviour that is undefined whatever the inputs.
+  void check_constant_undefined_behaviour(const clang::BinaryOperator* expression) {
+    const clang::BinaryOperatorKind op = expression->getOpcode();
+    const clang::SourceLocation loc = expression->getOperatorLoc();
+    if ((op == clang::BO_Div || op == clang::BO_Rem || op == clang::BO_DivAssign ||
+         op == clang::BO_RemAssign) &&
+        expression->getRHS()->getType()->isIntegerType()) {
+      if (const auto divisor = expression->getRHS()->getIntegerConstantExpr(ast_);
+          divisor && divisor->isZero()) {
+        syntax(loc, "misra-c2012-1.3-constant-undefined-behaviour");
+      }
+    }
+    if ((op == clang::BO_Add || op == clang::BO_Sub || op == clang::BO_Mul) &&
+        expression->getType()->isSignedIntegerType()) {
+      const auto left = expression->getLHS()->getIntegerConstantExpr(ast_);
+      const auto right = expression->getRHS()->getIntegerConstantExpr(ast_);
+      if (left && right) {
+        const unsigned width =
+            static_cast<unsigned>(ast_.getTypeSize(expression->getType()));
+        const llvm::APInt a = left->extOrTrunc(width);
+        const llvm::APInt b = right->extOrTrunc(width);
+        bool overflow = false;
+        switch (op) {
+          case clang::BO_Add: (void)a.sadd_ov(b, overflow); break;
+          case clang::BO_Sub: (void)a.ssub_ov(b, overflow); break;
+          default: (void)a.smul_ov(b, overflow); break;
+        }
+        if (overflow) {
+          syntax(loc, "misra-c2012-1.3-constant-undefined-behaviour");
+        }
+      }
+    }
+  }
+
+  // 19.1 (provable subset): copying an object onto itself or between members
+  // of one union.
+  void check_overlapping_assignment(const clang::BinaryOperator* expression) {
+    if (expression->getOpcode() != clang::BO_Assign) {
+      return;
+    }
+    const clang::Expr* const left = expression->getLHS()->IgnoreParenImpCasts();
+    const clang::Expr* const right = expression->getRHS()->IgnoreParenImpCasts();
+    const auto* left_reference = llvm::dyn_cast<clang::DeclRefExpr>(left);
+    const auto* right_reference = llvm::dyn_cast<clang::DeclRefExpr>(right);
+    if (left_reference != nullptr && right_reference != nullptr &&
+        left_reference->getDecl() == right_reference->getDecl() &&
+        left->getType()->isRecordType()) {
+      syntax(expression->getOperatorLoc(), "misra-c2012-19.1-overlapping-copy");
+      return;
+    }
+    const auto* left_member = llvm::dyn_cast<clang::MemberExpr>(left);
+    const auto* right_member = llvm::dyn_cast<clang::MemberExpr>(right);
+    if (left_member != nullptr && right_member != nullptr && !left_member->isArrow() &&
+        !right_member->isArrow()) {
+      const auto* left_base = llvm::dyn_cast<clang::DeclRefExpr>(left_member->getBase()->IgnoreParenImpCasts());
+      const auto* right_base = llvm::dyn_cast<clang::DeclRefExpr>(right_member->getBase()->IgnoreParenImpCasts());
+      if (left_base != nullptr && right_base != nullptr &&
+          left_base->getDecl() == right_base->getDecl() &&
+          left_base->getType()->isUnionType()) {
+        syntax(expression->getOperatorLoc(), "misra-c2012-19.1-overlapping-copy");
+      }
+    }
+  }
+
+  void check_overlapping_copy(const clang::CallExpr* call, const clang::FunctionDecl* callee) {
+    static const std::set<std::string> copies{"memcpy", "strcpy", "strncpy", "strcat", "strncat"};
+    if (callee->getIdentifier() == nullptr || copies.count(callee->getName().str()) == 0U ||
+        call->getNumArgs() < 2U) {
+      return;
+    }
+    const clang::Expr* const destination = call->getArg(0);
+    const clang::Expr* const source = call->getArg(1);
+    const clang::VarDecl* const first = array_object(destination);
+    const clang::VarDecl* const second = array_object(source);
+    bool same = first != nullptr && first == second;
+    if (!same) {
+      const auto* a = llvm::dyn_cast<clang::DeclRefExpr>(destination->IgnoreParenImpCasts());
+      const auto* b = llvm::dyn_cast<clang::DeclRefExpr>(source->IgnoreParenImpCasts());
+      same = a != nullptr && b != nullptr && a->getDecl() == b->getDecl() &&
+             llvm::isa<clang::VarDecl>(a->getDecl());
+    }
+    if (same) {
+      syntax(call->getBeginLoc(), "misra-c2012-19.1-overlapping-copy");
+    }
   }
 
   // 17.8: assignment, increment or decrement of a parameter itself (not of
@@ -3336,6 +3489,28 @@ class DiagnosticRecorder final : public clang::DiagnosticConsumer {
     clang::DiagnosticConsumer::HandleDiagnostic(level, info);
     printer_.HandleDiagnostic(level, info);
     const unsigned id = info.getID();
+    if (info.hasSourceManager()) {
+      const bool downgraded_constraint =
+          id == clang::diag::ext_missing_type_specifier ||
+          id == clang::diag::ext_param_not_declared ||
+          id == clang::diag::ext_implicit_function_decl_c99 ||
+          id == clang::diag::warn_return_missing_expr ||
+          id == clang::diag::ext_return_missing_expr ||
+          id == clang::diag::ext_return_has_expr;
+      const bool error = level >= clang::DiagnosticsEngine::Error;
+      const bool extension = clang::DiagnosticIDs::isBuiltinExtensionDiag(id);
+      if (error || downgraded_constraint || extension) {
+        if (const auto location =
+                locate(info.getSourceManager(), info.getLocation(), false)) {
+          const std::string_view kind =
+              (error || downgraded_constraint) ? "misra-c2012-1.1-constraint-violation"
+                                               : "misra-c2012-1.2-language-extension";
+          if (shared_.fresh(std::string(kind) + '|' + location_text(*location))) {
+            shared_.context.syntax.push_back({*location, kind});
+          }
+        }
+      }
+    }
     if ((id == clang::diag::ext_missing_type_specifier ||
          id == clang::diag::ext_param_not_declared) &&
         info.hasSourceManager()) {
@@ -3432,7 +3607,7 @@ FrontendResult ClangFrontend::analyze(
   // is still analysed and the corresponding rule can report it, instead of
   // the whole translation unit failing. Unrelated errors still fail.
   tool.appendArgumentsAdjuster(clang::tooling::getInsertArgumentAdjuster(
-      {"-Wimplicit-int", "-Wno-error=implicit-function-declaration",
+      {"-pedantic", "-Wimplicit-int", "-Wno-error=implicit-function-declaration",
        "-Wno-error=implicit-int",
        "-Wno-error=return-type", "-Wno-error=int-conversion",
        "-Wno-error=incompatible-pointer-types",

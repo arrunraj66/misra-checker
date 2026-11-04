@@ -33,9 +33,11 @@ src/rule_registry.cpp                  constructs the complete rule pack
 tests/rule_registry_test.cpp           validates count, uniqueness and totals
 ```
 
-130 of the 143 rules now have Clang-backed detectors (see
-[docs/rule-implementation-status.md](docs/rule-implementation-status.md)). The remaining 13 classes
-are scaffolds returning `EvaluationStatus::NotImplemented`. All implemented
+136 of the 143 rules now have Clang-backed detectors (see
+[docs/rule-implementation-status.md](docs/rule-implementation-status.md)). The remaining 7 classes
+are scaffolds returning `EvaluationStatus::NotImplemented`; each is
+left out deliberately (10.5, 11.7, 12.1, 16.1, 20.6, 20.8, 20.14) and the reason
+is given in [docs/known-limits.md](docs/known-limits.md). All implemented
 rules still require independent validation; the product must not yet be
 represented as qualified, certified, or compliance-ready. Each detector will
 advance independently through specification, implementation, positive/negative

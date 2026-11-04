@@ -23,6 +23,15 @@ constexpr std::string_view category_name(const misra::RuleCategory category) {
   return "unknown";
 }
 
+void print_finding(const misra::Rule& rule, const misra::Finding& finding) {
+  std::cout << finding.location.file << ':' << finding.location.line << ':'
+            << finding.location.column << ": "
+            << category_name(rule.descriptor().category) << ": MISRA C:2012 Rule "
+            << rule.descriptor().id << " [" << finding.message_key << "]"
+            << (finding.certainty == misra::FindingCertainty::Possible ? " [possible]" : "")
+            << (finding.location.from_macro ? " [macro]" : "") << '\n';
+}
+
 void print_usage() {
   std::cerr
       << "Usage:\n"
@@ -79,6 +88,15 @@ int main(int argc, char* argv[]) {
     const misra::FrontendResult frontend_result = frontend.analyze(
         compilation_database.string(), requested_files);
     if (!frontend_result.success) {
+      // A compile error is itself a Rule 1.1 finding; report those before
+      // giving up, because the rest of the analysis cannot be trusted.
+      const misra::RuleRegistry failure_registry;
+      if (const misra::Rule* const rule = failure_registry.find("1.1")) {
+        for (const misra::Finding& finding :
+             rule->evaluate(frontend_result.context).findings) {
+          print_finding(*rule, finding);
+        }
+      }
       std::cerr << "misra-checker: " << frontend_result.error_message << '\n';
       return 2;
     }
