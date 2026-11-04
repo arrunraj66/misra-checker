@@ -1,15 +1,18 @@
 /*
- * MISRA C:2012 Rule 22.6 - engineering scaffold
+ * MISRA C:2012 Rule 22.6 - Clang-backed detector
  *
  * Topic: Resource management
  * Engineering intent: Independent checker contract for Rule 22.6 in the Resource management family. The exact normative predicate remains linked to the controlled licensed rule specification.
  * Analysis expansion: Track acquisition, ownership, state transitions, release, files, streams, and exceptional control-flow paths.
  * Normative notice: Wording, amplification, exceptions, and examples remain in
  * the licensed MISRA specification and require independent approval.
- * Implementation status: Scaffold only; no compliance decision is made.
+ * Detection contract: Provable subset: a stream variable used after fclose in source order and before any reassignment is reported as possible.
+ * See docs/known-limits.md for interpretations.
+ * Implementation status: Implemented; independent validation is pending.
  */
 
 #include "misra/c2012/rule_factories.hpp"
+#include "misra/c2012/rule_support.hpp"
 
 #include <memory>
 
@@ -28,15 +31,14 @@ class Rule_22_06 final : public Rule {
         "Resource management",
         "Independent checker contract for Rule 22.6 in the Resource management family. The exact normative predicate remains linked to the controlled licensed rule specification.",
         "Track acquisition, ownership, state transitions, release, files, streams, and exceptional control-flow paths.",
-        ImplementationStatus::Scaffold,
+        ImplementationStatus::Implemented,
     };
     return descriptor;
   }
 
   [[nodiscard]] RuleEvaluation evaluate(
       const AnalysisContext& context) const override {
-    (void)context;
-    return {EvaluationStatus::NotImplemented};
+    return support::syntax_findings(context, "misra-c2012-22.6-use-after-close");
   }
 };
 

@@ -322,3 +322,38 @@ reported is definite.
   accepted as the infinite-loop idiom (an interpretation).
 * **15.3** requires the label's block to enclose the `goto`.
 * **19.2** reports every union definition.
+
+## Stage E rules — 21.1, 21.2, 21.12, 22.1-22.6
+* **21.1** reports defining or undefining a macro whose name is reserved
+  (leading double underscore, or underscore and a capital) or that the
+  compiler or a system header already defines (the previous definition of the
+  name is inspected). It does not report a `#define` of a standard *function*
+  name that is not a macro (for example `#define printf my_printf`).
+* **21.2** reports a declaration of a reserved identifier (leading double
+  underscore or underscore-capital at any scope; any leading underscore at file
+  scope; struct members excluded), and the *definition* of a function that the
+  standard library declares (a prior declaration in a system header, or a
+  compiler library builtin). A project that declares a standard name without
+  the header and without a builtin is not noticed.
+* **21.12** reports calls to the five `<fenv.h>` exception functions; the `FE_*`
+  macros are not reported.
+* The Section 22 rules are undecidable; each is a provable or source-order
+  subset, and every finding is **possible** except 22.2 and 22.5:
+  * **22.1** tracks a local pointer that receives an allocation (`malloc`,
+    `calloc`, `realloc`, `aligned_alloc`, `strdup`, `strndup`, `fopen`,
+    `freopen`, `tmpfile`) and reports it when no use releases or hands it on:
+    reading and writing through it, comparing it and passing it to a
+    pointer-to-const parameter are accepted as "still held". Passing it to any
+    other function, returning it, storing it elsewhere or taking its address
+    suppresses the finding. Allocations stored directly in members, globals or
+    returned unassigned are not tracked.
+  * **22.2** reports `free` applied to `&object`, an array, or a string literal.
+  * **22.3** reports the same literal path opened twice in one function with at
+    least one write-capable mode (`w`, `a`, `+`).
+  * **22.4** reports a write call (`fprintf`, `vfprintf`, `fputs`, `fputc`,
+    `putc`, `fwrite`) on a stream variable every `fopen` of which used a
+    read-only literal mode.
+  * **22.5** reports dereferencing a `FILE *`, member access through one, and
+    declaring an object of type `FILE`.
+  * **22.6** reports a stream variable used after `fclose` in source order,
+    before any reassignment. Branches and loops are not modelled.

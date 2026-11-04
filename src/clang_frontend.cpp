@@ -266,6 +266,49 @@ bool is_string_literal_expression(const clang::Expr* expression) {
   }
 }
 
+bool is_file_object_type(const clang::QualType type) {
+  if (type.isNull()) {
+    return false;
+  }
+  if (const auto* alias = type->getAs<clang::TypedefType>()) {
+    if (alias->getDecl()->getName() == "FILE") {
+      return true;
+    }
+  }
+  if (const clang::RecordDecl* record = type->getAsRecordDecl()) {
+    return record->getName() == "_IO_FILE" || record->getName() == "__sFILE";
+  }
+  return false;
+}
+
+bool is_resource_allocator(const std::string& name) {
+  static const std::set<std::string> names{"malloc", "calloc", "realloc", "aligned_alloc",
+                                           "strdup", "strndup", "fopen",  "freopen", "tmpfile"};
+  return names.count(name) != 0U;
+}
+
+// The call to a standard allocation function that `expression` is, if any.
+const clang::CallExpr* allocation_call(const clang::Expr* expression,
+                                       const clang::SourceManager& sm) {
+  for (;;) {
+    expression = expression->IgnoreParenImpCasts();
+    if (const auto* cast = llvm::dyn_cast<clang::CStyleCastExpr>(expression)) {
+      expression = cast->getSubExpr();
+      continue;
+    }
+    break;
+  }
+  const auto* call = llvm::dyn_cast<clang::CallExpr>(expression);
+  if (call == nullptr || call->getDirectCallee() == nullptr) {
+    return nullptr;
+  }
+  const clang::FunctionDecl* callee = call->getDirectCallee();
+  return (sm.isInSystemHeader(callee->getLocation()) && callee->getIdentifier() != nullptr &&
+          is_resource_allocator(callee->getName().str()))
+             ? call
+             : nullptr;
+}
+
 // The one initializer form every aggregate may use: {0}, possibly nested.
 bool is_zero_brace(const clang::InitListExpr* syntactic) {
   if (syntactic == nullptr || syntactic->getNumInits() != 1U) {
@@ -479,6 +522,7 @@ class FactVisitor final : public clang::RecursiveASTVisitor<FactVisitor> {
       return true;
     }
     if (sm_.isInSystemHeader(callee->getLocation())) {
+      note_library_call(call, callee);
       // A library function that receives a function address may call it back.
       for (const clang::Expr* argument : call->arguments()) {
         if (const auto* reference = llvm::dyn_cast<clang::DeclRefExpr>(
@@ -562,8 +606,23 @@ class FactVisitor final : public clang::RecursiveASTVisitor<FactVisitor> {
   }
 
   // ------------------------------------------------- Section 10 (type rules)
+  bool VisitMemberExpr(clang::MemberExpr* member) {
+    const clang::QualType base = member->getBase()->getType();
+    if (member->isArrow() && base->isPointerType() &&
+        is_file_object_type(base->getPointeeType())) {
+      syntax(member->getOperatorLoc(), "misra-c2012-22.5-file-pointer-dereferenced");
+    }
+    return true;
+  }
+
   bool VisitUnaryOperator(clang::UnaryOperator* expression) {
     using essential::Operand;
+    if (expression->getOpcode() == clang::UO_Deref) {
+      const clang::QualType operand = expression->getSubExpr()->getType();
+      if (operand->isPointerType() && is_file_object_type(operand->getPointeeType())) {
+        syntax(expression->getOperatorLoc(), "misra-c2012-22.5-file-pointer-dereferenced");
+      }
+    }
     if (expression->isIncrementDecrementOp()) {
       note_parameter_modification(expression->getSubExpr(),
                                   expression->getOperatorLoc());
@@ -746,6 +805,10 @@ class FactVisitor final : public clang::RecursiveASTVisitor<FactVisitor> {
 
   bool VisitDeclRefExpr(clang::DeclRefExpr* reference) {
     note_automatic_use(reference);
+    if (const auto* local = llvm::dyn_cast<clang::VarDecl>(reference->getDecl());
+        local != nullptr && local->hasLocalStorage() && local->getType()->isPointerType()) {
+      pointer_references_[local->getCanonicalDecl()].push_back(reference);
+    }
     if (const auto* parameter = llvm::dyn_cast<clang::ParmVarDecl>(reference->getDecl());
         parameter != nullptr && parameter->getType()->isPointerType()) {
       parameter_references_[parameter].push_back(reference);
@@ -835,6 +898,16 @@ class FactVisitor final : public clang::RecursiveASTVisitor<FactVisitor> {
       syntax(function->getLocation(), "misra-c2012-8.10-inline-not-static");
     }
     check_pointer_nesting(function->getReturnType(), function->getLocation());
+    if (definition && !function->getName().starts_with("__builtin_")) {
+      bool library_name = function->getBuiltinID() != 0;
+      for (const clang::FunctionDecl* earlier = function->getPreviousDecl();
+           earlier != nullptr; earlier = earlier->getPreviousDecl()) {
+        library_name = library_name || sm_.isInSystemHeader(earlier->getLocation());
+      }
+      if (library_name) {
+        syntax(function->getLocation(), "misra-c2012-21.2-redefines-library");
+      }
+    }
     // 8.14: restrict.
     if (function->getReturnType().isRestrictQualified()) {
       syntax(function->getLocation(), "misra-c2012-8.14-restrict");
@@ -871,6 +944,13 @@ class FactVisitor final : public clang::RecursiveASTVisitor<FactVisitor> {
       syntax(variable->getLocation(), "misra-c2012-18.8-variable-length-array");
     }
     check_pointer_nesting(declared, variable->getLocation());
+    if (is_file_object_type(variable->getType())) {
+      syntax(variable->getLocation(), "misra-c2012-22.5-file-pointer-dereferenced");
+    }
+    if (variable->hasLocalStorage() && variable->getType()->isPointerType() &&
+        variable->getInit() != nullptr) {
+      note_resource_assignment(variable, variable->getInit());
+    }
     if (llvm::isa<clang::ParmVarDecl>(variable)) {
       if (const clang::ArrayType* array = declared->getAsArrayTypeUnsafe();
           array != nullptr &&
@@ -1079,6 +1159,7 @@ class FactVisitor final : public clang::RecursiveASTVisitor<FactVisitor> {
   void finish() {
     report_uninitialized_reads();
     report_pointers_that_could_be_const();
+    report_resource_misuse();
     for (const clang::FunctionDecl* function : defined_functions_) {
       for (const clang::ParmVarDecl* parameter : function->parameters()) {
         if (!parameter->getName().empty() && referenced_.count(parameter) == 0U) {
@@ -1250,6 +1331,152 @@ class FactVisitor final : public clang::RecursiveASTVisitor<FactVisitor> {
         context_.program.indirect_calls.push_back(
             {*location, caller,
              callee_type->getPointeeType().getCanonicalType().getAsString()});
+      }
+    }
+  }
+
+  // ------------------------------------------------ Section 22 (resources)
+  static std::string string_argument(const clang::Expr* expression) {
+    if (const auto* literal =
+            llvm::dyn_cast<clang::StringLiteral>(expression->IgnoreParenImpCasts())) {
+      return literal->getString().str();
+    }
+    return "?";
+  }
+
+  static const clang::VarDecl* stream_variable(const clang::Expr* expression) {
+    if (const auto* reference =
+            llvm::dyn_cast<clang::DeclRefExpr>(expression->IgnoreParenImpCasts())) {
+      if (const auto* variable = llvm::dyn_cast<clang::VarDecl>(reference->getDecl());
+          variable != nullptr && variable->hasLocalStorage()) {
+        return variable->getCanonicalDecl();
+      }
+    }
+    return nullptr;
+  }
+
+  // A local pointer receiving the result of an allocator or fopen.
+  void note_resource_assignment(const clang::VarDecl* variable, const clang::Expr* source) {
+    const clang::CallExpr* const call = allocation_call(source, sm_);
+    if (call == nullptr) {
+      return;
+    }
+    const clang::VarDecl* const key = variable->getCanonicalDecl();
+    allocations_.push_back({key, call->getBeginLoc(), current_function_});
+    const std::string callee = call->getDirectCallee()->getName().str();
+    if ((callee == "fopen" || callee == "freopen") && call->getNumArgs() >= 2U) {
+      stream_modes_[key].push_back(string_argument(call->getArg(1)));
+    }
+  }
+
+  void note_library_call(const clang::CallExpr* call, const clang::FunctionDecl* callee) {
+    if (callee->getIdentifier() == nullptr) {
+      return;
+    }
+    const std::string name = callee->getName().str();
+    if (name == "free" && call->getNumArgs() == 1U) {  // 22.2
+      const clang::Expr* argument = call->getArg(0)->IgnoreParenImpCasts();
+      while (const auto* cast = llvm::dyn_cast<clang::CStyleCastExpr>(argument)) {
+        argument = cast->getSubExpr()->IgnoreParenImpCasts();
+      }
+      const auto* address = llvm::dyn_cast<clang::UnaryOperator>(argument);
+      if ((address != nullptr && address->getOpcode() == clang::UO_AddrOf) ||
+          argument->getType()->isArrayType() || llvm::isa<clang::StringLiteral>(argument)) {
+        syntax(call->getBeginLoc(), "misra-c2012-22.2-free-of-non-allocated");
+      }
+    }
+    if (name == "fopen" && call->getNumArgs() >= 2U && current_function_ != nullptr) {
+      open_calls_.push_back({current_function_, string_argument(call->getArg(0)),
+                             string_argument(call->getArg(1)), call->getBeginLoc()});
+    }
+    static const std::map<std::string, unsigned> stream_position{
+        {"fprintf", 0U}, {"vfprintf", 0U}, {"fputs", 1U}, {"fputc", 1U},
+        {"putc", 1U},    {"fwrite", 3U}};
+    if (const auto found = stream_position.find(name);
+        found != stream_position.end() && call->getNumArgs() > found->second) {
+      if (const clang::VarDecl* stream = stream_variable(call->getArg(found->second))) {
+        stream_writes_.push_back({stream, call->getBeginLoc()});
+      }
+    }
+    if (name == "fclose" && call->getNumArgs() == 1U) {
+      if (const clang::VarDecl* stream = stream_variable(call->getArg(0))) {
+        close_calls_.push_back({stream, call->getEndLoc()});
+      }
+    }
+  }
+
+  void report_resource_misuse() {
+    // 22.1 (subset): an allocation held only in a local pointer whose every
+    // use merely reads through it can never be released.
+    allow_pointee_writes_ = true;
+    for (const Allocation& allocation : allocations_) {
+      bool released_or_escapes = false;
+      for (const clang::DeclRefExpr* use : pointer_references_[allocation.variable]) {
+        if (!pointer_value_is_only_read(use, allocation.function)) {
+          released_or_escapes = true;
+          break;
+        }
+      }
+      if (!released_or_escapes) {
+        syntax(allocation.location, "misra-c2012-22.1-resource-not-released", true,
+               FindingCertainty::Possible);
+      }
+    }
+    allow_pointee_writes_ = false;
+    // 22.3 (subset): the same literal path opened twice in one function with
+    // at least one write-capable mode.
+    const auto writable = [](const std::string& mode) {
+      return mode.find_first_of("wa+") != std::string::npos;
+    };
+    for (std::size_t later = 0U; later < open_calls_.size(); ++later) {
+      for (std::size_t earlier = 0U; earlier < later; ++earlier) {
+        const OpenCall& a = open_calls_[earlier];
+        const OpenCall& b = open_calls_[later];
+        if (a.function == b.function && a.path != "?" && a.path == b.path &&
+            (writable(a.mode) || writable(b.mode))) {
+          syntax(b.location, "misra-c2012-22.3-file-open-twice", true,
+                 FindingCertainty::Possible);
+          break;
+        }
+      }
+    }
+    // 22.4 (subset): writing to a stream every fopen of which was read-only.
+    for (const StreamUse& write : stream_writes_) {
+      const auto modes = stream_modes_.find(write.variable);
+      if (modes == stream_modes_.end() || modes->second.empty()) {
+        continue;
+      }
+      bool read_only = true;
+      for (const std::string& mode : modes->second) {
+        read_only = read_only && !mode.empty() && mode[0] == 'r' && mode != "?" &&
+                    mode.find('+') == std::string::npos;
+      }
+      if (read_only) {
+        syntax(write.location, "misra-c2012-22.4-write-to-read-only-stream", true,
+               FindingCertainty::Possible);
+      }
+    }
+    // 22.6 (subset): a stream variable used after fclose in source order,
+    // before any reassignment.
+    for (const StreamUse& close : close_calls_) {
+      std::vector<const clang::DeclRefExpr*> uses = pointer_references_[close.variable];
+      std::sort(uses.begin(), uses.end(),
+                [this](const clang::DeclRefExpr* a, const clang::DeclRefExpr* b) {
+                  return sm_.isBeforeInTranslationUnit(a->getBeginLoc(), b->getBeginLoc());
+                });
+      for (const clang::DeclRefExpr* use : uses) {
+        if (!sm_.isBeforeInTranslationUnit(close.location, use->getBeginLoc())) {
+          continue;
+        }
+        const auto* assignment =
+            llvm::dyn_cast_or_null<clang::BinaryOperator>(parent_statement(use));
+        if (assignment != nullptr && assignment->isAssignmentOp() &&
+            assignment->getLHS()->IgnoreParenImpCasts() == use) {
+          break;  // the stream is reassigned
+        }
+        syntax(use->getBeginLoc(), "misra-c2012-22.6-use-after-close", true,
+               FindingCertainty::Possible);
+        break;
       }
     }
   }
@@ -1980,6 +2207,16 @@ class FactVisitor final : public clang::RecursiveASTVisitor<FactVisitor> {
         node = parent;  // (*p).field
         continue;
       }
+      if (allow_pointee_writes_) {  // leak analysis: writing through p keeps it held
+        if (const auto* binary = llvm::dyn_cast<clang::BinaryOperator>(parent);
+            binary != nullptr && binary->isAssignmentOp() && binary->getLHS() == node) {
+          return true;
+        }
+        if (const auto* unary = llvm::dyn_cast<clang::UnaryOperator>(parent);
+            unary != nullptr && unary->isIncrementDecrementOp()) {
+          return true;
+        }
+      }
       return llvm::isa<clang::UnaryExprOrTypeTraitExpr>(parent);
     }
   }
@@ -2287,6 +2524,14 @@ class FactVisitor final : public clang::RecursiveASTVisitor<FactVisitor> {
     const clang::BinaryOperatorKind op = expression->getOpcode();
     const clang::SourceLocation loc = expression->getOperatorLoc();
     if (op == clang::BO_Assign) {
+      if (const auto* target =
+              llvm::dyn_cast<clang::DeclRefExpr>(expression->getLHS()->IgnoreParenImpCasts())) {
+        if (const auto* variable = llvm::dyn_cast<clang::VarDecl>(target->getDecl());
+            variable != nullptr && variable->hasLocalStorage() &&
+            variable->getType()->isPointerType()) {
+          note_resource_assignment(variable, expression->getRHS());
+        }
+      }
       check_string_literal_target(expression->getLHS()->getType(), expression->getRHS(), loc);
       check_assignment(essential::of_expression(expression->getLHS(), ast_),
                        expression->getRHS(), loc);
@@ -2623,6 +2868,28 @@ class FactVisitor final : public clang::RecursiveASTVisitor<FactVisitor> {
   std::map<const clang::ParmVarDecl*, std::vector<const clang::DeclRefExpr*>>
       parameter_references_;
   std::set<const clang::FunctionDecl*> address_taken_in_unit_;
+  struct Allocation final {
+    const clang::VarDecl* variable;
+    clang::SourceLocation location;
+    const clang::FunctionDecl* function;
+  };
+  struct OpenCall final {
+    const clang::FunctionDecl* function;
+    std::string path;
+    std::string mode;
+    clang::SourceLocation location;
+  };
+  struct StreamUse final {
+    const clang::VarDecl* variable;
+    clang::SourceLocation location;
+  };
+  bool allow_pointee_writes_ = false;  // see lvalue_is_only_read
+  std::vector<Allocation> allocations_;
+  std::map<const clang::VarDecl*, std::vector<const clang::DeclRefExpr*>> pointer_references_;
+  std::vector<OpenCall> open_calls_;
+  std::map<const clang::VarDecl*, std::vector<std::string>> stream_modes_;
+  std::vector<StreamUse> stream_writes_;
+  std::vector<StreamUse> close_calls_;  // location = end of the fclose call
   std::map<const clang::VarDecl*, UseEvents> automatic_usage_;
   std::vector<const clang::VarDecl*> usage_order_;
   struct Scope final {
@@ -2663,9 +2930,11 @@ class PreprocessorRecorder final : public clang::PPCallbacks {
     }
   }
 
-  void MacroUndefined(const clang::Token& name_token, const clang::MacroDefinition&,
+  void MacroUndefined(const clang::Token& name_token,
+                      const clang::MacroDefinition& definition,
                       const clang::MacroDirective*) override {
     report(name_token.getLocation(), "misra-c2012-20.5-undef");
+    check_reserved_macro(name_token, definition.getMacroInfo(), name_token.getLocation());
   }
 
   void If(clang::SourceLocation, clang::SourceRange condition,
@@ -2721,6 +2990,11 @@ class PreprocessorRecorder final : public clang::PPCallbacks {
       return;
     }
     check_macro_definition(name_token, info);
+    check_reserved_macro(name_token,
+                         directive->getPrevious() != nullptr
+                             ? directive->getPrevious()->getMacroInfo()
+                             : nullptr,
+                         info->getDefinitionLoc());
     const std::string name = name_token.getIdentifierInfo()->getName().str();
     if (shared_.fresh("macro|" + std::to_string(shared_.translation_unit) + '|' +
                       declaration_key(*location, name))) {
@@ -2883,6 +3157,25 @@ class PreprocessorRecorder final : public clang::PPCallbacks {
     if (line_comment && (text.find("\\\n") != std::string_view::npos ||
                          text.find("\\\r\n") != std::string_view::npos)) {
       report(comment.getLocation(), "misra-c2012-3.2-line-splice-in-comment");
+    }
+  }
+
+  // 21.1: defining or undefining a reserved name, or a macro that the
+  // implementation or a system header defines.
+  void check_reserved_macro(const clang::Token& name_token,
+                            const clang::MacroInfo* previous,
+                            const clang::SourceLocation where) {
+    const llvm::StringRef name = name_token.getIdentifierInfo()->getName();
+    bool reserved = name.starts_with("__") ||
+                    (name.size() > 1U && name[0] == '_' && name[1] >= 'A' && name[1] <= 'Z');
+    if (previous != nullptr) {
+      const clang::PresumedLoc presumed = sm_.getPresumedLoc(previous->getDefinitionLoc());
+      reserved = reserved || previous->isBuiltinMacro() ||
+                 sm_.isInSystemHeader(previous->getDefinitionLoc()) ||
+                 (presumed.isValid() && std::string_view(presumed.getFilename()) == "<built-in>");
+    }
+    if (reserved) {
+      report(where, "misra-c2012-21.1-reserved-macro");
     }
   }
 

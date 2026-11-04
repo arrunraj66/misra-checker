@@ -21,6 +21,7 @@ RuleEvaluation include_findings(const AnalysisContext& context,
                                 std::string_view key);
 RuleEvaluation non_boolean_condition_findings(const AnalysisContext& context,
                                               std::string_view key);
+RuleEvaluation reserved_identifiers(const AnalysisContext& context);          // 21.2
 RuleEvaluation merged(RuleEvaluation first, RuleEvaluation second);
 RuleEvaluation multiple_loop_exit_findings(const AnalysisContext& context,
                                            std::string_view key);

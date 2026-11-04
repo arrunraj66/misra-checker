@@ -375,6 +375,27 @@ RuleEvaluation unused_declarations(const AnalysisContext& context,
 
 }  // namespace
 
+RuleEvaluation reserved_identifiers(const AnalysisContext& context) {
+  RuleEvaluation e = complete();
+  std::set<std::string> reported;
+  for (const IdentifierFact& f : context.identifiers) {
+    if (f.space == IdentifierSpace::Member || f.name.empty() || f.name[0] != '_') {
+      continue;
+    }
+    const bool always_reserved =
+        f.name.rfind("__", 0U) == 0U ||
+        (f.name.size() > 1U && f.name[1] >= 'A' && f.name[1] <= 'Z');
+    const auto parent = context.scope_parents.find(f.scope);
+    const bool file_scope = parent != context.scope_parents.end() && parent->second == 0U;
+    if ((always_reserved || file_scope) &&
+        reported.insert(declaration_key(f.location, f.name)).second) {
+      e.findings.push_back({"misra-c2012-21.2-reserved-identifier", f.location,
+                            FindingCertainty::Definite});
+    }
+  }
+  return e;
+}
+
 RuleEvaluation merged(RuleEvaluation first, RuleEvaluation second) {
   first.findings.insert(first.findings.end(), second.findings.begin(),
                         second.findings.end());

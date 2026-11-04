@@ -2,7 +2,7 @@
 
 This catalog records the engineering structures present in the checker. It deliberately does not reproduce the copyrighted normative rule wording. The licensed MISRA specification is the controlled source for rule predicates, amplification, exceptions, and examples.
 
-Current milestone: 22 rule classes are **scaffolds**; 121 have implemented Clang-backed syntactic detectors, but independent validation remains pending. A scaffold provides identity, metadata, an analysis plan, a factory, and a non-compliant-safe `NotImplemented` result. It is not a working compliance check.
+Current milestone: 13 rule classes are **scaffolds**; 130 have implemented Clang-backed syntactic detectors, but independent validation remains pending. A scaffold provides identity, metadata, an analysis plan, a factory, and a non-compliant-safe `NotImplemented` result. It is not a working compliance check.
 
 | Rule | Category | Decidability | Scope | C90 | C99 | Topic | Status |
 |---|---|---|---|---:|---:|---|---|
@@ -131,8 +131,8 @@ Current milestone: 22 rule classes are **scaffolds**; 121 have implemented Clang
 | 20.12 | Required | Decidable | Single Translation Unit | Yes | Yes | Preprocessing directives | Implemented; independent validation pending |
 | 20.13 | Required | Decidable | Single Translation Unit | Yes | Yes | Preprocessing directives | Implemented; independent validation pending |
 | 20.14 | Required | Decidable | Single Translation Unit | Yes | Yes | Preprocessing directives | Scaffold |
-| 21.1 | Required | Decidable | Single Translation Unit | Yes | Yes | Standard library usage | Scaffold |
-| 21.2 | Required | Decidable | Single Translation Unit | Yes | Yes | Standard library usage | Scaffold |
+| 21.1 | Required | Decidable | Single Translation Unit | Yes | Yes | Standard library usage | Implemented; independent validation pending |
+| 21.2 | Required | Decidable | Single Translation Unit | Yes | Yes | Standard library usage | Implemented; independent validation pending |
 | 21.3 | Required | Decidable | Single Translation Unit | Yes | Yes | Standard library usage | Implemented; independent validation pending |
 | 21.4 | Required | Decidable | Single Translation Unit | Yes | Yes | Standard library usage | Implemented; independent validation pending |
 | 21.5 | Required | Decidable | Single Translation Unit | Yes | Yes | Standard library usage | Implemented; independent validation pending |
@@ -142,10 +142,10 @@ Current milestone: 22 rule classes are **scaffolds**; 121 have implemented Clang
 | 21.9 | Required | Decidable | Single Translation Unit | Yes | Yes | Standard library usage | Implemented; independent validation pending |
 | 21.10 | Required | Decidable | Single Translation Unit | Yes | Yes | Standard library usage | Implemented; independent validation pending |
 | 21.11 | Required | Decidable | Single Translation Unit | No | Yes | Standard library usage | Implemented; independent validation pending |
-| 21.12 | Advisory | Decidable | Single Translation Unit | No | Yes | Standard library usage | Scaffold |
-| 22.1 | Required | Undecidable | System | Yes | Yes | Resource management | Scaffold |
-| 22.2 | Mandatory | Undecidable | System | Yes | Yes | Resource management | Scaffold |
-| 22.3 | Required | Undecidable | System | Yes | Yes | Resource management | Scaffold |
-| 22.4 | Mandatory | Undecidable | System | Yes | Yes | Resource management | Scaffold |
-| 22.5 | Mandatory | Undecidable | System | Yes | Yes | Resource management | Scaffold |
-| 22.6 | Mandatory | Undecidable | System | Yes | Yes | Resource management | Scaffold |
+| 21.12 | Advisory | Decidable | Single Translation Unit | No | Yes | Standard library usage | Implemented; independent validation pending |
+| 22.1 | Required | Undecidable | System | Yes | Yes | Resource management | Implemented; independent validation pending |
+| 22.2 | Mandatory | Undecidable | System | Yes | Yes | Resource management | Implemented; independent validation pending |
+| 22.3 | Required | Undecidable | System | Yes | Yes | Resource management | Implemented; independent validation pending |
+| 22.4 | Mandatory | Undecidable | System | Yes | Yes | Resource management | Implemented; independent validation pending |
+| 22.5 | Mandatory | Undecidable | System | Yes | Yes | Resource management | Implemented; independent validation pending |
+| 22.6 | Mandatory | Undecidable | System | Yes | Yes | Resource management | Implemented; independent validation pending |
