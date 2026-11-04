@@ -225,3 +225,33 @@ licensed text before relying on a result.
   function with internal linkage is reported as definite; an externally
   visible one is **possible** because another file may bind it to a function
   pointer type. The catalogue lists the rule as undecidable.
+
+## Section 20 rules (preprocessor) — 20.1-20.5, 20.7, 20.9-20.13
+Text-level rules are checked on raw tokens of every project file (system
+headers are skipped); macro rules use the macro definition as the preprocessor
+saw it.
+* **Not implemented:** 20.6 (it needs to know which macro arguments span lines
+  and where a `#` begins a line inside them), 20.8 (it needs the *value* of each
+  `#if` expression, which the preprocessor callbacks do not expose) and 20.14
+  (a conditional directive that closes in another file is a hard compile error
+  in Clang, so a detector could never fire; such a file fails analysis).
+* **20.1** counts any token outside a directive as code, including tokens inside
+  a group skipped by `#if 0`, so an include that follows a disabled block of
+  code is reported.
+* **20.2** looks at the header name as written; `//` and `/*` inside an
+  angle-bracket name are reported even though the compiler may treat them as
+  comments in other contexts.
+* **20.3** reports an `#include` whose operand is neither `<...>` nor `"..."`.
+* **20.4** uses the compiler's own keyword table for the language mode, so
+  `inline`, `restrict` and `_Bool` are keywords in C99 but `bool` is not.
+* **20.7** treats a parameter use as parenthesized when it sits between `(` and
+  `)`, and also accepts a bare function-argument position (between `(` or `,`
+  and `)` or `,`), which is an interpretation to confirm against the licensed
+  text. Operands of `#` and `##` are exempt. `__VA_ARGS__` counts as a parameter.
+* **20.9** reports an identifier that is not a macro at that point and is not
+  the operand of `defined`; `__has_*` operators end the check for that
+  expression. Only groups the preprocessor evaluates are checked.
+* **20.10-20.12** work on the replacement list. `#` is an operator only in a
+  function-like macro; `##` always is.
+* **20.13** accepts the null directive and line markers, and checks skipped
+  groups too (the raw scan does not skip them).

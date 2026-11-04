@@ -82,6 +82,17 @@ misra_fixture_suite(
   "9.5|r09_5_compliant.c|0" "9.5|r09_5_violating.c|1"
   "8.1|r08_1_compliant.c|0" "8.1|r08_1_violating.c|2"
   "8.13|r08_13_compliant.c|0" "8.13|r08_13_violating.c|4"
+  "20.1|r20_1_compliant.c|0" "20.1|r20_1_violating.c|1"
+  "20.2|r20_2_compliant.c|0" "20.2|r20_2_violating.c|2"
+  "20.3|r20_3_compliant.c|0" "20.3|r20_3_violating.c|1"
+  "20.4|r20_4_compliant.c|0" "20.4|r20_4_violating.c|2"
+  "20.5|r20_5_compliant.c|0" "20.5|r20_5_violating.c|1"
+  "20.7|r20_7_compliant.c|0" "20.7|r20_7_violating.c|3"
+  "20.9|r20_9_compliant.c|0" "20.9|r20_9_violating.c|2"
+  "20.10|r20_10_compliant.c|0" "20.10|r20_10_violating.c|2"
+  "20.11|r20_11_compliant.c|0" "20.11|r20_11_violating.c|1"
+  "20.12|r20_12_compliant.c|0" "20.12|r20_12_violating.c|1"
+  "20.13|r20_13_compliant.c|0" "20.13|r20_13_violating.c|1"
   # Macro policy: the comma produced by PAIR() is found; the octal literal
   # inside a system-header macro (S_IRUSR) is not.
   "12.3|macro_origin.c|1" "7.1|macro_origin.c|0"

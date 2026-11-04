@@ -2,7 +2,7 @@
 
 This catalog records the engineering structures present in the checker. It deliberately does not reproduce the copyrighted normative rule wording. The licensed MISRA specification is the controlled source for rule predicates, amplification, exceptions, and examples.
 
-Current milestone: 58 rule classes are **scaffolds**; 85 have implemented Clang-backed syntactic detectors, but independent validation remains pending. A scaffold provides identity, metadata, an analysis plan, a factory, and a non-compliant-safe `NotImplemented` result. It is not a working compliance check.
+Current milestone: 47 rule classes are **scaffolds**; 96 have implemented Clang-backed syntactic detectors, but independent validation remains pending. A scaffold provides identity, metadata, an analysis plan, a factory, and a non-compliant-safe `NotImplemented` result. It is not a working compliance check.
 
 | Rule | Category | Decidability | Scope | C90 | C99 | Topic | Status |
 |---|---|---|---|---:|---:|---|---|
@@ -117,19 +117,19 @@ Current milestone: 58 rule classes are **scaffolds**; 85 have implemented Clang-
 | 18.8 | Required | Decidable | Single Translation Unit | No | Yes | Pointers and arrays | Implemented; independent validation pending |
 | 19.1 | Mandatory | Undecidable | System | Yes | Yes | Overlapping storage | Scaffold |
 | 19.2 | Advisory | Decidable | Single Translation Unit | Yes | Yes | Overlapping storage | Scaffold |
-| 20.1 | Advisory | Decidable | Single Translation Unit | Yes | Yes | Preprocessing directives | Scaffold |
-| 20.2 | Required | Decidable | Single Translation Unit | Yes | Yes | Preprocessing directives | Scaffold |
-| 20.3 | Required | Decidable | Single Translation Unit | Yes | Yes | Preprocessing directives | Scaffold |
-| 20.4 | Required | Decidable | Single Translation Unit | Yes | Yes | Preprocessing directives | Scaffold |
-| 20.5 | Advisory | Decidable | Single Translation Unit | Yes | Yes | Preprocessing directives | Scaffold |
+| 20.1 | Advisory | Decidable | Single Translation Unit | Yes | Yes | Preprocessing directives | Implemented; independent validation pending |
+| 20.2 | Required | Decidable | Single Translation Unit | Yes | Yes | Preprocessing directives | Implemented; independent validation pending |
+| 20.3 | Required | Decidable | Single Translation Unit | Yes | Yes | Preprocessing directives | Implemented; independent validation pending |
+| 20.4 | Required | Decidable | Single Translation Unit | Yes | Yes | Preprocessing directives | Implemented; independent validation pending |
+| 20.5 | Advisory | Decidable | Single Translation Unit | Yes | Yes | Preprocessing directives | Implemented; independent validation pending |
 | 20.6 | Required | Decidable | Single Translation Unit | Yes | Yes | Preprocessing directives | Scaffold |
-| 20.7 | Required | Decidable | Single Translation Unit | Yes | Yes | Preprocessing directives | Scaffold |
+| 20.7 | Required | Decidable | Single Translation Unit | Yes | Yes | Preprocessing directives | Implemented; independent validation pending |
 | 20.8 | Required | Decidable | Single Translation Unit | Yes | Yes | Preprocessing directives | Scaffold |
-| 20.9 | Required | Decidable | Single Translation Unit | Yes | Yes | Preprocessing directives | Scaffold |
-| 20.10 | Advisory | Decidable | Single Translation Unit | Yes | Yes | Preprocessing directives | Scaffold |
-| 20.11 | Required | Decidable | Single Translation Unit | Yes | Yes | Preprocessing directives | Scaffold |
-| 20.12 | Required | Decidable | Single Translation Unit | Yes | Yes | Preprocessing directives | Scaffold |
-| 20.13 | Required | Decidable | Single Translation Unit | Yes | Yes | Preprocessing directives | Scaffold |
+| 20.9 | Required | Decidable | Single Translation Unit | Yes | Yes | Preprocessing directives | Implemented; independent validation pending |
+| 20.10 | Advisory | Decidable | Single Translation Unit | Yes | Yes | Preprocessing directives | Implemented; independent validation pending |
+| 20.11 | Required | Decidable | Single Translation Unit | Yes | Yes | Preprocessing directives | Implemented; independent validation pending |
+| 20.12 | Required | Decidable | Single Translation Unit | Yes | Yes | Preprocessing directives | Implemented; independent validation pending |
+| 20.13 | Required | Decidable | Single Translation Unit | Yes | Yes | Preprocessing directives | Implemented; independent validation pending |
 | 20.14 | Required | Decidable | Single Translation Unit | Yes | Yes | Preprocessing directives | Scaffold |
 | 21.1 | Required | Decidable | Single Translation Unit | Yes | Yes | Standard library usage | Scaffold |
 | 21.2 | Required | Decidable | Single Translation Unit | Yes | Yes | Standard library usage | Scaffold |

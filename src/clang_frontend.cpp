@@ -1986,8 +1986,40 @@ class FactVisitor final : public clang::RecursiveASTVisitor<FactVisitor> {
 
 class PreprocessorRecorder final : public clang::PPCallbacks {
  public:
-  PreprocessorRecorder(clang::SourceManager& sm, Shared& shared)
-      : sm_(sm), shared_(shared) {}
+  PreprocessorRecorder(clang::SourceManager& sm, clang::Preprocessor& pp,
+                       Shared& shared)
+      : sm_(sm), pp_(pp), lang_(pp.getLangOpts()), shared_(shared) {}
+
+  // Rules 20.1, 20.3, 20.13: every project file is scanned once as raw tokens,
+  // because these concern text the preprocessor itself consumes.
+  void FileChanged(clang::SourceLocation loc, FileChangeReason reason,
+                   clang::SrcMgr::CharacteristicKind type,
+                   clang::FileID) override {
+    if (reason != EnterFile || type != clang::SrcMgr::C_User) {
+      return;
+    }
+    const clang::FileID file = sm_.getFileID(loc);
+    if (scanned_.insert(file).second) {
+      scan_file(file);
+    }
+  }
+
+  void MacroUndefined(const clang::Token& name_token, const clang::MacroDefinition&,
+                      const clang::MacroDirective*) override {
+    report(name_token.getLocation(), "misra-c2012-20.5-undef");
+  }
+
+  void If(clang::SourceLocation, clang::SourceRange condition,
+          ConditionValueKind) override {
+    check_condition(condition);
+  }
+
+  void Elif(clang::SourceLocation, clang::SourceRange condition,
+            ConditionValueKind value, clang::SourceLocation) override {
+    if (value != CVK_NotEvaluated) {
+      check_condition(condition);
+    }
+  }
 
 #if LLVM_VERSION_MAJOR >= 19
   void InclusionDirective(clang::SourceLocation hash_loc, const clang::Token&,
@@ -2004,6 +2036,12 @@ class PreprocessorRecorder final : public clang::PPCallbacks {
                           const clang::Module*,
                           clang::SrcMgr::CharacteristicKind) override {
 #endif
+    const std::string written = file_name.str();
+    if (written.find_first_of("'\"\\") != std::string::npos ||
+        written.find("//") != std::string::npos ||
+        written.find("/*") != std::string::npos) {
+      report(hash_loc, "misra-c2012-20.2-header-name-characters");
+    }
     if (const auto location = locate(sm_, hash_loc)) {
       if (shared_.fresh("include|" + file_name.str() + '|' +
                         location_text(*location))) {
@@ -2023,6 +2061,7 @@ class PreprocessorRecorder final : public clang::PPCallbacks {
     if (!location) {
       return;
     }
+    check_macro_definition(name_token, info);
     const std::string name = name_token.getIdentifierInfo()->getName().str();
     if (shared_.fresh("macro|" + std::to_string(shared_.translation_unit) + '|' +
                       declaration_key(*location, name))) {
@@ -2052,6 +2091,216 @@ class PreprocessorRecorder final : public clang::PPCallbacks {
   }
 
  private:
+  void report(const clang::SourceLocation raw, const std::string_view kind) {
+    if (const auto location = locate(sm_, raw, false)) {
+      if (shared_.fresh(std::string(kind) + '|' + location_text(*location))) {
+        shared_.context.syntax.push_back({*location, kind});
+      }
+    }
+  }
+
+  static const std::set<std::string>& directive_names() {
+    static const std::set<std::string> names{
+        "define", "undef",  "include", "include_next", "import", "if",
+        "ifdef",  "ifndef", "elif",    "elifdef",      "elifndef", "else",
+        "endif",  "line",   "error",   "warning",      "pragma", "ident",
+        "sccs",   "assert", "unassert", "include_macros"};
+    return names;
+  }
+
+  void scan_file(const clang::FileID file) {
+    bool invalid = false;
+    const llvm::StringRef buffer = sm_.getBufferData(file, &invalid);
+    if (invalid) {
+      return;
+    }
+    clang::Lexer lexer(sm_.getLocForStartOfFile(file), lang_, buffer.begin(),
+                       buffer.begin(), buffer.end());
+    clang::Token pending;
+    bool has_pending = false;
+    const auto next = [&](clang::Token& token) {
+      if (has_pending) {
+        token = pending;
+        has_pending = false;
+        return true;
+      }
+      lexer.LexFromRawLexer(token);
+      return !token.is(clang::tok::eof);
+    };
+    const auto push_back = [&](const clang::Token& token) {
+      pending = token;
+      has_pending = true;
+    };
+
+    clang::Token token;
+    bool code_seen = false;  // anything other than a directive so far
+    while (next(token)) {
+      if (!(token.isAtStartOfLine() && token.is(clang::tok::hash))) {
+        code_seen = true;
+        continue;
+      }
+      const clang::SourceLocation hash_loc = token.getLocation();
+      clang::Token name;
+      if (!next(name)) {
+        break;
+      }
+      if (name.isAtStartOfLine()) {  // a null directive is valid
+        push_back(name);
+        continue;
+      }
+      std::string directive;
+      bool valid = name.is(clang::tok::numeric_constant);  // line marker
+      if (name.is(clang::tok::raw_identifier)) {
+        directive = name.getRawIdentifier().str();
+        valid = directive_names().count(directive) != 0U;
+      }
+      if (!valid) {
+        report(hash_loc, "misra-c2012-20.13-invalid-directive");
+      }
+      if (directive == "include" || directive == "include_next" ||
+          directive == "import") {
+        if (code_seen) {
+          report(hash_loc, "misra-c2012-20.1-include-after-code");
+        }
+        clang::Token operand;
+        if (next(operand)) {
+          if (operand.isAtStartOfLine()) {
+            push_back(operand);
+            report(hash_loc, "misra-c2012-20.3-include-operand");
+          } else if (!operand.isOneOf(clang::tok::less, clang::tok::string_literal)) {
+            report(hash_loc, "misra-c2012-20.3-include-operand");
+          }
+        }
+      }
+      clang::Token rest;  // skip the remainder of the directive line
+      while (next(rest)) {
+        if (rest.isAtStartOfLine()) {
+          push_back(rest);
+          break;
+        }
+      }
+    }
+  }
+
+  void check_macro_definition(const clang::Token& name_token,
+                              const clang::MacroInfo* info) {
+    const clang::SourceLocation definition = info->getDefinitionLoc();
+    if (name_token.getIdentifierInfo()->isKeyword(lang_)) {
+      report(definition, "misra-c2012-20.4-keyword-macro");
+    }
+    const auto tokens = info->tokens();
+    const std::size_t count = tokens.size();
+    const auto is_parameter = [&](const clang::Token& token) {
+      const clang::IdentifierInfo* const identifier = token.getIdentifierInfo();
+      if (identifier == nullptr) {
+        return false;
+      }
+      for (const clang::IdentifierInfo* parameter : info->params()) {
+        if (parameter == identifier) {
+          return true;
+        }
+      }
+      return info->isVariadic() && identifier->isStr("__VA_ARGS__");
+    };
+    const auto is_operator = [&](const std::size_t index) {
+      return index < count && (tokens[index].is(clang::tok::hashhash) ||
+                               (info->isFunctionLike() && tokens[index].is(clang::tok::hash)));
+    };
+
+    for (std::size_t index = 0U; index < count; ++index) {  // 20.10
+      if (is_operator(index)) {
+        report(tokens[index].getLocation(), "misra-c2012-20.10-hash-operator");
+        break;
+      }
+    }
+    if (!info->isFunctionLike()) {
+      return;
+    }
+    std::map<const clang::IdentifierInfo*, std::pair<bool, bool>> usage;  // operand, other
+    for (std::size_t index = 0U; index < count; ++index) {
+      if (index + 2U < count && tokens[index].is(clang::tok::hash) &&
+          is_parameter(tokens[index + 1U]) &&
+          tokens[index + 2U].is(clang::tok::hashhash)) {
+        report(tokens[index].getLocation(), "misra-c2012-20.11-stringize-then-paste");
+      }
+      if (!is_parameter(tokens[index])) {
+        continue;
+      }
+      const bool operand = (index > 0U && is_operator(index - 1U)) ||
+                           (index + 1U < count &&
+                            tokens[index + 1U].is(clang::tok::hashhash));
+      auto& flags = usage[tokens[index].getIdentifierInfo()];
+      (operand ? flags.first : flags.second) = true;
+      if (operand) {
+        continue;
+      }
+      // 20.7: an expansion of a parameter is parenthesized. Taken as
+      // parenthesized: directly between ( and ), or in an argument position
+      // between ( or , and ) or ,.
+      const bool before = index > 0U && (tokens[index - 1U].is(clang::tok::l_paren) ||
+                                         tokens[index - 1U].is(clang::tok::comma));
+      const bool after = index + 1U < count && (tokens[index + 1U].is(clang::tok::r_paren) ||
+                                                tokens[index + 1U].is(clang::tok::comma));
+      if (!(before && after)) {
+        report(tokens[index].getLocation(), "misra-c2012-20.7-unparenthesized-parameter");
+      }
+    }
+    for (const auto& entry : usage) {  // 20.12
+      if (entry.second.first && entry.second.second) {
+        report(definition, "misra-c2012-20.12-operand-and-expanded");
+      }
+    }
+  }
+
+  // 20.9: an identifier in an #if/#elif expression that is neither a macro
+  // nor the operand of `defined` silently evaluates to 0.
+  void check_condition(const clang::SourceRange range) {
+    if (range.isInvalid() || !range.getBegin().isFileID() ||
+        !range.getEnd().isFileID()) {
+      return;
+    }
+    // Lex a private, NUL-terminated copy: the raw lexer relies on a terminator
+    // that a slice of the file buffer does not have.
+    bool invalid = false;
+    const llvm::StringRef slice = clang::Lexer::getSourceText(
+        clang::CharSourceRange::getTokenRange(range), sm_, lang_, &invalid);
+    if (invalid || slice.empty()) {
+      return;
+    }
+    const std::string text = slice.str();
+    clang::Lexer lexer(range.getBegin(), lang_, text.data(), text.data(),
+                       text.data() + text.size());
+    clang::Token token;
+    bool after_defined = false;
+    for (;;) {
+      lexer.LexFromRawLexer(token);
+      if (token.is(clang::tok::eof)) {
+        break;
+      }
+      if (!token.is(clang::tok::raw_identifier)) {
+        if (!(after_defined && token.is(clang::tok::l_paren))) {
+          after_defined = false;
+        }
+        continue;
+      }
+      const llvm::StringRef name = token.getRawIdentifier();
+      if (name == "defined") {
+        after_defined = true;
+        continue;
+      }
+      if (after_defined) {
+        after_defined = false;
+        continue;
+      }
+      if (name.starts_with("__has_")) {
+        break;  // __has_include(<x>) and friends: the rest is not an expression
+      }
+      if (!pp_.isMacroDefined(pp_.getIdentifierInfo(name))) {
+        report(token.getLocation(), "misra-c2012-20.9-undefined-identifier");
+      }
+    }
+  }
+
   void note_use(const clang::Token& name_token) {
     if (const clang::IdentifierInfo* const info = name_token.getIdentifierInfo()) {
       shared_.context.program.used_macros.insert(info->getName().str());
@@ -2059,7 +2308,10 @@ class PreprocessorRecorder final : public clang::PPCallbacks {
   }
 
   clang::SourceManager& sm_;
+  clang::Preprocessor& pp_;
+  const clang::LangOptions& lang_;
   Shared& shared_;
+  std::set<clang::FileID> scanned_;
 };
 
 // Records the compiler's own "type specifier missing" diagnostics (Rule 8.1)
@@ -2128,6 +2380,7 @@ class FactAction final : public clang::ASTFrontendAction {
       clang::CompilerInstance& compiler, llvm::StringRef) override {
     compiler.getPreprocessor().addPPCallbacks(
         std::make_unique<PreprocessorRecorder>(compiler.getSourceManager(),
+                                               compiler.getPreprocessor(),
                                                shared_));
     return std::make_unique<FactConsumer>(shared_);
   }
