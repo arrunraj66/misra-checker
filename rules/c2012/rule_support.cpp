@@ -70,7 +70,7 @@ RuleEvaluation syntax_findings(const AnalysisContext& context,
   RuleEvaluation e = complete();
   for (const SyntaxFact& f : context.syntax) {
     if (f.kind == key) {
-      e.findings.push_back({key, f.location, FindingCertainty::Definite});
+      e.findings.push_back({key, f.location, f.certainty});
     }
   }
   return e;

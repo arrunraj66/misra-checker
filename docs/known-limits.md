@@ -141,3 +141,23 @@ licensed text before relying on a result.
 * **17.8** reports assignment, increment and decrement of the parameter itself.
   Modification through a pointer, or by taking the parameter's address, is not
   followed (the catalogue lists this rule as undecidable).
+
+## Section 16 rules (switch) — 16.2, 16.3, 16.5, 16.6, 16.7 (16.4 earlier)
+* **16.1 is not implemented.** Its well-formedness conditions are a list of
+  syntactic requirements that overlap 16.2-16.6; reconstructing the exact list
+  from memory risks a checker that disagrees with the licensed text, so it is
+  left unimplemented until it can be checked against that text.
+* A *clause* is one or more consecutive labels plus the statements up to the
+  next label; chained labels (`case 1: case 2:`) are one clause.
+* **16.3** accepts only `break` as a terminator, either as the last statement
+  of the clause or as the last statement of a block that is the last statement.
+  A clause ending in `return`, `goto`, `continue` or a call to a function that
+  does not return is reported, and so is a fall-through marked by a comment.
+  The final clause must also end with `break`.
+* **16.2** judges the nearest enclosing compound statement. A switch whose body
+  is not braced is left to 15.6.
+* **16.5** compares label positions, not clause positions: `case 1: default:` is
+  a default in last position.
+* **16.6** counts clauses, so `case 1: case 2: ...; break;` is one clause.
+* **16.7** uses the essential-type model, so a comparison, a `_Bool` and
+  `<stdbool.h>` constants are Boolean.

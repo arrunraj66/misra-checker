@@ -283,7 +283,44 @@ class FactVisitor final : public clang::RecursiveASTVisitor<FactVisitor> {
     return true;
   }
 
+  // 16.2: a case/default label belongs directly to the compound statement that
+  // is the body of its switch. Chained labels (case 1: case 2:) are one unit.
+  bool VisitSwitchCase(clang::SwitchCase* label) {
+    const clang::Stmt* current = label;
+    for (;;) {
+      const auto parents = ast_.getParents(*current);
+      if (parents.empty()) {
+        return true;
+      }
+      const clang::Stmt* const parent = parents[0].get<clang::Stmt>();
+      if (parent == nullptr) {
+        return true;
+      }
+      if (llvm::isa<clang::SwitchCase>(parent)) {
+        current = parent;
+        continue;
+      }
+      if (llvm::isa<clang::SwitchStmt>(parent)) {
+        return true;  // unbraced body: a 15.6 matter, not this rule
+      }
+      bool in_switch_body = false;
+      if (llvm::isa<clang::CompoundStmt>(parent)) {
+        const auto outer = ast_.getParents(*parent);
+        if (!outer.empty()) {
+          if (const auto* owner = outer[0].get<clang::SwitchStmt>()) {
+            in_switch_body = owner->getBody() == parent;
+          }
+        }
+      }
+      if (!in_switch_body) {
+        syntax(label->getKeywordLoc(), "misra-c2012-16.2-label-not-in-switch-body");
+      }
+      return true;
+    }
+  }
+
   bool VisitSwitchStmt(clang::SwitchStmt* statement) {
+    check_switch_shape(statement);
     record_body(statement->getBody(), "switch", statement->getSwitchLoc());
     bool has_default = false;
     for (const clang::SwitchCase* c = statement->getSwitchCaseList();
@@ -905,6 +942,68 @@ class FactVisitor final : public clang::RecursiveASTVisitor<FactVisitor> {
     }
   }
 
+  // True when the last statement of a switch clause is an unconditional break,
+  // possibly as the last statement of a nested block.
+  static bool ends_with_break(const clang::Stmt* statement) {
+    if (statement == nullptr) {
+      return false;
+    }
+    if (llvm::isa<clang::BreakStmt>(statement)) {
+      return true;
+    }
+    if (const auto* block = llvm::dyn_cast<clang::CompoundStmt>(statement)) {
+      return !block->body_empty() && ends_with_break(block->body_back());
+    }
+    return false;
+  }
+
+  // Rules 16.3, 16.5, 16.6 and 16.7.
+  void check_switch_shape(const clang::SwitchStmt* statement) {
+    if (essential::of_expression(statement->getCond(), ast_).category ==
+        essential::Category::Boolean) {
+      syntax(statement->getSwitchLoc(),
+             "misra-c2012-16.7-boolean-switch-expression");
+    }
+    const auto* body = llvm::dyn_cast_or_null<clang::CompoundStmt>(statement->getBody());
+    if (body == nullptr) {
+      return;
+    }
+    struct Clause final {
+      const clang::SwitchCase* first;
+      const clang::Stmt* last;
+    };
+    std::vector<Clause> clauses;
+    std::vector<const clang::SwitchCase*> labels;  // in source order
+    for (const clang::Stmt* child : body->body()) {
+      if (const auto* label = llvm::dyn_cast<clang::SwitchCase>(child)) {
+        const clang::Stmt* inner = label;
+        while (const auto* chained = llvm::dyn_cast<clang::SwitchCase>(inner)) {
+          labels.push_back(chained);
+          inner = chained->getSubStmt();
+        }
+        clauses.push_back({label, inner});
+      } else if (!clauses.empty()) {
+        clauses.back().last = child;
+      }
+    }
+    if (clauses.size() < 2U) {
+      syntax(statement->getSwitchLoc(), "misra-c2012-16.6-too-few-clauses");
+    }
+    for (const Clause& clause : clauses) {
+      if (!ends_with_break(clause.last)) {
+        syntax(clause.first->getKeywordLoc(),
+               "misra-c2012-16.3-clause-not-terminated-by-break");
+      }
+    }
+    for (std::size_t index = 0U; index < labels.size(); ++index) {
+      if (llvm::isa<clang::DefaultStmt>(labels[index]) && index != 0U &&
+          index + 1U != labels.size()) {
+        syntax(labels[index]->getKeywordLoc(),
+               "misra-c2012-16.5-default-position");
+      }
+    }
+  }
+
   void check_pointer_conversion(const clang::CastExpr* cast) {
     switch (cast->getCastKind()) {
       case clang::CK_BitCast:
@@ -1165,10 +1264,11 @@ class FactVisitor final : public clang::RecursiveASTVisitor<FactVisitor> {
   }
 
   void syntax(const clang::SourceLocation raw, const std::string_view kind,
-              const bool structural = true) {
+              const bool structural = true,
+              const FindingCertainty certainty = FindingCertainty::Definite) {
     if (const auto location = locate(sm_, raw, structural)) {
       add(context_.syntax, std::string(kind),
-          SyntaxFact{*location, kind});
+          SyntaxFact{*location, kind, certainty});
     }
   }
 

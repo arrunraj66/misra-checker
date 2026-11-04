@@ -103,9 +103,15 @@ struct CallFact final {
 
 // Generic single-translation-unit syntax fact. `kind` is the diagnostic key of
 // the rule that consumes it and always points at a string literal.
+enum class FindingCertainty {
+  Definite,
+  Possible,
+};
+
 struct SyntaxFact final {
   SourceLocation location;
   std::string_view kind;
+  FindingCertainty certainty = FindingCertainty::Definite;
 };
 
 // Controlling expression of an if/while/do/for statement (Rule 14.4).
@@ -255,11 +261,6 @@ enum class EvaluationStatus {
   NotImplemented,
   Complete,
   Inconclusive,
-};
-
-enum class FindingCertainty {
-  Definite,
-  Possible,
 };
 
 struct Finding final {

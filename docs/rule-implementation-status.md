@@ -2,7 +2,7 @@
 
 This catalog records the engineering structures present in the checker. It deliberately does not reproduce the copyrighted normative rule wording. The licensed MISRA specification is the controlled source for rule predicates, amplification, exceptions, and examples.
 
-Current milestone: 72 rule classes are **scaffolds**; 71 have implemented Clang-backed syntactic detectors, but independent validation remains pending. A scaffold provides identity, metadata, an analysis plan, a factory, and a non-compliant-safe `NotImplemented` result. It is not a working compliance check.
+Current milestone: 67 rule classes are **scaffolds**; 76 have implemented Clang-backed syntactic detectors, but independent validation remains pending. A scaffold provides identity, metadata, an analysis plan, a factory, and a non-compliant-safe `NotImplemented` result. It is not a working compliance check.
 
 | Rule | Category | Decidability | Scope | C90 | C99 | Topic | Status |
 |---|---|---|---|---:|---:|---|---|
@@ -93,12 +93,12 @@ Current milestone: 72 rule classes are **scaffolds**; 71 have implemented Clang-
 | 15.6 | Required | Decidable | Single Translation Unit | Yes | Yes | Control flow | Implemented; independent validation pending |
 | 15.7 | Required | Decidable | Single Translation Unit | Yes | Yes | Control flow | Implemented; independent validation pending |
 | 16.1 | Required | Decidable | Single Translation Unit | Yes | Yes | Switch statements | Scaffold |
-| 16.2 | Required | Decidable | Single Translation Unit | Yes | Yes | Switch statements | Scaffold |
-| 16.3 | Required | Decidable | Single Translation Unit | Yes | Yes | Switch statements | Scaffold |
+| 16.2 | Required | Decidable | Single Translation Unit | Yes | Yes | Switch statements | Implemented; independent validation pending |
+| 16.3 | Required | Decidable | Single Translation Unit | Yes | Yes | Switch statements | Implemented; independent validation pending |
 | 16.4 | Required | Decidable | Single Translation Unit | Yes | Yes | Switch statements | Implemented; independent validation pending |
-| 16.5 | Required | Decidable | Single Translation Unit | Yes | Yes | Switch statements | Scaffold |
-| 16.6 | Required | Decidable | Single Translation Unit | Yes | Yes | Switch statements | Scaffold |
-| 16.7 | Required | Decidable | Single Translation Unit | Yes | Yes | Switch statements | Scaffold |
+| 16.5 | Required | Decidable | Single Translation Unit | Yes | Yes | Switch statements | Implemented; independent validation pending |
+| 16.6 | Required | Decidable | Single Translation Unit | Yes | Yes | Switch statements | Implemented; independent validation pending |
+| 16.7 | Required | Decidable | Single Translation Unit | Yes | Yes | Switch statements | Implemented; independent validation pending |
 | 17.1 | Required | Decidable | Single Translation Unit | Yes | Yes | Functions | Implemented; independent validation pending |
 | 17.2 | Required | Undecidable | System | Yes | Yes | Functions | Implemented; independent validation pending |
 | 17.3 | Mandatory | Decidable | Single Translation Unit | Yes | No | Functions | Implemented; independent validation pending |
