@@ -255,3 +255,30 @@ saw it.
   function-like macro; `##` always is.
 * **20.13** accepts the null directive and line markers, and checks skipped
   groups too (the raw scan does not skip them).
+
+## Section 18 rules (pointers) — 18.1-18.7 (18.8 earlier)
+18.4, 18.5 and 18.7 are decidable and implemented as written. 18.1, 18.2, 18.3
+and 18.6 are undecidable in general; only the **provable subset** is checked,
+so a clean result says nothing about code outside that subset. Everything
+reported is definite.
+* **18.1** reports a constant subscript outside a known array, and array `+`/`-`
+  a constant that leaves `[0, size]` (one past the end is allowed, including
+  `&a[size]`). A pointer whose origin is not a visible array, and any
+  non-constant index, is not judged.
+* **18.2** and **18.3** report subtraction and `<`, `<=`, `>`, `>=` between
+  two pointers that certainly point into two *different named arrays* (a plain
+  array, `&array[i]`, or array `+`/`-` n). Pointers held in variables are not
+  traced, so `p - q` is never reported; `==` and `!=` are not covered by 18.3.
+* **18.4** reports `+`, `-`, `+=` and `-=` when either operand is a pointer
+  (including pointer difference). `++`, `--` and subscripting are not reported,
+  matching the rule's operator list.
+* **18.5** counts `*` levels (and array levels in between) on the type as
+  written, so a typedef-name ends the count: `int_ptr **y` is two levels even
+  though `int_ptr` hides one more. Parameters use the declared type before array
+  adjustment, so `int *a[]` is one level.
+* **18.6** reports `return &local;`, returning an automatic array (it decays to
+  its address), and assigning such an address to a static or global object or
+  through a pointer parameter (`*out = &local;`, `out->p = &local;`). Copies
+  through intermediate pointers and aliases are not followed.
+* **18.7** reports an array of unspecified size as the last member of a
+  structure.

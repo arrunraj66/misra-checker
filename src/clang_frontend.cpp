@@ -3,6 +3,7 @@
 #include "essential_type.hpp"
 
 #include <algorithm>
+#include <cstdint>
 #include <map>
 #include <memory>
 #include <optional>
@@ -438,6 +439,7 @@ class FactVisitor final : public clang::RecursiveASTVisitor<FactVisitor> {
              "misra-c2012-13.4-assignment-value-used");
     }
     check_binary_types(expression);
+    check_pointer_arithmetic(expression);
     return true;
   }
 
@@ -478,6 +480,7 @@ class FactVisitor final : public clang::RecursiveASTVisitor<FactVisitor> {
   }
 
   bool VisitArraySubscriptExpr(clang::ArraySubscriptExpr* expression) {
+    check_constant_subscript(expression);
     if (!essential::appropriate(
             essential::Operand::Subscript,
             essential::of_expression(expression->getIdx(), ast_))) {
@@ -568,6 +571,10 @@ class FactVisitor final : public clang::RecursiveASTVisitor<FactVisitor> {
   }
 
   bool VisitReturnStmt(clang::ReturnStmt* statement) {
+    if (statement->getRetValue() != nullptr &&
+        automatic_object_address(statement->getRetValue()) != nullptr) {
+      syntax(statement->getReturnLoc(), "misra-c2012-18.6-automatic-address-escapes");
+    }
     if (statement->getRetValue() == nullptr && current_function_ != nullptr &&
         !current_function_->getReturnType()->isVoidType()) {
       syntax(statement->getReturnLoc(), "misra-c2012-17.4-missing-return");
@@ -688,6 +695,7 @@ class FactVisitor final : public clang::RecursiveASTVisitor<FactVisitor> {
         function->getStorageClass() != clang::SC_Static) {
       syntax(function->getLocation(), "misra-c2012-8.10-inline-not-static");
     }
+    check_pointer_nesting(function->getReturnType(), function->getLocation());
     // 8.14: restrict.
     if (function->getReturnType().isRestrictQualified()) {
       syntax(function->getLocation(), "misra-c2012-8.14-restrict");
@@ -723,6 +731,7 @@ class FactVisitor final : public clang::RecursiveASTVisitor<FactVisitor> {
     if (has_variable_length_array(declared)) {
       syntax(variable->getLocation(), "misra-c2012-18.8-variable-length-array");
     }
+    check_pointer_nesting(declared, variable->getLocation());
     if (llvm::isa<clang::ParmVarDecl>(variable)) {
       if (const clang::ArrayType* array = declared->getAsArrayTypeUnsafe();
           array != nullptr &&
@@ -780,6 +789,10 @@ class FactVisitor final : public clang::RecursiveASTVisitor<FactVisitor> {
 
   bool VisitFieldDecl(clang::FieldDecl* field) {
     record_identifier(field, IdentifierSpace::Member);
+    if (field->getType()->isIncompleteArrayType()) {
+      syntax(field->getLocation(), "misra-c2012-18.7-flexible-array-member");
+    }
+    check_pointer_nesting(field->getType(), field->getLocation());
     if (has_variable_length_array(field->getType())) {
       syntax(field->getLocation(), "misra-c2012-18.8-variable-length-array");
     }
@@ -810,6 +823,7 @@ class FactVisitor final : public clang::RecursiveASTVisitor<FactVisitor> {
       }
     }
     declare(declaration, DeclKind::Typedef, LinkageKind::None, true, {});
+    check_pointer_nesting(declaration->getUnderlyingType(), declaration->getLocation());
     record_identifier(declaration, IdentifierSpace::Ordinary);
     return true;
   }
@@ -1193,6 +1207,220 @@ class FactVisitor final : public clang::RecursiveASTVisitor<FactVisitor> {
         (void_pointer(from) && non_boolean_arithmetic(to))) {
       syntax(loc, "misra-c2012-11.6-void-pointer-arithmetic-conversion");
     }
+  }
+
+  // ------------------------------------------------------ Section 18 (pointers)
+  // 18.5: more than two levels of pointer in a declaration. Levels are counted
+  // on the type as written, so a typedef-name stops the count.
+  void check_pointer_nesting(clang::QualType type, const clang::SourceLocation loc) {
+    unsigned levels = 0U;
+    for (;;) {
+      const clang::Type* const raw = type.getTypePtrOrNull();
+      if (raw == nullptr) {
+        break;
+      }
+      if (const auto* pointer = llvm::dyn_cast<clang::PointerType>(raw)) {
+        ++levels;
+        type = pointer->getPointeeType();
+      } else if (const auto* array = llvm::dyn_cast<clang::ArrayType>(raw)) {
+        type = array->getElementType();
+      } else if (const auto* paren = llvm::dyn_cast<clang::ParenType>(raw)) {
+        type = paren->getInnerType();
+      } else {
+        break;
+      }
+    }
+    if (levels > 2U) {
+      syntax(loc, "misra-c2012-18.5-pointer-nesting");
+    }
+  }
+
+  // The array variable a pointer expression certainly points into, if the
+  // expression is a plain array, &array[i], or array +/- n.
+  [[nodiscard]] const clang::VarDecl* array_object(const clang::Expr* expression) {
+    expression = expression->IgnoreParenImpCasts();
+    if (const auto* reference = llvm::dyn_cast<clang::DeclRefExpr>(expression)) {
+      const auto* variable = llvm::dyn_cast<clang::VarDecl>(reference->getDecl());
+      return (variable != nullptr && variable->getType()->isArrayType())
+                 ? variable->getCanonicalDecl()
+                 : nullptr;
+    }
+    if (const auto* unary = llvm::dyn_cast<clang::UnaryOperator>(expression);
+        unary != nullptr && unary->getOpcode() == clang::UO_AddrOf) {
+      if (const auto* subscript = llvm::dyn_cast<clang::ArraySubscriptExpr>(
+              unary->getSubExpr()->IgnoreParenImpCasts())) {
+        return array_object(subscript->getBase());
+      }
+      return nullptr;
+    }
+    if (const auto* binary = llvm::dyn_cast<clang::BinaryOperator>(expression);
+        binary != nullptr &&
+        (binary->getOpcode() == clang::BO_Add || binary->getOpcode() == clang::BO_Sub)) {
+      if (binary->getLHS()->getType()->isPointerType()) {
+        return array_object(binary->getLHS());
+      }
+      if (binary->getRHS()->getType()->isPointerType()) {
+        return array_object(binary->getRHS());
+      }
+    }
+    return nullptr;
+  }
+
+  [[nodiscard]] static const clang::ConstantArrayType* constant_array(
+      const clang::Expr* expression) {
+    return llvm::dyn_cast_or_null<clang::ConstantArrayType>(
+        expression->IgnoreParenImpCasts()->getType()->getAsArrayTypeUnsafe());
+  }
+
+  void check_pointer_arithmetic(const clang::BinaryOperator* expression) {
+    const clang::BinaryOperatorKind op = expression->getOpcode();
+    const clang::Expr* const left = expression->getLHS();
+    const clang::Expr* const right = expression->getRHS();
+    const clang::SourceLocation loc = expression->getOperatorLoc();
+    const bool both_pointers = left->getType()->isPointerType() &&
+                               right->getType()->isPointerType();
+
+    // 18.4: + - += -= applied to a pointer.
+    if ((op == clang::BO_Add || op == clang::BO_Sub || op == clang::BO_AddAssign ||
+         op == clang::BO_SubAssign) &&
+        (left->getType()->isPointerType() || right->getType()->isPointerType())) {
+      syntax(loc, "misra-c2012-18.4-pointer-arithmetic");
+    }
+    // 18.2 / 18.3: two pointers into two different, named arrays.
+    if (both_pointers) {
+      const clang::VarDecl* const a = array_object(left);
+      const clang::VarDecl* const b = array_object(right);
+      if (a != nullptr && b != nullptr && a != b) {
+        if (op == clang::BO_Sub) {
+          syntax(loc, "misra-c2012-18.2-subtraction-different-arrays");
+        } else if (op == clang::BO_LT || op == clang::BO_GT || op == clang::BO_LE ||
+                   op == clang::BO_GE) {
+          syntax(loc, "misra-c2012-18.3-relational-different-arrays");
+        }
+      }
+    }
+    // 18.1: array +/- constant leaving the array (one past the end is allowed).
+    if (op == clang::BO_Add || op == clang::BO_Sub) {
+      const clang::Expr* const pointer = left->getType()->isPointerType() ? left : right;
+      const clang::Expr* const offset = (pointer == left) ? right : left;
+      if (const auto* array = constant_array(pointer); array != nullptr &&
+          !offset->getType()->isPointerType() &&
+          !(op == clang::BO_Sub && pointer != left)) {
+        if (const auto value = offset->getIntegerConstantExpr(ast_)) {
+          const llvm::APSInt signed_value = value->extOrTrunc(64);
+          const std::int64_t amount = signed_value.getSExtValue();
+          const std::int64_t index = (op == clang::BO_Sub) ? -amount : amount;
+          if (index < 0 || static_cast<std::uint64_t>(index) > array->getSize().getZExtValue()) {
+            syntax(loc, "misra-c2012-18.1-out-of-bounds");
+          }
+        }
+      }
+    }
+    // 18.6: the address of an automatic object stored where it outlives it.
+    if (op == clang::BO_Assign && persists_beyond_function(left) &&
+        automatic_object_address(right) != nullptr) {
+      syntax(loc, "misra-c2012-18.6-automatic-address-escapes");
+    }
+  }
+
+  // 18.1: a constant subscript outside the bounds of a known array.
+  void check_constant_subscript(const clang::ArraySubscriptExpr* expression) {
+    const auto* array = constant_array(expression->getBase());
+    if (array == nullptr) {
+      return;
+    }
+    const auto index = expression->getIdx()->getIntegerConstantExpr(ast_);
+    if (!index) {
+      return;
+    }
+    const std::int64_t value = index->extOrTrunc(64).getSExtValue();
+    const std::uint64_t size = array->getSize().getZExtValue();
+    bool address_taken = false;  // &a[size] designates one past the end
+    {
+      const clang::Stmt* current = expression;
+      for (;;) {
+        const clang::Stmt* const parent = parent_statement(current);
+        if (parent != nullptr && llvm::isa<clang::ParenExpr>(parent)) {
+          current = parent;
+          continue;
+        }
+        const auto* unary = llvm::dyn_cast_or_null<clang::UnaryOperator>(parent);
+        address_taken = unary != nullptr && unary->getOpcode() == clang::UO_AddrOf;
+        break;
+      }
+    }
+    const bool one_past = address_taken && value >= 0 &&
+                          static_cast<std::uint64_t>(value) == size;
+    if ((value < 0 || static_cast<std::uint64_t>(value) >= size) && !one_past) {
+      syntax(expression->getExprLoc(), "misra-c2012-18.1-out-of-bounds");
+    }
+  }
+
+  // The automatic object whose address `expression` certainly is, if any.
+  [[nodiscard]] static const clang::VarDecl* automatic_base(
+      const clang::Expr* lvalue) {
+    lvalue = lvalue->IgnoreParenImpCasts();
+    if (const auto* reference = llvm::dyn_cast<clang::DeclRefExpr>(lvalue)) {
+      const auto* variable = llvm::dyn_cast<clang::VarDecl>(reference->getDecl());
+      return (variable != nullptr && variable->hasLocalStorage()) ? variable : nullptr;
+    }
+    if (const auto* member = llvm::dyn_cast<clang::MemberExpr>(lvalue);
+        member != nullptr && !member->isArrow()) {
+      return automatic_base(member->getBase());
+    }
+    if (const auto* subscript = llvm::dyn_cast<clang::ArraySubscriptExpr>(lvalue);
+        subscript != nullptr && subscript->getBase()->IgnoreParenImpCasts()->getType()->isArrayType()) {
+      return automatic_base(subscript->getBase());
+    }
+    return nullptr;
+  }
+
+  [[nodiscard]] static const clang::VarDecl* automatic_object_address(
+      const clang::Expr* expression) {
+    expression = expression->IgnoreParenImpCasts();
+    if (const auto* conditional = llvm::dyn_cast<clang::ConditionalOperator>(expression)) {
+      const clang::VarDecl* const first = automatic_object_address(conditional->getTrueExpr());
+      return first != nullptr ? first : automatic_object_address(conditional->getFalseExpr());
+    }
+    if (const auto* cast = llvm::dyn_cast<clang::CStyleCastExpr>(expression)) {
+      return automatic_object_address(cast->getSubExpr());
+    }
+    if (const auto* unary = llvm::dyn_cast<clang::UnaryOperator>(expression);
+        unary != nullptr && unary->getOpcode() == clang::UO_AddrOf) {
+      return automatic_base(unary->getSubExpr());
+    }
+    if (expression->getType()->isArrayType()) {  // an array decays to its address
+      return automatic_base(expression);
+    }
+    return nullptr;
+  }
+
+  // True when storing into `lvalue` outlives the current call: a static or
+  // global object, or something reached through a pointer parameter.
+  [[nodiscard]] static bool persists_beyond_function(const clang::Expr* lvalue) {
+    lvalue = lvalue->IgnoreParenImpCasts();
+    if (const auto* reference = llvm::dyn_cast<clang::DeclRefExpr>(lvalue)) {
+      const auto* variable = llvm::dyn_cast<clang::VarDecl>(reference->getDecl());
+      return variable != nullptr && variable->hasGlobalStorage();
+    }
+    const auto through_parameter = [](const clang::Expr* pointer) {
+      const auto* reference =
+          llvm::dyn_cast<clang::DeclRefExpr>(pointer->IgnoreParenImpCasts());
+      return reference != nullptr && llvm::isa<clang::ParmVarDecl>(reference->getDecl());
+    };
+    if (const auto* unary = llvm::dyn_cast<clang::UnaryOperator>(lvalue);
+        unary != nullptr && unary->getOpcode() == clang::UO_Deref) {
+      return through_parameter(unary->getSubExpr());
+    }
+    if (const auto* member = llvm::dyn_cast<clang::MemberExpr>(lvalue)) {
+      return member->isArrow() ? through_parameter(member->getBase())
+                               : persists_beyond_function(member->getBase());
+    }
+    if (const auto* subscript = llvm::dyn_cast<clang::ArraySubscriptExpr>(lvalue)) {
+      return through_parameter(subscript->getBase()) ||
+             persists_beyond_function(subscript->getBase());
+    }
+    return false;
   }
 
   // 9.2 and 9.3 on a whole initializer: braces for every nested aggregate and

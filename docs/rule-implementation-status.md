@@ -2,7 +2,7 @@
 
 This catalog records the engineering structures present in the checker. It deliberately does not reproduce the copyrighted normative rule wording. The licensed MISRA specification is the controlled source for rule predicates, amplification, exceptions, and examples.
 
-Current milestone: 47 rule classes are **scaffolds**; 96 have implemented Clang-backed syntactic detectors, but independent validation remains pending. A scaffold provides identity, metadata, an analysis plan, a factory, and a non-compliant-safe `NotImplemented` result. It is not a working compliance check.
+Current milestone: 40 rule classes are **scaffolds**; 103 have implemented Clang-backed syntactic detectors, but independent validation remains pending. A scaffold provides identity, metadata, an analysis plan, a factory, and a non-compliant-safe `NotImplemented` result. It is not a working compliance check.
 
 | Rule | Category | Decidability | Scope | C90 | C99 | Topic | Status |
 |---|---|---|---|---:|---:|---|---|
@@ -107,13 +107,13 @@ Current milestone: 47 rule classes are **scaffolds**; 96 have implemented Clang-
 | 17.6 | Mandatory | Decidable | Single Translation Unit | No | Yes | Functions | Implemented; independent validation pending |
 | 17.7 | Required | Decidable | Single Translation Unit | Yes | Yes | Functions | Implemented; independent validation pending |
 | 17.8 | Advisory | Undecidable | System | Yes | Yes | Functions | Implemented; independent validation pending |
-| 18.1 | Required | Undecidable | System | Yes | Yes | Pointers and arrays | Scaffold |
-| 18.2 | Required | Undecidable | System | Yes | Yes | Pointers and arrays | Scaffold |
-| 18.3 | Required | Undecidable | System | Yes | Yes | Pointers and arrays | Scaffold |
-| 18.4 | Advisory | Decidable | Single Translation Unit | Yes | Yes | Pointers and arrays | Scaffold |
-| 18.5 | Advisory | Decidable | Single Translation Unit | Yes | Yes | Pointers and arrays | Scaffold |
-| 18.6 | Required | Undecidable | System | Yes | Yes | Pointers and arrays | Scaffold |
-| 18.7 | Required | Decidable | Single Translation Unit | No | Yes | Pointers and arrays | Scaffold |
+| 18.1 | Required | Undecidable | System | Yes | Yes | Pointers and arrays | Implemented; independent validation pending |
+| 18.2 | Required | Undecidable | System | Yes | Yes | Pointers and arrays | Implemented; independent validation pending |
+| 18.3 | Required | Undecidable | System | Yes | Yes | Pointers and arrays | Implemented; independent validation pending |
+| 18.4 | Advisory | Decidable | Single Translation Unit | Yes | Yes | Pointers and arrays | Implemented; independent validation pending |
+| 18.5 | Advisory | Decidable | Single Translation Unit | Yes | Yes | Pointers and arrays | Implemented; independent validation pending |
+| 18.6 | Required | Undecidable | System | Yes | Yes | Pointers and arrays | Implemented; independent validation pending |
+| 18.7 | Required | Decidable | Single Translation Unit | No | Yes | Pointers and arrays | Implemented; independent validation pending |
 | 18.8 | Required | Decidable | Single Translation Unit | No | Yes | Pointers and arrays | Implemented; independent validation pending |
 | 19.1 | Mandatory | Undecidable | System | Yes | Yes | Overlapping storage | Scaffold |
 | 19.2 | Advisory | Decidable | Single Translation Unit | Yes | Yes | Overlapping storage | Scaffold |
