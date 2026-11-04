@@ -182,6 +182,23 @@ struct CallEdgeFact final {
   SourceLocation location;
   std::string caller;
   std::string callee;
+  // True for an edge that depends on a function pointer: a function address
+  // handed to a library function that will call it back.
+  bool via_pointer = false;
+};
+
+// A project function whose address is used other than as a direct callee.
+struct AddressTakenFact final {
+  SourceLocation location;
+  std::string function;
+  std::string signature;  // canonical function type
+};
+
+// A call through a function pointer of the given pointee type.
+struct IndirectCallFact final {
+  SourceLocation location;
+  std::string caller;
+  std::string signature;
 };
 
 // Cross-translation-unit facts. Only meaningful when the compilation database
@@ -191,6 +208,8 @@ struct ProgramFacts final {
   std::vector<ReferenceFact> references;
   std::vector<MacroFact> macros;
   std::vector<CallEdgeFact> call_edges;
+  std::vector<AddressTakenFact> address_taken;
+  std::vector<IndirectCallFact> indirect_calls;
   std::set<std::string> used_macros;
   // Keys produced by declaration_key() of typedefs/tags that are referenced.
   std::set<std::string> referenced_declarations;

@@ -400,7 +400,9 @@ class CallGraph final {
 
   [[nodiscard]] bool same_component(const std::string& a,
                                     const std::string& b) const {
-    return component_.at(a) == component_.at(b);
+    const auto x = component_.find(a);
+    const auto y = component_.find(b);
+    return x != component_.end() && y != component_.end() && x->second == y->second;
   }
 
  private:
@@ -440,14 +442,46 @@ class CallGraph final {
 
 RuleEvaluation recursive_calls(const AnalysisContext& context) {
   RuleEvaluation e = complete();
-  const CallGraph graph(context.program.call_edges);
-  std::set<std::string> reported;
-  for (const CallEdgeFact& edge : context.program.call_edges) {
-    if (graph.same_component(edge.caller, edge.callee) &&
-        reported.insert(where(edge.location)).second) {
-      e.findings.push_back({"misra-c2012-17.2-recursion", edge.location,
-                            FindingCertainty::Definite});
+  const ProgramFacts& program = context.program;
+
+  // Edges that exist for certain: direct calls.
+  std::vector<CallEdgeFact> direct;
+  // Everything the program might do: direct calls, function addresses passed
+  // to library functions, and calls through a function pointer matched by type
+  // to every project function whose address is taken.
+  std::vector<CallEdgeFact> all;
+  for (const CallEdgeFact& edge : program.call_edges) {
+    all.push_back(edge);
+    if (!edge.via_pointer) direct.push_back(edge);
+  }
+  for (const IndirectCallFact& call : program.indirect_calls) {
+    for (const AddressTakenFact& taken : program.address_taken) {
+      if (taken.signature == call.signature) {
+        all.push_back({call.location, call.caller, taken.function, true});
+      }
     }
+  }
+
+  const CallGraph direct_graph(direct);
+  const CallGraph full_graph(all);
+  std::map<std::string, FindingCertainty> reported;
+  std::map<std::string, SourceLocation> locations;
+  for (const CallEdgeFact& edge : all) {
+    if (!full_graph.same_component(edge.caller, edge.callee)) continue;
+    const bool certain = !edge.via_pointer &&
+                         direct_graph.same_component(edge.caller, edge.callee);
+    const std::string key = where(edge.location);
+    const auto found = reported.find(key);
+    if (found == reported.end()) {
+      reported[key] = certain ? FindingCertainty::Definite : FindingCertainty::Possible;
+      locations[key] = edge.location;
+    } else if (certain) {
+      found->second = FindingCertainty::Definite;
+    }
+  }
+  for (const auto& entry : reported) {
+    e.findings.push_back(
+        {"misra-c2012-17.2-recursion", locations[entry.first], entry.second});
   }
   return e;
 }

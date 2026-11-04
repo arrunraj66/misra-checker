@@ -103,25 +103,35 @@ licensed text before relying on a result.
 ## Section 17 rules (functions) — 17.1-17.8
 * **17.1** reports the `#include <stdarg.h>` directive and each `va_arg`
   expression (keyed on the invocation, see the macro policy).
-* **17.2** builds a call graph from *direct* calls between project functions
-  and reports each call that lies on a cycle (a function calling itself, or
-  mutual recursion through any number of functions). Static functions of the
-  same name in different files are kept distinct. Calls through function
-  pointers, and calls into system headers, are not followed, so recursion
-  through a callback is missed. The catalogue lists this rule as undecidable;
-  this is the syntactic subset.
-* **17.3** needs a compiler mode that accepts implicit declarations. In C99 and
-  later Clang rejects them as errors, which the checker reports as an analysis
-  failure (exit code 2) rather than a finding, so run C90 code in C90 mode.
-  Compiler builtins (`__builtin_*`) are declared implicitly by design and are
-  not reported.
+* **17.2** builds a call graph and reports each call that lies on a cycle (a
+  function calling itself, or mutual recursion through any number of functions).
+  Static functions of the same name in different files are kept distinct.
+  Cycles made of direct calls are reported as definite. Recursion that needs a
+  function pointer is reported as **possible**, using two over-approximations:
+  an indirect call may reach any project function whose address is taken and
+  whose canonical function type is identical, and a function address passed to
+  a library function (for example the comparator given to `qsort`) is assumed
+  to be called back by it. Not followed: pointers cast to a different function
+  type, addresses laundered through `void *` or an integer, and callbacks that
+  a library function stores and invokes later. Where many callbacks share one
+  signature the over-approximation can join unrelated functions into a cycle;
+  that is why those findings are only possible. The catalogue lists this rule as
+  undecidable.
+* **17.3** and **17.4** (bare `return;`) concern constructs that recent Clang
+  rejects as errors in C99 and later. The frontend downgrades a fixed list of
+  such diagnostics to warnings so the file is still analysed and the rule can
+  report it: `implicit-function-declaration`, `implicit-int`, `return-type`,
+  `int-conversion`, `incompatible-pointer-types` and
+  `incompatible-function-pointer-types`. Any other compile error still fails the
+  translation unit (exit code 2). The downgrade is silent; it is applied after
+  the project's own flags, so it overrides a project-wide `-Werror`. Compiler
+  builtins (`__builtin_*`) are declared implicitly by design and are not
+  reported by 17.3.
 * **17.4** reports a `return;` in a non-void function, and a non-void function
   whose closing brace is reachable. Reachability uses Clang's control-flow
   graph (constant loop conditions and non-returning calls are understood), the
   same analysis behind the compiler's missing-return warning. `main` is
-  included: the C99 implicit `return 0` does not exempt it. A bare `return;`
-  is a hard error in recent Clang; build C90 code with
-  `-Wno-error=return-type` to see it as a finding.
+  included: the C99 implicit `return 0` does not exempt it.
 * **17.5** compares the declared bound of an array parameter with an argument
   that is itself an array of known size. A pointer argument cannot be judged
   and is never reported. The catalogue lists this rule as undecidable.

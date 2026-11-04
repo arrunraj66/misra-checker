@@ -57,6 +57,13 @@ misra_fixture_suite(
   "17.1|r17_1_compliant.c|0" "17.1|r17_1_violating.c|2"
   "17.2|r17_2_compliant.c|0" "17.2|r17_2_violating.c|3"
   "17.4|r17_4_compliant.c|0" "17.4|r17_4_violating.c|2"
+  # Recursion through function pointers is Possible, not Definite.
+  "17.2|r17_2_callback_compliant.c|0"
+  "17.2|r17_2_callback_a_violating.c|2" "17.2|r17_2_callback_b_violating.c|2"
+  # Constructs Clang rejects in C99 (implicit declaration, bare return) are
+  # still analysed: the frontend downgrades those errors to warnings.
+  "17.3|r17_3_c99_compliant.c|0" "17.3|r17_3_c99_violating.c|1"
+  "17.4|r17_4_bare_compliant.c|0" "17.4|r17_4_bare_violating.c|1"
   "17.5|r17_5_compliant.c|0" "17.5|r17_5_violating.c|1"
   "17.6|r17_6_compliant.c|0" "17.6|r17_6_violating.c|1"
   "17.7|r17_7_compliant.c|0" "17.7|r17_7_violating.c|3"
@@ -66,17 +73,15 @@ misra_fixture_suite(
   "12.3|macro_origin.c|1" "7.1|macro_origin.c|0"
 )
 
-# C90 suite: implicit function declarations and a bare "return;" in a
-# non-void function are hard errors in C99 mode, so these rules need C90.
+# C90 suite: the same constructs in the language mode that actually accepts
+# them (no downgrade of compiler errors is involved here).
 set(MISRA_FIXTURE_STD c90)
-set(MISRA_FIXTURE_FLAGS ",\"-Wno-error=return-type\"")
 misra_fixture_suite(
   rules_c90 "${CMAKE_CURRENT_SOURCE_DIR}/tests/fixtures/rules_c90"
   "17.3|r17_3_compliant.c|0" "17.3|r17_3_violating.c|1"
   "17.4|r17_4_return_compliant.c|0" "17.4|r17_4_return_violating.c|1"
 )
 unset(MISRA_FIXTURE_STD)
-unset(MISRA_FIXTURE_FLAGS)
 
 misra_fixture_suite(
   rules_program "${CMAKE_CURRENT_SOURCE_DIR}/tests/fixtures/rules_program"

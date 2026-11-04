@@ -93,8 +93,9 @@ Pointer-conversion rules 11.1-11.6, 11.8 and 11.9 work on Clang cast nodes; 11.7
 cannot be observed because the compiler rejects the cast it describes.
 
 Function rules 17.1-17.8 include a call graph (17.2) and a control-flow-graph
-missing-return check (17.4). Rules that the compiler rejects in C99 mode (17.3)
-are tested in a separate C90 suite.
+missing-return check (17.4). Constructs that recent Clang rejects in C99 (implicit declarations, a bare
+`return;`) are analysed anyway: the frontend downgrades that fixed list of
+compiler errors to warnings so the matching rule can report them.
 
 ## Whole-program rules and macros
 

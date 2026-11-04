@@ -30,6 +30,7 @@
 #include "clang/Lex/MacroInfo.h"
 #include "clang/Lex/PPCallbacks.h"
 #include "clang/Lex/Preprocessor.h"
+#include "clang/Tooling/ArgumentsAdjusters.h"
 #include "clang/Tooling/CompilationDatabase.h"
 #include "clang/Tooling/JSONCompilationDatabase.h"
 #include "clang/Tooling/Tooling.h"
@@ -307,8 +308,23 @@ class FactVisitor final : public clang::RecursiveASTVisitor<FactVisitor> {
       syntax(call->getBeginLoc(), "misra-c2012-17.7-return-value-ignored");
     }
     const clang::FunctionDecl* const callee = call->getDirectCallee();
+    if (callee == nullptr && current_function_ != nullptr) {
+      note_indirect_call(call);
+    }
     if (callee == nullptr || !callee->getIdentifier()) {
       return true;
+    }
+    if (sm_.isInSystemHeader(callee->getLocation())) {
+      // A library function that receives a function address may call it back.
+      for (const clang::Expr* argument : call->arguments()) {
+        if (const auto* reference = llvm::dyn_cast<clang::DeclRefExpr>(
+                argument->IgnoreParenImpCasts())) {
+          if (const auto* target =
+                  llvm::dyn_cast<clang::FunctionDecl>(reference->getDecl())) {
+            note_call_edge(call, target, true);
+          }
+        }
+      }
     }
     // 17.3: a function used without a visible declaration. Compiler builtins
     // (including those behind <stdarg.h>) are declared implicitly by design.
@@ -484,6 +500,9 @@ class FactVisitor final : public clang::RecursiveASTVisitor<FactVisitor> {
     }
     if (const auto* function = llvm::dyn_cast<clang::FunctionDecl>(declaration)) {
       note_external_reference(function);
+      if (!is_direct_callee(reference)) {
+        note_address_taken(function, reference->getBeginLoc());
+      }
     } else if (const auto* variable =
                    llvm::dyn_cast<clang::VarDecl>(declaration)) {
       if (variable->isFileVarDecl()) {
@@ -814,7 +833,9 @@ class FactVisitor final : public clang::RecursiveASTVisitor<FactVisitor> {
     return location ? location->file + "::" + name : name;
   }
 
-  void note_call_edge(const clang::CallExpr* call, const clang::FunctionDecl* callee) {
+  void note_call_edge(const clang::CallExpr* call,
+                      const clang::FunctionDecl* callee,
+                      const bool via_pointer = false) {
     if (current_function_ == nullptr ||
         sm_.isInSystemHeader(callee->getLocation())) {
       return;
@@ -824,7 +845,62 @@ class FactVisitor final : public clang::RecursiveASTVisitor<FactVisitor> {
       const std::string target = function_key(callee);
       if (shared_.fresh("edge|" + caller + "|" + target + "|" +
                         location_text(*location))) {
-        context_.program.call_edges.push_back({*location, caller, target});
+        context_.program.call_edges.push_back(
+            {*location, caller, target, via_pointer});
+      }
+    }
+  }
+
+  // True when the reference is, possibly through parentheses and implicit
+  // function-to-pointer conversion, the callee of a call expression.
+  [[nodiscard]] bool is_direct_callee(const clang::DeclRefExpr* reference) {
+    const clang::Stmt* current = reference;
+    for (;;) {
+      const auto parents = ast_.getParents(*current);
+      if (parents.empty()) {
+        return false;
+      }
+      const clang::Stmt* const parent = parents[0].get<clang::Stmt>();
+      if (parent == nullptr) {
+        return false;
+      }
+      if (llvm::isa<clang::ParenExpr>(parent) ||
+          llvm::isa<clang::ImplicitCastExpr>(parent)) {
+        current = parent;
+        continue;
+      }
+      const auto* call = llvm::dyn_cast<clang::CallExpr>(parent);
+      return call != nullptr && call->getCallee() == current;
+    }
+  }
+
+  void note_address_taken(const clang::FunctionDecl* function,
+                          const clang::SourceLocation raw) {
+    if (sm_.isInSystemHeader(function->getLocation())) {
+      return;
+    }
+    if (const auto location = locate(sm_, raw, false)) {
+      const std::string key = function_key(function);
+      if (shared_.fresh("taken|" + key + "|" + location_text(*location))) {
+        context_.program.address_taken.push_back(
+            {*location, key,
+             function->getType().getCanonicalType().getAsString()});
+      }
+    }
+  }
+
+  void note_indirect_call(const clang::CallExpr* call) {
+    const clang::QualType callee_type =
+        call->getCallee()->IgnoreParenImpCasts()->getType();
+    if (!callee_type->isFunctionPointerType()) {
+      return;
+    }
+    if (const auto location = locate(sm_, call->getBeginLoc(), false)) {
+      const std::string caller = function_key(current_function_);
+      if (shared_.fresh("indirect|" + caller + "|" + location_text(*location))) {
+        context_.program.indirect_calls.push_back(
+            {*location, caller,
+             callee_type->getPointeeType().getCanonicalType().getAsString()});
       }
     }
   }
@@ -1430,6 +1506,18 @@ FrontendResult ClangFrontend::analyze(
   FrontendResult result{true, {}, files, {}};
   Shared shared(result.context);
   clang::tooling::ClangTool tool(*database, files);
+  // Recent Clang turns several constructs that MISRA rules exist to find into
+  // hard errors in C99 and later (implicit function declarations, implicit
+  // int, a return without a value in a non-void function, pointer/integer
+  // mix-ups). Downgrade exactly those diagnostics to warnings so the code
+  // is still analysed and the corresponding rule can report it, instead of
+  // the whole translation unit failing. Unrelated errors still fail.
+  tool.appendArgumentsAdjuster(clang::tooling::getInsertArgumentAdjuster(
+      {"-Wno-error=implicit-function-declaration", "-Wno-error=implicit-int",
+       "-Wno-error=return-type", "-Wno-error=int-conversion",
+       "-Wno-error=incompatible-pointer-types",
+       "-Wno-error=incompatible-function-pointer-types"},
+      clang::tooling::ArgumentInsertPosition::END));
   FactActionFactory factory(shared);
   if (tool.run(&factory) != 0) {
     result.success = false;
