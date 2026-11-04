@@ -282,3 +282,43 @@ reported is definite.
   through intermediate pointers and aliases are not followed.
 * **18.7** reports an array of unspecified size as the last member of a
   structure.
+
+## Stage D rules — 3.1, 3.2, 4.1, 4.2, 6.1, 6.2, 7.2, 7.4, 13.1, 13.2, 13.3, 13.5, 13.6, 14.1, 14.2, 14.3, 15.3, 19.2
+* **3.1/3.2** read comments with Clang's raw lexer. 3.1 reports a `/*` or `//`
+  inside any comment (so a URL in a block comment is reported). 3.2 reports a
+  `//` comment that is continued by a backslash-newline.
+* **4.1** follows the strict reading: an octal or hexadecimal escape must be
+  followed by the end of the literal or by another escape. `"\x41g"` and
+  `"\0012"` are reported even though `g` is not a hex digit. Concatenated string
+  tokens are judged one at a time, so `"\x41" "g"` is accepted.
+* **4.2** finds `??` followed by a trigraph character anywhere in the text of a
+  project file, including strings and comments.
+* **6.1** accepts `_Bool`, `int` and `unsigned int`. Plain `int` cannot be told
+  from `signed int` in the AST, so it is accepted (a leniency). **6.2** reports
+  a *named* one-bit bit-field of signed type.
+* **7.2** reports an integer constant of unsigned type written without `u`/`U`
+  (typically a hexadecimal constant that does not fit `int`).
+* **7.4** looks at initialization, assignment and `return` of a string literal
+  to a pointer to non-const `char`. Initializer lists (`char *names[] = {"a"}`)
+  and function arguments are not examined.
+* **13.1/13.5/13.6** treat assignment, increment/decrement and `volatile` reads
+  as definite side effects and any call as a *potential* one, reported as
+  **possible** because the callee may be pure.
+* **13.2** compares the operands whose evaluation order is unspecified
+  (arithmetic, comparison and bitwise operators, call arguments, array subscript
+  and its index, and the two sides of an assignment) for a scalar variable that
+  one writes and another reads or writes. Members (`s.a`), pointer targets and
+  effects of called functions are not tracked, so it reports only conflicts on
+  named scalar variables.
+* **13.3** treats the initializer of a declaration as an assignment and a call
+  as another side effect; two increments alone are not reported.
+* **14.1** looks at variables modified by a `for` increment clause. **14.2**
+  reports an increment clause that modifies more than one variable or calls a
+  function, a condition that assigns, increments or decrements, or a counter
+  modified (or address-taken) in the body. Missing clauses (`for (;;)`) are not
+  reported, which is an interpretation to confirm.
+* **14.3** reports a condition with a value known at compile time, including
+  `do { } while (0)` and `sizeof` comparisons; `while (1)` and `for (;;)` are
+  accepted as the infinite-loop idiom (an interpretation).
+* **15.3** requires the label's block to enclose the `goto`.
+* **19.2** reports every union definition.

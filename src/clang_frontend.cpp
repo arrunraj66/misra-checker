@@ -160,6 +160,112 @@ std::size_t count_returns(const clang::Stmt* statement) {
   return count;
 }
 
+// Side effects visible without knowing what a called function does. A call is
+// only a *potential* side effect.
+struct SideEffects final {
+  bool assignment = false;
+  bool incdec = false;
+  bool call = false;
+  bool volatile_read = false;
+
+  [[nodiscard]] bool definite() const {
+    return assignment || incdec || volatile_read;
+  }
+};
+
+void collect_side_effects(const clang::Stmt* statement, SideEffects& effects) {
+  if (statement == nullptr || llvm::isa<clang::UnaryExprOrTypeTraitExpr>(statement)) {
+    return;  // sizeof and alignof do not evaluate their operand
+  }
+  if (const auto* binary = llvm::dyn_cast<clang::BinaryOperator>(statement);
+      binary != nullptr && binary->isAssignmentOp()) {
+    effects.assignment = true;
+  }
+  if (const auto* unary = llvm::dyn_cast<clang::UnaryOperator>(statement);
+      unary != nullptr && unary->isIncrementDecrementOp()) {
+    effects.incdec = true;
+  }
+  if (llvm::isa<clang::CallExpr>(statement)) {
+    effects.call = true;
+  }
+  if (const auto* cast = llvm::dyn_cast<clang::ImplicitCastExpr>(statement);
+      cast != nullptr && cast->getCastKind() == clang::CK_LValueToRValue &&
+      cast->getSubExpr()->getType().isVolatileQualified()) {
+    effects.volatile_read = true;
+  }
+  for (const clang::Stmt* child : statement->children()) {
+    collect_side_effects(child, effects);
+  }
+}
+
+// Variables an expression or statement modifies (assigns, increments, or
+// takes the address of).
+void collect_modified_variables(const clang::Stmt* statement,
+                                std::set<const clang::VarDecl*>& modified) {
+  if (statement == nullptr) {
+    return;
+  }
+  const auto note = [&modified](const clang::Expr* target) {
+    if (const auto* reference =
+            llvm::dyn_cast<clang::DeclRefExpr>(target->IgnoreParenImpCasts())) {
+      if (const auto* variable = llvm::dyn_cast<clang::VarDecl>(reference->getDecl())) {
+        modified.insert(variable->getCanonicalDecl());
+      }
+    }
+  };
+  if (const auto* binary = llvm::dyn_cast<clang::BinaryOperator>(statement);
+      binary != nullptr && binary->isAssignmentOp()) {
+    note(binary->getLHS());
+  }
+  if (const auto* unary = llvm::dyn_cast<clang::UnaryOperator>(statement);
+      unary != nullptr &&
+      (unary->isIncrementDecrementOp() || unary->getOpcode() == clang::UO_AddrOf)) {
+    note(unary->getSubExpr());
+  }
+  for (const clang::Stmt* child : statement->children()) {
+    collect_modified_variables(child, modified);
+  }
+}
+
+// Variables read and written by an expression, for the sequencing rule.
+struct Effects final {
+  std::set<const clang::VarDecl*> reads;
+  std::set<const clang::VarDecl*> writes;
+};
+
+void merge(Effects& into, const Effects& from) {
+  into.reads.insert(from.reads.begin(), from.reads.end());
+  into.writes.insert(from.writes.begin(), from.writes.end());
+}
+
+bool overlap(const std::set<const clang::VarDecl*>& a,
+             const std::set<const clang::VarDecl*>& b) {
+  for (const clang::VarDecl* variable : a) {
+    if (b.count(variable) != 0U) {
+      return true;
+    }
+  }
+  return false;
+}
+
+// Two operands whose evaluation order is unspecified conflict when one writes
+// what the other reads or writes.
+bool unsequenced_conflict(const Effects& a, const Effects& b) {
+  return overlap(a.writes, b.reads) || overlap(a.writes, b.writes) ||
+         overlap(a.reads, b.writes);
+}
+
+bool is_string_literal_expression(const clang::Expr* expression) {
+  for (;;) {
+    expression = expression->IgnoreParenImpCasts();
+    if (const auto* cast = llvm::dyn_cast<clang::CStyleCastExpr>(expression)) {
+      expression = cast->getSubExpr();
+      continue;
+    }
+    return llvm::isa<clang::StringLiteral>(expression);
+  }
+}
+
 // The one initializer form every aggregate may use: {0}, possibly nested.
 bool is_zero_brace(const clang::InitListExpr* syntactic) {
   if (syntactic == nullptr || syntactic->getNumInits() != 1U) {
@@ -228,6 +334,7 @@ class FactVisitor final : public clang::RecursiveASTVisitor<FactVisitor> {
   // -------------------------------------------------------------- control flow
   bool VisitGotoStmt(clang::GotoStmt* statement) {
     used_labels_.insert(statement->getLabel());
+    check_goto_label_block(statement);
     const clang::SourceLocation goto_spelling = statement->getGotoLoc();
     const clang::SourceLocation label_spelling =
         statement->getLabel()->getLocation();
@@ -282,6 +389,7 @@ class FactVisitor final : public clang::RecursiveASTVisitor<FactVisitor> {
   }
 
   bool VisitForStmt(clang::ForStmt* statement) {
+    check_for_loop(statement);
     record_body(statement->getBody(), "for", statement->getForLoc());
     record_controlling(statement->getCond(), "for");
     record_loop(statement->getBody(), statement->getForLoc());
@@ -438,6 +546,16 @@ class FactVisitor final : public clang::RecursiveASTVisitor<FactVisitor> {
       syntax(expression->getOperatorLoc(),
              "misra-c2012-13.4-assignment-value-used");
     }
+    if (expression->isLogicalOp()) {
+      SideEffects effects;
+      collect_side_effects(expression->getRHS(), effects);
+      if (effects.definite()) {
+        syntax(expression->getOperatorLoc(), "misra-c2012-13.5-logical-rhs-side-effects");
+      } else if (effects.call) {
+        syntax(expression->getOperatorLoc(), "misra-c2012-13.5-logical-rhs-side-effects",
+               true, FindingCertainty::Possible);
+      }
+    }
     check_binary_types(expression);
     check_pointer_arithmetic(expression);
     return true;
@@ -490,6 +608,7 @@ class FactVisitor final : public clang::RecursiveASTVisitor<FactVisitor> {
   }
 
   bool VisitConditionalOperator(clang::ConditionalOperator* expression) {
+    note_invariant_condition(expression->getCond(), "?:");
     if (!essential::appropriate(
             essential::Operand::Logical,
             essential::of_expression(expression->getCond(), ast_))) {
@@ -529,6 +648,20 @@ class FactVisitor final : public clang::RecursiveASTVisitor<FactVisitor> {
   bool VisitInitListExpr(clang::InitListExpr* list) {
     if (list->isSemanticForm()) {
       return true;  // the syntactic form carries the designators
+    }
+    // 13.1: initializer lists must not contain persistent side effects.
+    for (const clang::Expr* init : list->inits()) {
+      if (init == nullptr) {
+        continue;
+      }
+      SideEffects effects;
+      collect_side_effects(init, effects);
+      if (effects.definite()) {
+        syntax(init->getBeginLoc(), "misra-c2012-13.1-initializer-side-effects");
+      } else if (effects.call) {
+        syntax(init->getBeginLoc(), "misra-c2012-13.1-initializer-side-effects", true,
+               FindingCertainty::Possible);
+      }
     }
     // 9.4: an element must not be initialized twice by designators.
     std::set<std::string> seen;
@@ -582,12 +715,18 @@ class FactVisitor final : public clang::RecursiveASTVisitor<FactVisitor> {
     if (statement->getRetValue() != nullptr && current_function_ != nullptr) {
       check_assignment(current_function_->getReturnType(),
                        statement->getRetValue(), statement->getReturnLoc());
+      check_string_literal_target(current_function_->getReturnType(),
+                                  statement->getRetValue(), statement->getReturnLoc());
     }
     return true;
   }
 
   bool VisitIntegerLiteral(clang::IntegerLiteral* literal) {
     const std::string text = literal_text(literal->getBeginLoc());
+    if (literal->getType()->isUnsignedIntegerType() &&
+        text.find_first_of("uU") == std::string::npos) {
+      syntax(literal->getBeginLoc(), "misra-c2012-7.2-missing-unsigned-suffix");
+    }
     if (text.size() > 1U && text[0] == '0' && text[1] >= '0' &&
         text[1] <= '9') {
       syntax(literal->getBeginLoc(), "misra-c2012-7.1-octal-constant");
@@ -746,6 +885,7 @@ class FactVisitor final : public clang::RecursiveASTVisitor<FactVisitor> {
         init != nullptr && !llvm::isa<clang::InitListExpr>(init) &&
         !llvm::isa<clang::ParmVarDecl>(variable)) {
       check_assignment(variable->getType(), init, variable->getLocation());
+      check_string_literal_target(variable->getType(), init, variable->getLocation());
     }
     if (const auto* list =
             llvm::dyn_cast_or_null<clang::InitListExpr>(variable->getInit())) {
@@ -787,8 +927,82 @@ class FactVisitor final : public clang::RecursiveASTVisitor<FactVisitor> {
     return true;
   }
 
+  bool VisitStringLiteral(clang::StringLiteral* literal) {
+    for (unsigned index = 0U; index < literal->getNumConcatenated(); ++index) {
+      check_escape_termination(literal->getStrTokenLoc(index));
+    }
+    return true;
+  }
+
+  bool VisitCharacterLiteral(clang::CharacterLiteral* literal) {
+    check_escape_termination(literal->getBeginLoc());
+    return true;
+  }
+
+  bool VisitRecordDecl(clang::RecordDecl* record) {
+    if (record->isUnion() && record->isCompleteDefinition() && !record->isImplicit()) {
+      syntax(record->getLocation(), "misra-c2012-19.2-union");
+    }
+    return true;
+  }
+
+  bool VisitUnaryExprOrTypeTraitExpr(clang::UnaryExprOrTypeTraitExpr* expression) {
+    if (expression->getKind() == clang::UETT_SizeOf && !expression->isArgumentType()) {
+      SideEffects effects;
+      collect_side_effects(expression->getArgumentExpr(), effects);
+      if (effects.definite()) {
+        syntax(expression->getOperatorLoc(), "misra-c2012-13.6-sizeof-side-effects");
+      } else if (effects.call) {
+        syntax(expression->getOperatorLoc(), "misra-c2012-13.6-sizeof-side-effects",
+               true, FindingCertainty::Possible);
+      }
+    }
+    return true;
+  }
+
+  // Every full expression: unsequenced accesses (13.2) and increments mixed
+  // with other side effects (13.3).
+  bool VisitStmt(clang::Stmt* statement) {
+    const auto* expression = llvm::dyn_cast<clang::Expr>(statement);
+    if (expression == nullptr) {
+      return true;
+    }
+    const auto parents = ast_.getParents(*statement);
+    if (parents.empty()) {
+      return true;
+    }
+    const clang::Stmt* const parent = parents[0].get<clang::Stmt>();
+    if (parent != nullptr && llvm::isa<clang::Expr>(parent)) {
+      return true;  // a sub-expression
+    }
+    const bool initializer = parents[0].get<clang::VarDecl>() != nullptr;
+    (void)sequence_effects(expression);
+    SideEffects effects;
+    collect_side_effects(expression, effects);
+    if (initializer) {
+      effects.assignment = true;
+    }
+    if (effects.incdec && (effects.assignment || effects.call || effects.volatile_read)) {
+      syntax(expression->getExprLoc(), "misra-c2012-13.3-increment-with-side-effects");
+    }
+    return true;
+  }
+
   bool VisitFieldDecl(clang::FieldDecl* field) {
     record_identifier(field, IdentifierSpace::Member);
+    if (field->isBitField()) {
+      const clang::QualType type = field->getType().getCanonicalType().getUnqualifiedType();
+      const bool appropriate = type->isBooleanType() ||
+                               type->isSpecificBuiltinType(clang::BuiltinType::Int) ||
+                               type->isSpecificBuiltinType(clang::BuiltinType::UInt);
+      if (!appropriate) {
+        syntax(field->getLocation(), "misra-c2012-6.1-bit-field-type");
+      }
+      if (!field->getName().empty() && field->getBitWidthValue(ast_) == 1U &&
+          type->isSignedIntegerType() && !type->isBooleanType()) {
+        syntax(field->getLocation(), "misra-c2012-6.2-single-bit-signed");
+      }
+    }
     if (field->getType()->isIncompleteArrayType()) {
       syntax(field->getLocation(), "misra-c2012-18.7-flexible-array-member");
     }
@@ -1037,6 +1251,221 @@ class FactVisitor final : public clang::RecursiveASTVisitor<FactVisitor> {
             {*location, caller,
              callee_type->getPointeeType().getCanonicalType().getAsString()});
       }
+    }
+  }
+
+  // ------------------------------------------------- Stage D helper functions
+  // 13.2: operands whose order of evaluation is unspecified must not conflict.
+  Effects sequence_effects(const clang::Stmt* node) {
+    Effects result;
+    if (node == nullptr || llvm::isa<clang::UnaryExprOrTypeTraitExpr>(node)) {
+      return result;
+    }
+    const auto scalar_variable = [](const clang::Expr* expression) -> const clang::VarDecl* {
+      const auto* reference =
+          llvm::dyn_cast<clang::DeclRefExpr>(expression->IgnoreParenImpCasts());
+      if (reference == nullptr) {
+        return nullptr;
+      }
+      const auto* variable = llvm::dyn_cast<clang::VarDecl>(reference->getDecl());
+      return (variable != nullptr && variable->getType()->isScalarType())
+                 ? variable->getCanonicalDecl()
+                 : nullptr;
+    };
+    if (const auto* expression = llvm::dyn_cast<clang::Expr>(node)) {
+      if (const clang::VarDecl* variable = scalar_variable(expression);
+          variable != nullptr && llvm::isa<clang::DeclRefExpr>(expression->IgnoreParens())) {
+        result.reads.insert(variable);
+        return result;
+      }
+    }
+    if (const auto* binary = llvm::dyn_cast<clang::BinaryOperator>(node)) {
+      const clang::BinaryOperatorKind op = binary->getOpcode();
+      if (op == clang::BO_Comma || op == clang::BO_LAnd || op == clang::BO_LOr) {
+        merge(result, sequence_effects(binary->getLHS()));  // sequenced
+        merge(result, sequence_effects(binary->getRHS()));
+        return result;
+      }
+      const Effects right = sequence_effects(binary->getRHS());
+      if (binary->isAssignmentOp()) {
+        if (const clang::VarDecl* target = scalar_variable(binary->getLHS())) {
+          if (right.writes.count(target) != 0U) {
+            syntax(binary->getOperatorLoc(), "misra-c2012-13.2-unsequenced-access");
+          }
+          result = right;
+          result.writes.insert(target);
+          if (op != clang::BO_Assign) {
+            result.reads.insert(target);
+          }
+          return result;
+        }
+      }
+      const Effects left = sequence_effects(binary->getLHS());
+      if (unsequenced_conflict(left, right)) {
+        syntax(binary->getOperatorLoc(), "misra-c2012-13.2-unsequenced-access");
+      }
+      merge(result, left);
+      merge(result, right);
+      return result;
+    }
+    if (const auto* unary = llvm::dyn_cast<clang::UnaryOperator>(node);
+        unary != nullptr && unary->isIncrementDecrementOp()) {
+      if (const clang::VarDecl* target = scalar_variable(unary->getSubExpr())) {
+        result.reads.insert(target);
+        result.writes.insert(target);
+        return result;
+      }
+    }
+    if (const auto* call = llvm::dyn_cast<clang::CallExpr>(node)) {
+      std::vector<Effects> operands;
+      operands.push_back(sequence_effects(call->getCallee()));
+      for (const clang::Expr* argument : call->arguments()) {
+        operands.push_back(sequence_effects(argument));
+      }
+      for (std::size_t i = 0U; i < operands.size(); ++i) {
+        for (std::size_t j = i + 1U; j < operands.size(); ++j) {
+          if (unsequenced_conflict(operands[i], operands[j])) {
+            syntax(call->getBeginLoc(), "misra-c2012-13.2-unsequenced-access");
+          }
+        }
+        merge(result, operands[i]);
+      }
+      return result;
+    }
+    if (const auto* subscript = llvm::dyn_cast<clang::ArraySubscriptExpr>(node)) {
+      const Effects base = sequence_effects(subscript->getBase());
+      const Effects index = sequence_effects(subscript->getIdx());
+      if (unsequenced_conflict(base, index)) {
+        syntax(subscript->getExprLoc(), "misra-c2012-13.2-unsequenced-access");
+      }
+      merge(result, base);
+      merge(result, index);
+      return result;
+    }
+    for (const clang::Stmt* child : node->children()) {
+      merge(result, sequence_effects(child));
+    }
+    return result;
+  }
+
+  // 14.1 and 14.2: structure of a for loop (the checkable part).
+  void check_for_loop(const clang::ForStmt* loop) {
+    std::set<const clang::VarDecl*> counters;
+    SideEffects increment_effects;
+    if (loop->getInc() != nullptr) {
+      collect_modified_variables(loop->getInc(), counters);
+      collect_side_effects(loop->getInc(), increment_effects);
+    }
+    bool ill_formed = counters.size() > 1U || increment_effects.call;
+    if (loop->getCond() != nullptr) {
+      SideEffects condition_effects;
+      collect_side_effects(loop->getCond(), condition_effects);
+      ill_formed = ill_formed || condition_effects.assignment || condition_effects.incdec;
+    }
+    std::set<const clang::VarDecl*> modified_in_body;
+    collect_modified_variables(loop->getBody(), modified_in_body);
+    for (const clang::VarDecl* counter : counters) {
+      ill_formed = ill_formed || modified_in_body.count(counter) != 0U;
+      if (counter->getType()->isFloatingType()) {
+        syntax(loop->getForLoc(), "misra-c2012-14.1-floating-loop-counter");
+      }
+    }
+    if (ill_formed) {
+      syntax(loop->getForLoc(), "misra-c2012-14.2-ill-formed-for");
+    }
+  }
+
+  // 14.3: a controlling expression with a value known at compile time. The
+  // infinite-loop idiom while (1) / for (;;) is accepted.
+  void note_invariant_condition(const clang::Expr* condition,
+                                const std::string_view construct) {
+    bool value = false;
+    if (!condition->EvaluateAsBooleanCondition(value, ast_)) {
+      return;
+    }
+    if (value && (construct == "while" || construct == "for")) {
+      return;
+    }
+    syntax(condition->getExprLoc(), "misra-c2012-14.3-invariant-condition");
+  }
+
+  // 15.3: the label must be in the goto's own block or one enclosing it.
+  void check_goto_label_block(const clang::GotoStmt* statement) {
+    const clang::LabelStmt* const label = statement->getLabel()->getStmt();
+    if (label == nullptr) {
+      return;
+    }
+    const clang::Stmt* block = label;
+    while (block != nullptr && !llvm::isa<clang::CompoundStmt>(block)) {
+      block = parent_statement(block);
+    }
+    if (block == nullptr) {
+      return;
+    }
+    const clang::Stmt* current = statement;
+    while (current != nullptr && current != block) {
+      current = parent_statement(current);
+    }
+    if (current == nullptr) {
+      syntax(statement->getGotoLoc(), "misra-c2012-15.3-goto-into-block");
+    }
+  }
+
+  // 7.4: a string literal reaching a pointer to non-const character type.
+  void check_string_literal_target(const clang::QualType destination,
+                                   const clang::Expr* source,
+                                   const clang::SourceLocation loc) {
+    if (destination->isPointerType() &&
+        !destination->getPointeeType().isConstQualified() &&
+        destination->getPointeeType()->isCharType() &&
+        is_string_literal_expression(source)) {
+      syntax(loc, "misra-c2012-7.4-string-literal-to-non-const");
+    }
+  }
+
+  // 4.1: an octal or hexadecimal escape must be followed by the end of the
+  // literal or by another escape sequence.
+  void check_escape_termination(const clang::SourceLocation raw) {
+    const clang::SourceLocation spelling = sm_.getSpellingLoc(raw);
+    const std::string text =
+        clang::Lexer::getSourceText(clang::CharSourceRange::getTokenRange(spelling, spelling),
+                                    sm_, ast_.getLangOpts())
+            .str();
+    const std::size_t open = text.find_first_of("\"'");
+    if (open == std::string::npos || text.size() < open + 2U) {
+      return;
+    }
+    const std::size_t close = text.size() - 1U;  // the closing quote
+    const auto is_hex = [](const char c) {
+      return (c >= '0' && c <= '9') || (c >= 'a' && c <= 'f') || (c >= 'A' && c <= 'F');
+    };
+    for (std::size_t i = open + 1U; i < close; ++i) {
+      if (text[i] != '\\') {
+        continue;
+      }
+      const std::size_t first = i + 1U;
+      if (first >= close) {
+        break;
+      }
+      std::size_t end = first + 1U;  // one past the escape sequence
+      bool numeric = false;
+      if (text[first] == 'x') {
+        end = first + 1U;
+        while (end < close && is_hex(text[end])) {
+          ++end;
+        }
+        numeric = end > first + 1U;
+      } else if (text[first] >= '0' && text[first] <= '7') {
+        end = first;
+        while (end < close && end < first + 3U && text[end] >= '0' && text[end] <= '7') {
+          ++end;
+        }
+        numeric = true;
+      }
+      if (numeric && end < close && text[end] != '\\') {
+        syntax(raw, "misra-c2012-4.1-unterminated-escape");
+      }
+      i = end - 1U;
     }
   }
 
@@ -1858,6 +2287,7 @@ class FactVisitor final : public clang::RecursiveASTVisitor<FactVisitor> {
     const clang::BinaryOperatorKind op = expression->getOpcode();
     const clang::SourceLocation loc = expression->getOperatorLoc();
     if (op == clang::BO_Assign) {
+      check_string_literal_target(expression->getLHS()->getType(), expression->getRHS(), loc);
       check_assignment(essential::of_expression(expression->getLHS(), ast_),
                        expression->getRHS(), loc);
       return;
@@ -2082,6 +2512,7 @@ class FactVisitor final : public clang::RecursiveASTVisitor<FactVisitor> {
     if (condition == nullptr) {
       return;
     }
+    note_invariant_condition(condition, construct);
     if (const auto loc = locate(sm_, condition->getExprLoc())) {
       add(context_.controlling_expressions, "cond",
           ControllingExpressionFact{
@@ -2342,8 +2773,18 @@ class PreprocessorRecorder final : public clang::PPCallbacks {
     if (invalid) {
       return;
     }
+    // 4.2: trigraph sequences, wherever they occur in the text.
+    for (std::size_t at = buffer.find("??"); at != llvm::StringRef::npos;
+         at = buffer.find("??", at + 1U)) {
+      if (at + 2U < buffer.size() &&
+          std::string_view("=/'()!<>-").find(buffer[at + 2U]) != std::string_view::npos) {
+        report(sm_.getLocForStartOfFile(file).getLocWithOffset(static_cast<int>(at)),
+               "misra-c2012-4.2-trigraph");
+      }
+    }
     clang::Lexer lexer(sm_.getLocForStartOfFile(file), lang_, buffer.begin(),
                        buffer.begin(), buffer.end());
+    lexer.SetCommentRetentionState(true);
     clang::Token pending;
     bool has_pending = false;
     const auto next = [&](clang::Token& token) {
@@ -2352,8 +2793,16 @@ class PreprocessorRecorder final : public clang::PPCallbacks {
         has_pending = false;
         return true;
       }
-      lexer.LexFromRawLexer(token);
-      return !token.is(clang::tok::eof);
+      for (;;) {
+        lexer.LexFromRawLexer(token);
+        if (token.is(clang::tok::eof)) {
+          return false;
+        }
+        if (!token.is(clang::tok::comment)) {
+          return true;
+        }
+        check_comment(token);
+      }
     };
     const auto push_back = [&](const clang::Token& token) {
       pending = token;
@@ -2407,6 +2856,33 @@ class PreprocessorRecorder final : public clang::PPCallbacks {
           break;
         }
       }
+    }
+  }
+
+  // 3.1: /* or // inside a comment. 3.2: a // comment continued by a backslash.
+  void check_comment(const clang::Token& comment) {
+    bool invalid = false;
+    const char* const data = sm_.getCharacterData(comment.getLocation(), &invalid);
+    if (invalid || data == nullptr) {
+      return;
+    }
+    const std::string_view text(data, comment.getLength());
+    const bool line_comment = text.substr(0U, 2U) == "//";
+    std::string_view inner = text.substr(2U);
+    if (!line_comment && inner.size() >= 2U && inner.substr(inner.size() - 2U) == "*/") {
+      inner.remove_suffix(2U);
+    }
+    for (std::string_view marker : {std::string_view("/*"), std::string_view("//")}) {
+      const std::size_t at = inner.find(marker);
+      if (at != std::string_view::npos) {
+        report(comment.getLocation().getLocWithOffset(static_cast<int>(at + 2U)),
+               "misra-c2012-3.1-comment-marker-in-comment");
+        break;
+      }
+    }
+    if (line_comment && (text.find("\\\n") != std::string_view::npos ||
+                         text.find("\\\r\n") != std::string_view::npos)) {
+      report(comment.getLocation(), "misra-c2012-3.2-line-splice-in-comment");
     }
   }
 

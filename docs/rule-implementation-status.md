@@ -2,7 +2,7 @@
 
 This catalog records the engineering structures present in the checker. It deliberately does not reproduce the copyrighted normative rule wording. The licensed MISRA specification is the controlled source for rule predicates, amplification, exceptions, and examples.
 
-Current milestone: 40 rule classes are **scaffolds**; 103 have implemented Clang-backed syntactic detectors, but independent validation remains pending. A scaffold provides identity, metadata, an analysis plan, a factory, and a non-compliant-safe `NotImplemented` result. It is not a working compliance check.
+Current milestone: 22 rule classes are **scaffolds**; 121 have implemented Clang-backed syntactic detectors, but independent validation remains pending. A scaffold provides identity, metadata, an analysis plan, a factory, and a non-compliant-safe `NotImplemented` result. It is not a working compliance check.
 
 | Rule | Category | Decidability | Scope | C90 | C99 | Topic | Status |
 |---|---|---|---|---:|---:|---|---|
@@ -16,10 +16,10 @@ Current milestone: 40 rule classes are **scaffolds**; 103 have implemented Clang
 | 2.5 | Advisory | Decidable | System | Yes | Yes | Unused and unreachable code | Implemented; independent validation pending |
 | 2.6 | Advisory | Decidable | Single Translation Unit | Yes | Yes | Unused and unreachable code | Implemented; independent validation pending |
 | 2.7 | Advisory | Decidable | Single Translation Unit | Yes | Yes | Unused and unreachable code | Implemented; independent validation pending |
-| 3.1 | Required | Decidable | Single Translation Unit | Yes | Yes | Comments | Scaffold |
-| 3.2 | Required | Decidable | Single Translation Unit | No | Yes | Comments | Scaffold |
-| 4.1 | Required | Decidable | Single Translation Unit | Yes | Yes | Character sets and lexical elements | Scaffold |
-| 4.2 | Advisory | Decidable | Single Translation Unit | Yes | Yes | Character sets and lexical elements | Scaffold |
+| 3.1 | Required | Decidable | Single Translation Unit | Yes | Yes | Comments | Implemented; independent validation pending |
+| 3.2 | Required | Decidable | Single Translation Unit | No | Yes | Comments | Implemented; independent validation pending |
+| 4.1 | Required | Decidable | Single Translation Unit | Yes | Yes | Character sets and lexical elements | Implemented; independent validation pending |
+| 4.2 | Advisory | Decidable | Single Translation Unit | Yes | Yes | Character sets and lexical elements | Implemented; independent validation pending |
 | 5.1 | Required | Decidable | System | Yes | Yes | Identifiers | Implemented; independent validation pending |
 | 5.2 | Required | Decidable | Single Translation Unit | Yes | Yes | Identifiers | Implemented; independent validation pending |
 | 5.3 | Required | Decidable | Single Translation Unit | Yes | Yes | Identifiers | Implemented; independent validation pending |
@@ -29,12 +29,12 @@ Current milestone: 40 rule classes are **scaffolds**; 103 have implemented Clang
 | 5.7 | Required | Decidable | System | Yes | Yes | Identifiers | Implemented; independent validation pending |
 | 5.8 | Required | Decidable | System | Yes | Yes | Identifiers | Implemented; independent validation pending |
 | 5.9 | Advisory | Decidable | System | Yes | Yes | Identifiers | Implemented; independent validation pending |
-| 6.1 | Required | Decidable | Single Translation Unit | Yes | Yes | Types and bit-fields | Scaffold |
-| 6.2 | Required | Decidable | Single Translation Unit | Yes | Yes | Types and bit-fields | Scaffold |
+| 6.1 | Required | Decidable | Single Translation Unit | Yes | Yes | Types and bit-fields | Implemented; independent validation pending |
+| 6.2 | Required | Decidable | Single Translation Unit | Yes | Yes | Types and bit-fields | Implemented; independent validation pending |
 | 7.1 | Required | Decidable | Single Translation Unit | Yes | Yes | Literals and constants | Implemented; independent validation pending |
-| 7.2 | Required | Decidable | Single Translation Unit | Yes | Yes | Literals and constants | Scaffold |
+| 7.2 | Required | Decidable | Single Translation Unit | Yes | Yes | Literals and constants | Implemented; independent validation pending |
 | 7.3 | Required | Decidable | Single Translation Unit | Yes | Yes | Literals and constants | Implemented; independent validation pending |
-| 7.4 | Required | Decidable | Single Translation Unit | Yes | Yes | Literals and constants | Scaffold |
+| 7.4 | Required | Decidable | Single Translation Unit | Yes | Yes | Literals and constants | Implemented; independent validation pending |
 | 8.1 | Required | Decidable | Single Translation Unit | Yes | No | Declarations and definitions | Implemented; independent validation pending |
 | 8.2 | Required | Decidable | Single Translation Unit | Yes | Yes | Declarations and definitions | Implemented; independent validation pending |
 | 8.3 | Required | Decidable | System | Yes | Yes | Declarations and definitions | Implemented; independent validation pending |
@@ -75,19 +75,19 @@ Current milestone: 40 rule classes are **scaffolds**; 103 have implemented Clang
 | 12.2 | Required | Undecidable | System | Yes | Yes | Expressions | Implemented; independent validation pending |
 | 12.3 | Advisory | Decidable | Single Translation Unit | Yes | Yes | Expressions | Implemented; independent validation pending |
 | 12.4 | Advisory | Decidable | Single Translation Unit | Yes | Yes | Expressions | Implemented; independent validation pending |
-| 13.1 | Required | Undecidable | System | No | Yes | Side effects and evaluation order | Scaffold |
-| 13.2 | Required | Undecidable | System | Yes | Yes | Side effects and evaluation order | Scaffold |
-| 13.3 | Advisory | Decidable | Single Translation Unit | Yes | Yes | Side effects and evaluation order | Scaffold |
+| 13.1 | Required | Undecidable | System | No | Yes | Side effects and evaluation order | Implemented; independent validation pending |
+| 13.2 | Required | Undecidable | System | Yes | Yes | Side effects and evaluation order | Implemented; independent validation pending |
+| 13.3 | Advisory | Decidable | Single Translation Unit | Yes | Yes | Side effects and evaluation order | Implemented; independent validation pending |
 | 13.4 | Advisory | Decidable | Single Translation Unit | Yes | Yes | Side effects and evaluation order | Implemented; independent validation pending |
-| 13.5 | Required | Undecidable | System | Yes | Yes | Side effects and evaluation order | Scaffold |
-| 13.6 | Mandatory | Decidable | Single Translation Unit | Yes | Yes | Side effects and evaluation order | Scaffold |
-| 14.1 | Required | Undecidable | System | Yes | Yes | Control statement expressions | Scaffold |
-| 14.2 | Required | Undecidable | System | Yes | Yes | Control statement expressions | Scaffold |
-| 14.3 | Required | Undecidable | System | Yes | Yes | Control statement expressions | Scaffold |
+| 13.5 | Required | Undecidable | System | Yes | Yes | Side effects and evaluation order | Implemented; independent validation pending |
+| 13.6 | Mandatory | Decidable | Single Translation Unit | Yes | Yes | Side effects and evaluation order | Implemented; independent validation pending |
+| 14.1 | Required | Undecidable | System | Yes | Yes | Control statement expressions | Implemented; independent validation pending |
+| 14.2 | Required | Undecidable | System | Yes | Yes | Control statement expressions | Implemented; independent validation pending |
+| 14.3 | Required | Undecidable | System | Yes | Yes | Control statement expressions | Implemented; independent validation pending |
 | 14.4 | Required | Decidable | Single Translation Unit | Yes | Yes | Control statement expressions | Implemented; independent validation pending |
 | 15.1 | Advisory | Decidable | Single Translation Unit | Yes | Yes | Control flow | Implemented; independent validation pending |
 | 15.2 | Required | Decidable | Single Translation Unit | Yes | Yes | Control flow | Implemented; independent validation pending |
-| 15.3 | Required | Decidable | Single Translation Unit | Yes | Yes | Control flow | Scaffold |
+| 15.3 | Required | Decidable | Single Translation Unit | Yes | Yes | Control flow | Implemented; independent validation pending |
 | 15.4 | Advisory | Decidable | Single Translation Unit | Yes | Yes | Control flow | Implemented; independent validation pending |
 | 15.5 | Advisory | Decidable | Single Translation Unit | Yes | Yes | Control flow | Implemented; independent validation pending |
 | 15.6 | Required | Decidable | Single Translation Unit | Yes | Yes | Control flow | Implemented; independent validation pending |
@@ -116,7 +116,7 @@ Current milestone: 40 rule classes are **scaffolds**; 103 have implemented Clang
 | 18.7 | Required | Decidable | Single Translation Unit | No | Yes | Pointers and arrays | Implemented; independent validation pending |
 | 18.8 | Required | Decidable | Single Translation Unit | No | Yes | Pointers and arrays | Implemented; independent validation pending |
 | 19.1 | Mandatory | Undecidable | System | Yes | Yes | Overlapping storage | Scaffold |
-| 19.2 | Advisory | Decidable | Single Translation Unit | Yes | Yes | Overlapping storage | Scaffold |
+| 19.2 | Advisory | Decidable | Single Translation Unit | Yes | Yes | Overlapping storage | Implemented; independent validation pending |
 | 20.1 | Advisory | Decidable | Single Translation Unit | Yes | Yes | Preprocessing directives | Implemented; independent validation pending |
 | 20.2 | Required | Decidable | Single Translation Unit | Yes | Yes | Preprocessing directives | Implemented; independent validation pending |
 | 20.3 | Required | Decidable | Single Translation Unit | Yes | Yes | Preprocessing directives | Implemented; independent validation pending |
